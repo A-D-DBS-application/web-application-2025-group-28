@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+  <div>
+    <h2 class="h-title">Dashboard</h2>
+    <div class="h-sub">Overzicht van materieelbeheer</div>
+  </div>
+  <div class="hero-image" aria-hidden="true"></div>
+</div>
+
+<div class="grid grid-top" style="margin-top:16px;">
+  <div class="card kpi">
+    <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
+    <div class="kpi-value">{{ total_items }}</div>
+    <div class="kpi-sub">Items in het systeem</div>
+  </div>
+
+  <div class="card kpi warn">
+    <div class="kpi-title">Keuring vereiste <span class="kpi-alert">⚠</span></div>
+    <div class="kpi-value">{{ to_inspect }}</div>
+    <div class="kpi-sub">Items te keuren</div>
+  </div>
+</div>
+
+<div class="card search">
+  <div class="search-wrap">
+    <span class="search-icon">🔎</span>
+    <input type="text" class="search-input" placeholder="Zoek een item in het systeem">
+  </div>
+</div>
+
+<div class="grid grid-bottom">
+  <div class="card panel">
+    <div class="panel-title">Recente Activiteit</div>
+    <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+  </div>
+  <div class="card panel">
+    <div class="panel-title">Aankomende Keuringen</div>
+    <div class="panel-sub">Volgende 30 dagen</div>
+  </div>
+</div>
+
+{% endblock %}
