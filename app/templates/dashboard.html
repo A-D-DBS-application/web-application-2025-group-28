@@ -45,7 +45,23 @@
   <div class="card panel">
     <div class="panel-title">Recente Activiteit</div>
     <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+
+    {% if recent_activity and recent_activity|length > 0 %}
+      <ul class="list-group list-group-flush mt-2">
+        {% for a in recent_activity %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ a.action }}</strong> — {{ a.name }} <span class="text-muted">({{ a.serial }})</span>
+            </div>
+            <small class="text-muted">{{ a.ts.strftime("%Y-%m-%d %H:%M") }}</small>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="text-muted mt-2">Nog geen activiteit…</div>
+    {% endif %}
   </div>
+
   <div class="card panel">
     <div class="panel-title">Aankomende Keuringen</div>
     <div class="panel-sub">Volgende 30 dagen</div>

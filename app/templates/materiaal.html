@@ -32,6 +32,19 @@
   <div class="hero-image d-none d-md-block" aria-hidden="true"></div>
 </div>
 
+<!-- Flash messages -->
+<div class="container px-0 mt-3">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ 'danger' if category=='danger' else category }} mb-2" role="alert">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+
 <!-- Recente activiteit / Lijst -->
 <div class="card panel" style="margin-top:16px;">
   <div class="panel-title d-flex align-items-center justify-content-between">
@@ -84,7 +97,7 @@
           <th>Categorie</th>
           <th>Status</th>
           <th>Keuring</th>
-          <th>Acties</th>
+          <th class="text-end">Acties</th>
         </tr>
       </thead>
       <tbody>
@@ -100,8 +113,30 @@
               </span>
             </td>
             <td>{{ it.inspection_status or "-" }}</td>
-            <td>
-              <button class="btn btn-sm btn-outline-secondary" disabled>Bewerken</button>
+            <td class="text-end">
+              <div class="btn-group">
+                <button
+                  class="btn btn-sm btn-outline-secondary"
+                  data-bs-toggle="modal"
+                  data-bs-target="#editMaterieelModal"
+                  data-serial="{{ it.serial }}"
+                  data-name="{{ it.name }}"
+                  data-category="{{ it.category }}"
+                  data-type="{{ it.type }}"
+                  data-purchase_date="{{ it.purchase_date }}"
+                  data-assigned_to="{{ it.assigned_to }}"
+                  data-site="{{ it.site }}"
+                  data-note="{{ it.note }}"
+                  data-status="{{ it.status }}"
+                  data-inspection_status="{{ it.inspection_status }}"
+                >
+                  Bewerken
+                </button>
+                <form method="post" action="{{ url_for('materiaal_verwijderen') }}" onsubmit="return confirm('Verwijderen?');">
+                  <input type="hidden" name="serial" value="{{ it.serial }}">
+                  <button class="btn btn-sm btn-outline-danger">Verwijderen</button>
+                </form>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -124,7 +159,6 @@
 
       <form method="post" action="{{ url_for('materiaal_toevoegen') }}">
         <div class="modal-body">
-
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label">Naam*</label>
@@ -183,10 +217,88 @@
               <input name="inspection_status" class="form-control" placeholder="Bv. Keuring 2025-05">
             </div>
           </div>
-
         </div>
         <div class="modal-footer">
           <button class="btn btn-primary" type="submit">Materieel Toevoegen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Bewerken -->
+<div class="modal fade" id="editMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Materieel Bewerken</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal_bewerken') }}">
+        <div class="modal-body">
+          <input type="hidden" name="original_serial" id="edit-original-serial">
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name" id="edit-name" required class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Serienummer*</label>
+              <input name="serial" id="edit-serial" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Categorie*</label>
+              <select name="category" id="edit-category" class="form-select" required>
+                <option>klein materieel</option>
+                <option>middel groot materieel</option>
+                <option>groot materieel</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Type*</label>
+              <input name="type" id="edit-type" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Aankoopdatum*</label>
+              <input name="purchase_date" id="edit-purchase_date" type="date" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Werf (optioneel)</label>
+              <input name="site" id="edit-site" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Toegewezen aan (optioneel)</label>
+              <input name="assigned_to" id="edit-assigned_to" class="form-control">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Opmerking (optioneel)</label>
+              <textarea name="note" id="edit-note" class="form-control" rows="3"></textarea>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Status*</label>
+              <select name="status" id="edit-status" class="form-select" required>
+                <option value="goedgekeurd">Goedgekeurd</option>
+                <option value="afgekeurd">Afgekeurd</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Keuringstatus (optioneel)</label>
+              <input name="inspection_status" id="edit-inspection_status" class="form-control">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Opslaan</button>
         </div>
       </form>
     </div>
@@ -197,5 +309,40 @@
 /* laat de modal rechtsboven “inschuiven” */
 .modal-dialog-end { margin-right: 0; margin-left: auto; }
 </style>
+
+<!-- Kleine helper-script om de bewerk-modal te vullen -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const editModal = document.getElementById('editMaterieelModal');
+  editModal.addEventListener('show.bs.modal', function (event) {
+    const button = event.relatedTarget;
+
+    const data = {
+      serial: button.getAttribute('data-serial') || '',
+      name: button.getAttribute('data-name') || '',
+      category: button.getAttribute('data-category') || '',
+      type: button.getAttribute('data-type') || '',
+      purchase_date: button.getAttribute('data-purchase_date') || '',
+      assigned_to: button.getAttribute('data-assigned_to') || '',
+      site: button.getAttribute('data-site') || '',
+      note: button.getAttribute('data-note') || '',
+      status: button.getAttribute('data-status') || 'goedgekeurd',
+      inspection_status: button.getAttribute('data-inspection_status') || ''
+    };
+
+    document.getElementById('edit-original-serial').value = data.serial;
+    document.getElementById('edit-serial').value = data.serial;
+    document.getElementById('edit-name').value = data.name;
+    document.getElementById('edit-category').value = data.category;
+    document.getElementById('edit-type').value = data.type;
+    document.getElementById('edit-purchase_date').value = data.purchase_date;
+    document.getElementById('edit-assigned_to').value = data.assigned_to;
+    document.getElementById('edit-site').value = data.site;
+    document.getElementById('edit-note').value = data.note;
+    document.getElementById('edit-status').value = data.status;
+    document.getElementById('edit-inspection_status').value = data.inspection_status;
+  });
+});
+</script>
 
 {% endblock %}
