@@ -9,6 +9,7 @@
   <div class="hero-image" aria-hidden="true"></div>
 </div>
 
+<!-- KPI's -->
 <div class="grid grid-top" style="margin-top:16px;">
   <div class="card kpi">
     <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
@@ -23,14 +24,24 @@
   </div>
 </div>
 
-<div class="card search">
+<!-- Zoekbalk: stuurt naar /materiaal met q=... -->
+<form class="card search" method="get" action="{{ url_for('materiaal') }}" style="margin-top:16px;">
   <div class="search-wrap">
     <span class="search-icon">🔎</span>
-    <input type="text" class="search-input" placeholder="Zoek een item in het systeem">
+    <input
+      type="text"
+      name="q"
+      class="search-input form-control"
+      placeholder="Zoek een item in het systeem"
+      value="{{ request.args.get('q','') }}"
+      aria-label="Zoek in materiaal"
+    >
+    <button class="btn btn-primary ms-2" type="submit">Zoeken</button>
   </div>
-</div>
+</form>
 
-<div class="grid grid-bottom">
+<!-- Panelen -->
+<div class="grid grid-bottom" style="margin-top:16px;">
   <div class="card panel">
     <div class="panel-title">Recente Activiteit</div>
     <div class="panel-sub">Laatste wijzigingen in het systeem</div>
