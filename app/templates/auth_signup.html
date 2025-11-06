@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container" style="max-width:560px;">
+  <div class="card p-4 mt-4">
+    <h3 class="mb-3">Sign up</h3>
+    <p class="text-muted">Maak je account aan met e-mail. Wachtwoord is niet nodig.</p>
+
+    <form method="POST" action="{{ url_for('signup') }}">
+      <div class="mb-3">
+        <label class="form-label">Naam</label>
+        <input type="text" name="naam" class="form-control" placeholder="bv. Jan Peeters">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">E-mail</label>
+        <input type="email" name="email" class="form-control" required value="{{ request.args.get('email','') }}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Functie (optioneel)</label>
+        <input type="text" name="functie" class="form-control" placeholder="bv. Magazijnier">
+      </div>
+      <div class="d-flex gap-2">
+        <button class="btn btn-success" type="submit">Account aanmaken</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('login', email=request.args.get('email','')) }}">Ik heb al een account</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
