@@ -1,5 +1,201 @@
 {% extends "base.html" %}
 {% block content %}
-<h2 class="h-title">Materiaal</h2>
-<p class="h-sub">Hier komt later het overzicht van alle materialen.</p>
+
+<div class="section-header">
+  <div>
+    <h2 class="h-title">Materieelbeheer</h2>
+    <div class="h-sub">Overzicht van beheer van al het bedrijfsmateriaal</div>
+  </div>
+
+  <!-- Knop rechtsboven -->
+  <button class="btn btn-dark"
+          data-bs-toggle="modal"
+          data-bs-target="#nieuwMaterieelModal">
+    + Nieuw Materieel
+  </button>
+</div>
+
+<!-- KPI's -->
+<div class="grid grid-top" style="margin-top:16px;">
+  <div class="card kpi">
+    <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
+    <div class="kpi-value">{{ total_items }}</div>
+    <div class="kpi-sub">Items in het systeem</div>
+  </div>
+
+  <div class="card kpi">
+    <div class="kpi-title">Momenteel in gebruik <span class="kpi-dot"></span></div>
+    <div class="kpi-value">{{ in_use }}</div>
+    <div class="kpi-sub">Items in een project</div>
+  </div>
+
+  <div class="hero-image d-none d-md-block" aria-hidden="true"></div>
+</div>
+
+<!-- Recente activiteit / Lijst -->
+<div class="card panel" style="margin-top:16px;">
+  <div class="panel-title d-flex align-items-center justify-content-between">
+    <div>
+      Recente Activiteit
+      <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+    </div>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('materiaal') }}">Herstel filters</a>
+  </div>
+
+  <!-- Filterbalk -->
+  <form class="row g-2 align-items-center" method="get" action="{{ url_for('materiaal') }}">
+    <div class="col-12 col-md-6">
+      <div class="input-group">
+        <span class="input-group-text">🔎</span>
+        <input name="q" value="{{ request.args.get('q','') }}" type="text" class="form-control" placeholder="Zoek op naam of serienummer…">
+      </div>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <select name="category" class="form-select">
+        <option value="">Alle categorieën</option>
+        {% for c in ["klein materieel","middel groot materieel","groot materieel"] %}
+          <option value="{{ c }}" {% if request.args.get('category')==c %}selected{% endif %}>{{ c|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-6 col-md-3">
+      <select name="status" class="form-select">
+        <option value="">Alle statussen</option>
+        {% for s in ["goedgekeurd","afgekeurd"] %}
+          <option value="{{ s }}" {% if request.args.get('status')==s %}selected{% endif %}>{{ s|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12">
+      <button class="btn btn-primary">Filteren</button>
+    </div>
+  </form>
+
+  <!-- Tabel -->
+  <div class="table-responsive mt-3">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Serienummer</th>
+          <th>Naam</th>
+          <th>Categorie</th>
+          <th>Status</th>
+          <th>Keuring</th>
+          <th>Acties</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if items %}
+          {% for it in items %}
+          <tr>
+            <td>{{ it.serial }}</td>
+            <td>{{ it.name }}</td>
+            <td>{{ it.category|title }}</td>
+            <td>
+              <span class="badge {% if it.status=='goedgekeurd' %}bg-success{% else %}bg-danger{% endif %}">
+                {{ it.status|title }}
+              </span>
+            </td>
+            <td>{{ it.inspection_status or "-" }}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-secondary" disabled>Bewerken</button>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="6" class="text-muted">Nog geen materiaal gevonden…</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Nieuw Materieel -->
+<div class="modal fade" id="nieuwMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nieuw Materiaal Toevoegen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal_toevoegen') }}">
+        <div class="modal-body">
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name" required class="form-control" placeholder="Bv. Boormachine Bosch">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Serienummer*</label>
+              <input name="serial" required class="form-control" placeholder="Bv. BH-2024-001">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Categorie*</label>
+              <select name="category" class="form-select" required>
+                <option value="" disabled selected>Selecteer categorie</option>
+                <option>klein materieel</option>
+                <option>middel groot materieel</option>
+                <option>groot materieel</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Type*</label>
+              <input name="type" required class="form-control" placeholder="Bv. Elektrisch gereedschap">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Aankoopdatum*</label>
+              <input name="purchase_date" type="date" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Werf (optioneel)</label>
+              <input name="site" class="form-control" placeholder="Bv. Project Turnhout">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Toegewezen aan (optioneel)</label>
+              <input name="assigned_to" class="form-control" placeholder="Naam gebruiker">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Opmerking (optioneel)</label>
+              <textarea name="note" class="form-control" rows="3" placeholder="Extra info over het materiaal…"></textarea>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Status*</label>
+              <select name="status" class="form-select" required>
+                <option value="goedgekeurd">Goedgekeurd</option>
+                <option value="afgekeurd">Afgekeurd</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Keuringstatus (optioneel)</label>
+              <input name="inspection_status" class="form-control" placeholder="Bv. Keuring 2025-05">
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Materieel Toevoegen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+/* laat de modal rechtsboven “inschuiven” */
+.modal-dialog-end { margin-right: 0; margin-left: auto; }
+</style>
+
 {% endblock %}
