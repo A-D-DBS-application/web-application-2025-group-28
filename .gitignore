@@ -17,3 +17,5 @@ instance/
 *.db
 .env
 
+instance/
+users.json
