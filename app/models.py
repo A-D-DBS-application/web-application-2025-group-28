@@ -1,4 +1,3 @@
-# models.py
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
@@ -15,7 +14,7 @@ class Gebruiker(db.Model):
     Functie = db.Column(db.String)
     project_id = db.Column(db.Numeric, nullable=True)
     telefoon_nummer = db.Column(db.Numeric, nullable=True)
-    password_hash = db.Column(db.String, nullable=True)  # voorlopig niet gebruikt
+    password_hash = db.Column(db.String, nullable=True)
 
 
 class Material(db.Model):
@@ -24,7 +23,7 @@ class Material(db.Model):
     id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
 
-    # Python-attribuut -> kolomnaam in Supabase
+    # mappen op kolomnamen in Supabase
     name = db.Column("Naam", db.String)
     status = db.Column("Status", db.String)
     keuring_id = db.Column("Keuring", db.BigInteger, nullable=True)
@@ -37,6 +36,5 @@ class Material(db.Model):
     site = db.Column("site", db.String, nullable=True)
     note = db.Column("note", db.String, nullable=True)
 
-    # Let op: GEEN kolom "inspection_status" in de DB,
-    # dus hier ook niet definiëren. Jinja zal dan gewoon "-" tonen
-    # door `{{ it.inspection_status or "-" }}`.
+    # nieuw veld
+    nummer_op_materieel = db.Column("nummer_op_materieel", db.String, nullable=True)

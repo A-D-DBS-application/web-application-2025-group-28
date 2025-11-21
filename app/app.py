@@ -1,14 +1,10 @@
-# app.py
-from flask import (
-    Flask, render_template, request, redirect,
-    url_for, flash, session, g
-)
+from flask import Flask, render_template, request, redirect, url_for, flash, session, g
 from datetime import datetime
 from functools import wraps
-import os
 
 from config import Config
 from models import db, Gebruiker, Material
+from sqlalchemy import or_, func
 
 
 app = Flask(__name__)
@@ -24,18 +20,20 @@ ACTIVITY_LOG: list[dict] = []
 
 
 def log_activity(action: str, name: str, serial: str):
+    """Sla een activiteit op, inclusief welke gebruiker het deed."""
     ACTIVITY_LOG.insert(0, {
         "ts": datetime.now(),
         "action": action,
         "name": name,
-        "serial": serial
+        "serial": serial,
+        "user": g.user.Naam if getattr(g, "user", None) and g.user.Naam else "Onbekend"
     })
     if len(ACTIVITY_LOG) > 50:
         ACTIVITY_LOG.pop()
 
 
 # ---------------- Helper: materiaal zoeken ----------------
-def find_material(serial: str) -> Material | None:
+def find_material(serial: str):
     if not serial:
         return None
     return Material.query.filter_by(serial=serial).first()
@@ -66,7 +64,7 @@ def inject_user():
     return {"current_user": g.user}
 
 
-# ---------------- Auth routes (nog steeds wachtwoordloos) ----------------
+# ---------------- Auth routes (wachtwoordloos) ----------------
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
@@ -136,7 +134,7 @@ def root_redirect():
 def dashboard():
     total_items = Material.query.count()
 
-    # simpel voorbeeld: aantal afgekeurde items als “te keuren”
+    # voorbeeld: aantal items met status 'afgekeurd' als "te keuren"
     to_inspect = Material.query.filter_by(status="afgekeurd").count()
 
     recent = ACTIVITY_LOG[:8]
@@ -160,7 +158,6 @@ def materiaal():
 
     if q:
         like = f"%{q}%"
-        from sqlalchemy import or_
         query = query.filter(
             or_(Material.name.ilike(like),
                 Material.serial.ilike(like))
@@ -175,35 +172,45 @@ def materiaal():
     items = query.all()
 
     total_items = Material.query.count()
-    from sqlalchemy import func
-    in_use = db.session.query(func.count(Material.id)) \
-        .filter(func.coalesce(Material.site, "") != "") \
-        .scalar()
+
+    # FIX: "in gebruik" = assigned_to OF site niet leeg
+    in_use = db.session.query(func.count(Material.id)).filter(
+        (func.coalesce(Material.assigned_to, "") != "") |
+        (func.coalesce(Material.site, "") != "")
+    ).scalar()
+
+    # alle materialen voor datalist in "Gebruik Materieel"
+    all_materials = Material.query.all()
 
     return render_template(
         "materiaal.html",
         items=items,
         total_items=total_items,
         in_use=in_use,
+        all_materials=all_materials,
     )
 
 
-# ---------------- Materiaal: toevoegen ----------------
+# ---------------- Materiaal: toevoegen (via + in KPI) ----------------
 @app.route("/materiaal/new", methods=["POST"])
 @login_required
 def materiaal_toevoegen():
     f = request.form
+
     serial = (f.get("serial") or "").strip()
+    nummer = (f.get("nummer_op_materieel") or "").strip()
 
-    # 1) check: bestaat dit serienummer al in Supabase?
+    if not serial:
+        flash("Serienummer is verplicht.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # afspraak: alleen materiaal dat al in Supabase bestaat
     item = find_material(serial)
-
     if not item:
-        # DIT is de gevraagde foutmelding:
         flash("Materiaal bestaat niet in het datasysteem (Supabase).", "danger")
         return redirect(url_for("materiaal"))
 
-    # 2) Bestaat: we updaten de gegevens op basis van het formulier
+    # update de bestaande rij met extra info
     item.name = (f.get("name") or "").strip() or item.name
     item.category = (f.get("category") or "").strip() or item.category
     item.type = (f.get("type") or "").strip() or item.type
@@ -214,16 +221,17 @@ def materiaal_toevoegen():
         try:
             item.purchase_date = _dt.strptime(purchase_date, "%Y-%m-%d").date()
         except ValueError:
-            pass  # laat oude datum staan als parsing faalt
+            pass
 
     item.assigned_to = (f.get("assigned_to") or "").strip()
     item.site = (f.get("site") or "").strip()
     item.note = (f.get("note") or "").strip()
     item.status = (f.get("status") or "goedgekeurd").strip()
+    item.nummer_op_materieel = nummer or item.nummer_op_materieel
 
     db.session.commit()
 
-    log_activity("Toegevoegd / bijgewerkt", item.name or "", item.serial)
+    log_activity("Toegevoegd / bijgewerkt", item.name or "", item.serial or "")
     flash("Materieel bijgewerkt in Supabase.", "success")
     return redirect(url_for("materiaal"))
 
@@ -261,10 +269,11 @@ def materiaal_bewerken():
     item.site = (f.get("site") or "").strip()
     item.note = (f.get("note") or "").strip()
     item.status = (f.get("status") or "goedgekeurd").strip()
+    item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
 
     db.session.commit()
 
-    log_activity("Bewerkt", item.name or "", item.serial)
+    log_activity("Bewerkt", item.name or "", item.serial or "")
     flash("Materieel bewerkt.", "success")
     return redirect(url_for("materiaal"))
 
@@ -287,6 +296,46 @@ def materiaal_verwijderen():
     return redirect(url_for("materiaal"))
 
 
+# ---------------- Materiaal: in gebruik nemen ----------------
+@app.route("/materiaal/use", methods=["POST"])
+@login_required
+def materiaal_gebruiken():
+    f = request.form
+
+    name = (f.get("name") or "").strip()
+    nummer = (f.get("nummer_op_materieel") or "").strip()
+    assigned_to = (f.get("assigned_to") or "").strip()
+    site = (f.get("site") or "").strip()
+
+    if not name:
+        flash("Naam van het materieel is verplicht.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # zoek eerst op nummer, dan op naam
+    item = None
+    if nummer:
+        item = Material.query.filter_by(nummer_op_materieel=nummer).first()
+    if not item and name:
+        item = Material.query.filter_by(name=name).first()
+
+    if not item:
+        flash("Materiaal niet gevonden in het datasysteem.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # markeer als in gebruik
+    if not assigned_to and getattr(g, "user", None):
+        assigned_to = g.user.Naam or ""
+
+    item.assigned_to = assigned_to
+    item.site = site
+
+    db.session.commit()
+
+    log_activity("In gebruik", item.name or "", item.serial or "")
+    flash("Materieel staat nu als 'in gebruik'.", "success")
+    return redirect(url_for("materiaal"))
+
+
 # ---------------- Keuringen dummy ----------------
 @app.route("/keuringen")
 @login_required
@@ -295,9 +344,8 @@ def keuringen():
 
 
 if __name__ == "__main__":
-    # zorg dat er een app context is als je lokaal runt
     with app.app_context():
-        # GEEN db.create_all(): Supabase beheert de tabellen al
+        # geen db.create_all(); Supabase beheert de tabellen
         pass
 
     app.run(debug=True)

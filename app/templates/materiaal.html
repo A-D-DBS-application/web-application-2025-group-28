@@ -7,20 +7,29 @@
     <div class="h-sub">Overzicht van beheer van al het bedrijfsmateriaal</div>
   </div>
 
-  <!-- Knop rechtsboven -->
+  <!-- Nieuwe knop rechtsboven -->
   <button class="btn btn-dark"
           data-bs-toggle="modal"
-          data-bs-target="#nieuwMaterieelModal">
-    + Nieuw Materieel
+          data-bs-target="#gebruikMaterieelModal">
+    Gebruik Materieel
   </button>
 </div>
 
 <!-- KPI's -->
 <div class="grid grid-top" style="margin-top:16px;">
-  <div class="card kpi">
+  <div class="card kpi kpi-with-plus">
     <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
     <div class="kpi-value">{{ total_items }}</div>
     <div class="kpi-sub">Items in het systeem</div>
+
+    <!-- Rond plus-icoon rechtsonder -->
+    <button
+      type="button"
+      class="kpi-plus-btn"
+      data-bs-toggle="modal"
+      data-bs-target="#nieuwMaterieelModal">
+      +
+    </button>
   </div>
 
   <div class="card kpi">
@@ -106,10 +115,10 @@
           <tr>
             <td>{{ it.serial }}</td>
             <td>{{ it.name }}</td>
-            <td>{{ it.category|title }}</td>
+            <td>{{ it.category|title if it.category else '' }}</td>
             <td>
               <span class="badge {% if it.status=='goedgekeurd' %}bg-success{% else %}bg-danger{% endif %}">
-                {{ it.status|title }}
+                {{ it.status|title if it.status else '' }}
               </span>
             </td>
             <td>{{ it.inspection_status or "-" }}</td>
@@ -129,6 +138,7 @@
                   data-note="{{ it.note }}"
                   data-status="{{ it.status }}"
                   data-inspection_status="{{ it.inspection_status }}"
+                  data-nummer_op_materieel="{{ it.nummer_op_materieel }}"
                 >
                   Bewerken
                 </button>
@@ -167,6 +177,11 @@
             <div class="col-md-6">
               <label class="form-label">Serienummer*</label>
               <input name="serial" required class="form-control" placeholder="Bv. BH-2024-001">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Nummer op Materieel (optioneel)</label>
+              <input name="nummer_op_materieel" class="form-control" placeholder="Sticker / nummer op toestel">
             </div>
 
             <div class="col-md-6">
@@ -226,6 +241,71 @@
   </div>
 </div>
 
+<!-- Modal: Gebruik Materieel -->
+<div class="modal fade" id="gebruikMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Materiaal in gebruik nemen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal_gebruiken') }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name"
+                     id="use-name"
+                     list="materiaal-namen"
+                     required
+                     class="form-control"
+                     placeholder="Kies of typ een naam">
+              <datalist id="materiaal-namen">
+                {% for m in all_materials %}
+                  {% if m.name %}
+                    <option value="{{ m.name }}">
+                  {% endif %}
+                {% endfor %}
+              </datalist>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Nummer op Materieel</label>
+              <input name="nummer_op_materieel"
+                     id="use-nummer"
+                     class="form-control"
+                     placeholder="Sticker / nummer op toestel">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Categorie</label>
+              <input id="use-category" class="form-control" readonly>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Gebruikt door</label>
+              <input name="assigned_to"
+                     id="use-assigned_to"
+                     class="form-control"
+                     value="{{ current_user.Naam if current_user else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Werf</label>
+              <input name="site" id="use-site" class="form-control" placeholder="Bv. Werf Antwerpen">
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Materieel gebruiken</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Bewerken -->
 <div class="modal fade" id="editMaterieelModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-end modal-lg">
@@ -247,6 +327,11 @@
             <div class="col-md-6">
               <label class="form-label">Serienummer*</label>
               <input name="serial" id="edit-serial" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Nummer op Materieel (optioneel)</label>
+              <input name="nummer_op_materieel" id="edit-nummer_op_materieel" class="form-control">
             </div>
 
             <div class="col-md-6">
@@ -308,40 +393,114 @@
 <style>
 /* laat de modal rechtsboven “inschuiven” */
 .modal-dialog-end { margin-right: 0; margin-left: auto; }
+
+/* KPI plus-knop rechtsonder */
+.kpi-with-plus {
+  position: relative;
+}
+.kpi-plus-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+
+  width: 48px;
+  height: 48px;
+
+  border-radius: 50%;
+  border: none;
+
+  background: #000;
+  color: #fff;
+
+  font-size: 32px;
+  font-weight: bold;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+  line-height: 1;
+}
+.kpi-plus-btn:hover {
+  opacity: 0.85;
+}
 </style>
 
-<!-- Kleine helper-script om de bewerk-modal te vullen -->
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  // Bewerken-modal vullen
   const editModal = document.getElementById('editMaterieelModal');
-  editModal.addEventListener('show.bs.modal', function (event) {
-    const button = event.relatedTarget;
+  if (editModal) {
+    editModal.addEventListener('show.bs.modal', function (event) {
+      const button = event.relatedTarget;
+      if (!button) return;
 
-    const data = {
-      serial: button.getAttribute('data-serial') || '',
-      name: button.getAttribute('data-name') || '',
-      category: button.getAttribute('data-category') || '',
-      type: button.getAttribute('data-type') || '',
-      purchase_date: button.getAttribute('data-purchase_date') || '',
-      assigned_to: button.getAttribute('data-assigned_to') || '',
-      site: button.getAttribute('data-site') || '',
-      note: button.getAttribute('data-note') || '',
-      status: button.getAttribute('data-status') || 'goedgekeurd',
-      inspection_status: button.getAttribute('data-inspection_status') || ''
-    };
+      const data = {
+        serial: button.getAttribute('data-serial') || '',
+        name: button.getAttribute('data-name') || '',
+        category: button.getAttribute('data-category') || '',
+        type: button.getAttribute('data-type') || '',
+        purchase_date: button.getAttribute('data-purchase_date') || '',
+        assigned_to: button.getAttribute('data-assigned_to') || '',
+        site: button.getAttribute('data-site') || '',
+        note: button.getAttribute('data-note') || '',
+        status: button.getAttribute('data-status') || 'goedgekeurd',
+        inspection_status: button.getAttribute('data-inspection_status') || '',
+        nummer_op_materieel: button.getAttribute('data-nummer_op_materieel') || ''
+      };
 
-    document.getElementById('edit-original-serial').value = data.serial;
-    document.getElementById('edit-serial').value = data.serial;
-    document.getElementById('edit-name').value = data.name;
-    document.getElementById('edit-category').value = data.category;
-    document.getElementById('edit-type').value = data.type;
-    document.getElementById('edit-purchase_date').value = data.purchase_date;
-    document.getElementById('edit-assigned_to').value = data.assigned_to;
-    document.getElementById('edit-site').value = data.site;
-    document.getElementById('edit-note').value = data.note;
-    document.getElementById('edit-status').value = data.status;
-    document.getElementById('edit-inspection_status').value = data.inspection_status;
-  });
+      document.getElementById('edit-original-serial').value = data.serial;
+      document.getElementById('edit-serial').value = data.serial;
+      document.getElementById('edit-name').value = data.name;
+      document.getElementById('edit-category').value = data.category;
+      document.getElementById('edit-type').value = data.type;
+      document.getElementById('edit-purchase_date').value = data.purchase_date;
+      document.getElementById('edit-assigned_to').value = data.assigned_to;
+      document.getElementById('edit-site').value = data.site;
+      document.getElementById('edit-note').value = data.note;
+      document.getElementById('edit-status').value = data.status;
+      document.getElementById('edit-inspection_status').value = data.inspection_status;
+      document.getElementById('edit-nummer_op_materieel').value = data.nummer_op_materieel;
+    });
+  }
+
+  // Data voor Gebruik Materieel
+  const materiaalData = [
+    {% for m in all_materials %}
+      {
+        name: "{{ m.name|e if m.name }}",
+        nummer: "{{ (m.nummer_op_materieel or '')|e }}",
+        category: "{{ (m.category or '')|e }}"
+      }{% if not loop.last %},{% endif %}
+    {% endfor %}
+  ];
+
+  function updateUseCategory() {
+    const nameInput = document.getElementById('use-name');
+    const numInput = document.getElementById('use-nummer');
+    const catInput = document.getElementById('use-category');
+
+    const name = (nameInput?.value || '').trim();
+    const nummer = (numInput?.value || '').trim();
+
+    let found = null;
+    if (nummer) {
+      found = materiaalData.find(m => m.nummer === nummer);
+    }
+    if (!found && name) {
+      found = materiaalData.find(m => m.name === name);
+    }
+
+    if (catInput) {
+      catInput.value = found ? (found.category || '') : '';
+    }
+  }
+
+  const useName = document.getElementById('use-name');
+  const useNummer = document.getElementById('use-nummer');
+  if (useName) useName.addEventListener('input', updateUseCategory);
+  if (useNummer) useNummer.addEventListener('input', updateUseCategory);
 });
 </script>
 

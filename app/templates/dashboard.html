@@ -51,9 +51,15 @@
         {% for a in recent_activity %}
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <div>
-              <strong>{{ a.action }}</strong> — {{ a.name }} <span class="text-muted">({{ a.serial }})</span>
+              <strong>{{ a.user or 'Onbekende gebruiker' }}</strong>
+              heeft
+              <strong>{{ a.action }}</strong>:
+              {{ a.name }}
+              <span class="text-muted">({{ a.serial }})</span>
             </div>
-            <small class="text-muted">{{ a.ts.strftime("%Y-%m-%d %H:%M") }}</small>
+            <small class="text-muted">
+              {{ a.ts.strftime("%Y-%m-%d %H:%M") }}
+            </small>
           </li>
         {% endfor %}
       </ul>
