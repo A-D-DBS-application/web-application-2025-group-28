@@ -264,7 +264,7 @@
               <datalist id="materiaal-namen">
                 {% for m in all_materials %}
                   {% if m.name %}
-                    <option value="{{ m.name }}">
+                    <option value="{{ m.name }}">{{ m.name }}</option>
                   {% endif %}
                 {% endfor %}
               </datalist>
@@ -469,7 +469,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const materiaalData = [
     {% for m in all_materials %}
       {
-        name: "{{ m.name|e if m.name }}",
+        name: "{{ m.name|e if m.name else '' }}",
         nummer: "{{ (m.nummer_op_materieel or '')|e }}",
         category: "{{ (m.category or '')|e }}"
       }{% if not loop.last %},{% endif %}

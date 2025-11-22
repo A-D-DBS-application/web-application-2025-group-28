@@ -173,7 +173,7 @@ def materiaal():
 
     total_items = Material.query.count()
 
-    # FIX: "in gebruik" = assigned_to OF site niet leeg
+    # "in gebruik" = assigned_to OF site niet leeg
     in_use = db.session.query(func.count(Material.id)).filter(
         (func.coalesce(Material.assigned_to, "") != "") |
         (func.coalesce(Material.site, "") != "")
@@ -195,44 +195,64 @@ def materiaal():
 @app.route("/materiaal/new", methods=["POST"])
 @login_required
 def materiaal_toevoegen():
+    """
+    Nieuw materiaal AANMAKEN in Supabase (tabel 'materials').
+    Dit is wat gebeurt via het plus-icoon.
+    """
     f = request.form
 
+    name = (f.get("name") or "").strip()
     serial = (f.get("serial") or "").strip()
     nummer = (f.get("nummer_op_materieel") or "").strip()
+    category = (f.get("category") or "").strip()
+    type_ = (f.get("type") or "").strip()
+    purchase_date_str = (f.get("purchase_date") or "").strip()
+    site = (f.get("site") or "").strip()
+    assigned_to = (f.get("assigned_to") or "").strip()
+    note = (f.get("note") or "").strip()
+    status = (f.get("status") or "goedgekeurd").strip()
+    inspection_status = (f.get("inspection_status") or "").strip()
 
-    if not serial:
-        flash("Serienummer is verplicht.", "danger")
+    if not name or not serial:
+        flash("Naam en serienummer zijn verplicht.", "danger")
         return redirect(url_for("materiaal"))
 
-    # afspraak: alleen materiaal dat al in Supabase bestaat
-    item = find_material(serial)
-    if not item:
-        flash("Materiaal bestaat niet in het datasysteem (Supabase).", "danger")
+    # check op dubbele serial
+    bestaand = find_material(serial)
+    if bestaand:
+        flash("Serienummer bestaat al in het systeem.", "danger")
         return redirect(url_for("materiaal"))
 
-    # update de bestaande rij met extra info
-    item.name = (f.get("name") or "").strip() or item.name
-    item.category = (f.get("category") or "").strip() or item.category
-    item.type = (f.get("type") or "").strip() or item.type
+    # nieuw Material-object (rij in Supabase)
+    item = Material(
+        name=name,
+        serial=serial,
+        category=category,
+        type=type_,
+        assigned_to=assigned_to if assigned_to else None,
+        site=site if site else None,
+        note=note if note else None,
+        status=status,
+        nummer_op_materieel=nummer if nummer else None
+    )
 
-    purchase_date = (f.get("purchase_date") or "").strip()
-    if purchase_date:
+    # aankoopdatum (optioneel) parsen
+    if purchase_date_str:
         from datetime import datetime as _dt
         try:
-            item.purchase_date = _dt.strptime(purchase_date, "%Y-%m-%d").date()
+            item.purchase_date = _dt.strptime(purchase_date_str, "%Y-%m-%d").date()
         except ValueError:
             pass
 
-    item.assigned_to = (f.get("assigned_to") or "").strip()
-    item.site = (f.get("site") or "").strip()
-    item.note = (f.get("note") or "").strip()
-    item.status = (f.get("status") or "goedgekeurd").strip()
-    item.nummer_op_materieel = nummer or item.nummer_op_materieel
+    # als je een kolom hebt voor keuring/inspection_status in je model, zet die hier:
+    if hasattr(item, "inspection_status"):
+        setattr(item, "inspection_status", inspection_status if inspection_status else None)
 
+    db.session.add(item)
     db.session.commit()
 
-    log_activity("Toegevoegd / bijgewerkt", item.name or "", item.serial or "")
-    flash("Materieel bijgewerkt in Supabase.", "success")
+    log_activity("Toegevoegd", item.name or "", item.serial or "")
+    flash("Nieuw materieel is toegevoegd aan Supabase.", "success")
     return redirect(url_for("materiaal"))
 
 
@@ -248,6 +268,10 @@ def materiaal_bewerken():
         return redirect(url_for("materiaal"))
 
     new_serial = (f.get("serial") or "").strip()
+    if not new_serial:
+        flash("Serienummer is verplicht.", "danger")
+        return redirect(url_for("materiaal"))
+
     if new_serial != original_serial and find_material(new_serial):
         flash("Nieuw serienummer bestaat al.", "danger")
         return redirect(url_for("materiaal"))
@@ -270,6 +294,11 @@ def materiaal_bewerken():
     item.note = (f.get("note") or "").strip()
     item.status = (f.get("status") or "goedgekeurd").strip()
     item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
+
+    # optioneel keuringstatus
+    inspection_status = (f.get("inspection_status") or "").strip()
+    if hasattr(item, "inspection_status"):
+        setattr(item, "inspection_status", inspection_status if inspection_status else None)
 
     db.session.commit()
 
@@ -300,6 +329,10 @@ def materiaal_verwijderen():
 @app.route("/materiaal/use", methods=["POST"])
 @login_required
 def materiaal_gebruiken():
+    """
+    Materieel in gebruik nemen.
+    HIER hoort de foutmelding “Materiaal niet gevonden in het datasysteem”.
+    """
     f = request.form
 
     name = (f.get("name") or "").strip()
