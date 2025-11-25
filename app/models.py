@@ -35,6 +35,8 @@ class Material(db.Model):
     assigned_to = db.Column("assigned_to", db.String, nullable=True)
     site = db.Column("site", db.String, nullable=True)
     note = db.Column("note", db.String, nullable=True)
+    documentation_path = db.Column("documentation_path", db.Text, nullable=True)
+    safety_sheet_path = db.Column("safety_sheet_path", db.Text, nullable=True)
 
     # nieuw veld
     nummer_op_materieel = db.Column("nummer_op_materieel", db.String, nullable=True)

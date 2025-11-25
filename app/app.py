@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from datetime import datetime
 from functools import wraps
 
+
 from config import Config
 from models import db, Gebruiker, Material
 from sqlalchemy import or_, func
@@ -190,6 +191,52 @@ def materiaal():
         all_materials=all_materials,
     )
 
+# -----------------------------------------------------
+# UPLOAD CONFIGURATIE – documentatie & veiligheidsfiches
+# -----------------------------------------------------
+import os
+from werkzeug.utils import secure_filename
+
+BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
+DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
+SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
+
+os.makedirs(DOC_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
+
+app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER
+app.config["SAFETY_UPLOAD_FOLDER"] = SAFETY_UPLOAD_FOLDER
+
+# -----------------------------------------------------
+# BESTAND UPLOAD HELPER – documentatie & veiligheidsfiches
+# -----------------------------------------------------
+def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
+    """
+    Sla een geüpload bestand op en geef het relatieve pad terug.
+    (bv. 'uploads/docs/BOOR123_foto.pdf')
+    Retourneert None wanneer er geen geldig bestand werd meegegeven.
+    """
+
+    # Geen bestand → niets opslaan
+    if not file_storage or not file_storage.filename:
+        return None
+
+    # Veilige bestandsnaam genereren
+    filename = secure_filename(file_storage.filename)
+    final_filename = f"{prefix}_{filename}"
+
+    # Volledig pad op schijf
+    full_path = os.path.join(upload_folder, final_filename)
+    file_storage.save(full_path)
+
+    # Relatieve map binnen /static bepalen
+    if upload_folder == app.config["DOC_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/docs"
+    else:
+        relative_folder = "uploads/safety"
+
+    # Relatief pad teruggeven (voor opslag in DB)
+    return f"{relative_folder}/{final_filename}"
 
 # ---------------- Materiaal: toevoegen (via + in KPI) ----------------
 @app.route("/materiaal/new", methods=["POST"])
@@ -213,6 +260,10 @@ def materiaal_toevoegen():
     status = (f.get("status") or "goedgekeurd").strip()
     inspection_status = (f.get("inspection_status") or "").strip()
 
+    # bestanden zoals documentatie & veiligheidsfiche ophalen
+    documentation_file = request.files.get("documentation")
+    safety_file = request.files.get("safety_sheet")
+
     if not name or not serial:
         flash("Naam en serienummer zijn verplicht.", "danger")
         return redirect(url_for("materiaal"))
@@ -222,6 +273,14 @@ def materiaal_toevoegen():
     if bestaand:
         flash("Serienummer bestaat al in het systeem.", "danger")
         return redirect(url_for("materiaal"))
+
+    # uploads opslaan (relatieve paden)
+    documentation_path = save_upload(
+        documentation_file, app.config["DOC_UPLOAD_FOLDER"], f"{serial}_doc"
+    )
+    safety_sheet_path = save_upload(
+        safety_file, app.config["SAFETY_UPLOAD_FOLDER"], f"{serial}_safety"
+    )
 
     # nieuw Material-object (rij in Supabase)
     item = Material(
@@ -233,7 +292,9 @@ def materiaal_toevoegen():
         site=site if site else None,
         note=note if note else None,
         status=status,
-        nummer_op_materieel=nummer if nummer else None
+        nummer_op_materieel=nummer if nummer else None,
+        documentation_path=documentation_path,
+        safety_sheet_path=safety_sheet_path,
     )
 
     # aankoopdatum (optioneel) parsen
@@ -299,6 +360,20 @@ def materiaal_bewerken():
     inspection_status = (f.get("inspection_status") or "").strip()
     if hasattr(item, "inspection_status"):
         setattr(item, "inspection_status", inspection_status if inspection_status else None)
+
+    # NIEUW: bestanden (overschrijven als je er nieuwe uploadt)
+    documentation_file = request.files.get("documentation")
+    safety_file = request.files.get("safety_sheet")
+
+    if documentation_file and documentation_file.filename:
+        item.documentation_path = save_upload(
+            documentation_file, app.config["DOC_UPLOAD_FOLDER"], f"{item.serial}_doc"
+        )
+
+    if safety_file and safety_file.filename:
+        item.safety_sheet_path = save_upload(
+            safety_file, app.config["SAFETY_UPLOAD_FOLDER"], f"{item.serial}_safety"
+        )
 
     db.session.commit()
 

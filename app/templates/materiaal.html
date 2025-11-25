@@ -167,7 +167,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('materiaal_toevoegen') }}">
+      <form method="post" action="{{ url_for('materiaal_toevoegen') }}" enctype="multipart/form-data">
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
@@ -231,6 +231,26 @@
               <label class="form-label">Keuringstatus (optioneel)</label>
               <input name="inspection_status" class="form-control" placeholder="Bv. Keuring 2025-05">
             </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Documentatie (foto of PDF)</label>
+              <input 
+                type="file"
+                name="documentation"
+                class="form-control"
+                accept="image/*,.pdf"
+              >
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Veiligheidsfiche (handleiding)</label>
+              <input
+                type="file"
+                name="safety_sheet"
+                class="form-control"
+                accept="image/*,.pdf">
+            </div>
+            
           </div>
         </div>
         <div class="modal-footer">
