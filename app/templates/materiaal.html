@@ -335,7 +335,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('materiaal_bewerken') }}">
+      <form method="post" action="{{ url_for('materiaal_bewerken') }}" enctype="multipart/form-data">
         <div class="modal-body">
           <input type="hidden" name="original_serial" id="edit-original-serial">
 
@@ -399,6 +399,26 @@
             <div class="col-md-6">
               <label class="form-label">Keuringstatus (optioneel)</label>
               <input name="inspection_status" id="edit-inspection_status" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Documentatie (foto of PDF)</label>
+              <input
+                type="file"
+                name="documentation"
+                class="form-control"
+                accept="image/*,.pdf"
+              >
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Veiligheidsfiche (handleiding)</label>
+              <input
+                type="file"
+                name="safety_sheet"
+                class="form-control"
+                accept="image/*,.pdf"
+              >
             </div>
           </div>
         </div>
