@@ -1,35 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header">
-  <div>
-    <h2 class="h-title">Dashboard</h2>
-    <div class="h-sub">Overzicht van materieelbeheer</div>
-  </div>
-  <div class="hero-image" aria-hidden="true"></div>
-</div>
-
-<!-- KPI's -->
-<div class="grid grid-top">
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 18px;">📦</span>
-      Totaal materiaal
+<div class="dashboard-top-section">
+  <div class="dashboard-left">
+    <div class="section-header">
+      <div>
+        <h2 class="h-title">Dashboard</h2>
+        <div class="h-sub">Overzicht van materieelbeheer</div>
+      </div>
     </div>
-    <div class="kpi-value">{{ total_items }}</div>
-    <div class="kpi-sub">Items in het systeem</div>
-  </div>
 
-  <div class="card kpi warn">
-    <div class="kpi-title">
-      <span class="kpi-alert">⚠</span>
-      Keuring vereiste
+    <!-- KPI's -->
+    <div class="grid grid-top">
+      <div class="card kpi">
+        <div class="kpi-title">
+          <span style="font-size: 18px;">📦</span>
+          Totaal materiaal
+        </div>
+        <div class="kpi-value">{{ total_items }}</div>
+        <div class="kpi-sub">Items in het systeem</div>
+      </div>
+
+      <div class="card kpi warn">
+        <div class="kpi-title">
+          <span class="kpi-alert">⚠</span>
+          Keuring vereiste
+        </div>
+        <div class="kpi-value">{{ to_inspect }}</div>
+        <div class="kpi-sub">Items te keuren</div>
+      </div>
     </div>
-    <div class="kpi-value">{{ to_inspect }}</div>
-    <div class="kpi-sub">Items te keuren</div>
   </div>
 
-  <div class="hero-image" aria-hidden="true"></div>
+  <div class="hero-image">
+    <img src="{{ url_for('static', filename='img/dashboard-hero.jpg.png') }}" alt="Dashboard hero" class="hero-image-img">
+  </div>
 </div>
 
 <!-- Zoekbalk: stuurt naar /materiaal met q=... -->

@@ -229,12 +229,22 @@ body {
 
 /* ================== DASHBOARD HEADER ================== */
 
-.section-header {
+.dashboard-top-section {
   display: grid;
   grid-template-columns: 1fr 400px;
-  gap: 24px;
+  gap: 0;
   align-items: start;
   margin-bottom: 24px;
+}
+
+.dashboard-left {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.section-header {
+  margin-bottom: 0;
 }
 
 .h-title {
@@ -254,13 +264,23 @@ body {
 
 /* Hero/banner image on the right */
 .hero-image {
-  height: 160px;
   border-radius: var(--radius);
   border: 1px solid var(--line);
-  background-image: url("/static/img/dashboard-hero.jpg");
-  background-size: cover;
-  background-position: center;
   box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  background: #f3f4f6;
+  display: flex;
+  align-self: stretch;
+  height: 100%;
+  margin-left: -12px;
+  z-index: 1;
+}
+
+.hero-image-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* ================== CARDS ================== */
@@ -277,9 +297,10 @@ body {
 
 .grid-top {
   display: grid;
-  grid-template-columns: 300px 300px 1fr;
+  grid-template-columns: 300px 300px;
   gap: 20px;
-  margin-bottom: 24px;
+  margin-bottom: 0;
+  align-items: start;
 }
 
 .kpi {
@@ -323,6 +344,15 @@ body {
   color: var(--muted);
   font-size: 13px;
   margin-top: 8px;
+}
+
+/* Keuring vereiste styling */
+.kpi.warn .kpi-title {
+  color: #dc2626;
+}
+
+.kpi.warn .kpi-value {
+  color: #dc2626;
 }
 
 /* ================== SEARCH BAR ================== */
