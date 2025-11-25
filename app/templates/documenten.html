@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header">
+  <div>
+    <h2 class="h-title">Documenten</h2>
+    <div class="h-sub">Overzicht van alle documenten en veiligheidscertificaten</div>
+  </div>
+</div>
+
+<!-- KPI's -->
+<div class="grid grid-top documenten-grid" style="margin-top:16px; grid-template-columns: 300px 300px;">
+  <div class="card kpi">
+    <div class="kpi-title">
+      <span style="font-size: 14px;">📄</span>
+      Totaal Documenten
+    </div>
+    <div class="kpi-value">{{ total_docs }}</div>
+    <div class="kpi-sub">Documenten in het systeem</div>
+  </div>
+
+  <div class="card kpi">
+    <div class="kpi-title">
+      <span style="font-size: 14px;">🛡️</span>
+      Veiligheidscertificaten
+    </div>
+    <div class="kpi-value">{{ safety_certs }}</div>
+    <div class="kpi-sub">Certificaten beschikbaar</div>
+  </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="card panel" style="margin-top:24px;">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <div class="panel-title">Documentenoverzicht</div>
+      <div class="panel-sub">Zoek en filter documenten</div>
+    </div>
+    <button class="btn btn-outline-secondary btn-sm">
+      <span>🔽</span> Exporteren
+    </button>
+  </div>
+
+  <!-- Search Bar -->
+  <form method="get" action="{{ url_for('documenten') }}" class="mb-3">
+    <div class="row g-2">
+      <div class="col-12 col-md-8">
+        <div class="input-group">
+          <span class="input-group-text">🔍</span>
+          <input 
+            type="text" 
+            name="q" 
+            class="form-control" 
+            placeholder="Zoek documenten..." 
+            value="{{ search_query }}"
+          >
+        </div>
+      </div>
+      <div class="col-12 col-md-4">
+        <button type="submit" class="btn btn-dark w-100">Zoeken</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Document Type Filters -->
+  <div class="mb-3">
+    <div class="btn-group flex-wrap" role="group">
+      <a href="{{ url_for('documenten', q=search_query, type='alle') }}" 
+         class="btn btn-sm {% if not selected_type or selected_type == 'alle' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Alle
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='handleiding') }}" 
+         class="btn btn-sm {% if selected_type == 'handleiding' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Handleiding
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='keuringscertificaat') }}" 
+         class="btn btn-sm {% if selected_type == 'keuringscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Keuringscertificaat
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='aankoopfactuur') }}" 
+         class="btn btn-sm {% if selected_type == 'aankoopfactuur' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Aankoopfactuur
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='servicerapport') }}" 
+         class="btn btn-sm {% if selected_type == 'servicerapport' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Servicerapport
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='veiligheidscertificaat') }}" 
+         class="btn btn-sm {% if selected_type == 'veiligheidscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Veiligheidscertificaat
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='overige') }}" 
+         class="btn btn-sm {% if selected_type == 'overige' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Overige
+      </a>
+    </div>
+  </div>
+
+  <!-- Documents Table -->
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Naam</th>
+          <th>Materieel</th>
+          <th>Datum</th>
+          <th>Grootte</th>
+          <th>Geüpload door</th>
+          <th>Status</th>
+          <th class="text-end">Acties</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if documents %}
+          {% for doc in documents %}
+          <tr>
+            <td>
+              <span style="font-size: 20px;">📄</span>
+            </td>
+            <td>
+              <strong>{{ doc.name }}</strong>
+            </td>
+            <td>
+              {{ doc.material }}<br>
+              <small class="text-muted">{{ doc.material_serial }}</small>
+            </td>
+            <td>{{ doc.date }}</td>
+            <td>{{ doc.size }}</td>
+            <td>{{ doc.uploaded_by }}</td>
+            <td>
+              <span class="badge bg-secondary">{{ doc.status }}</span>
+            </td>
+            <td class="text-end">
+              {% if doc.path %}
+                <a href="{{ url_for('static', filename=doc.path) }}" class="btn btn-sm btn-outline-secondary" download>
+                  ⬇ Download
+                </a>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary" disabled>⬇ Download</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+              Geen documenten gevonden
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if documents %}
+    <div class="mt-3 text-muted">
+      {{ documents|length }} document{{ 'en' if documents|length != 1 else '' }} gevonden
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+

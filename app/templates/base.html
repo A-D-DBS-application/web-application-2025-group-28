@@ -50,6 +50,12 @@
         >
           Keuringen
         </a>
+        <a
+          class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
+          href="{{ url_for('documenten') }}"
+        >
+          Documenten
+        </a>
       </nav>
     </div>
 

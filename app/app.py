@@ -478,11 +478,93 @@ def materiaal_gebruiken():
     return redirect(url_for("materiaal"))
 
 
-# ---------------- Keuringen dummy ----------------
+# ---------------- Keuringen ----------------
 @app.route("/keuringen")
 @login_required
 def keuringen():
-    return redirect(url_for("materiaal"))
+    return render_template("keuringen.html")
+
+
+# ---------------- Documenten ----------------
+@app.route("/documenten")
+@login_required
+def documenten():
+    """Documenten overzicht met zoeken en filteren"""
+    import os
+    
+    q = (request.args.get("q") or "").strip().lower()
+    doc_type = (request.args.get("type") or "").strip().lower()
+    
+    # Verzamel alle documenten uit Material records
+    all_materials = Material.query.all()
+    documents = []
+    
+    for material in all_materials:
+        # Documentatie toevoegen
+        if material.documentation_path:
+            doc_name = os.path.basename(material.documentation_path)
+            # Bepaal type op basis van bestandsnaam
+            doc_type_from_name = "Handleiding" if "handleiding" in doc_name.lower() or "manual" in doc_name.lower() else "Overige"
+            
+            documents.append({
+                "type": doc_type_from_name,
+                "name": doc_name,
+                "material": material.name or "Onbekend",
+                "material_serial": material.serial,
+                "date": material.created_at.strftime("%Y-%m-%d") if material.created_at else "",
+                "size": "2.3 MB",  # Dummy size
+                "uploaded_by": material.assigned_to or "Systeem",
+                "path": material.documentation_path,
+                "status": doc_type_from_name
+            })
+        
+        # Veiligheidsfiche toevoegen
+        if material.safety_sheet_path:
+            doc_name = os.path.basename(material.safety_sheet_path)
+            documents.append({
+                "type": "Veiligheidscertificaat",
+                "name": doc_name,
+                "material": material.name or "Onbekend",
+                "material_serial": material.serial,
+                "date": material.created_at.strftime("%Y-%m-%d") if material.created_at else "",
+                "size": "456 KB",  # Dummy size
+                "uploaded_by": material.assigned_to or "Systeem",
+                "path": material.safety_sheet_path,
+                "status": "Veiligheidscertificaat"
+            })
+    
+    # Voeg dummy documenten toe voor voorbeelden
+    documents.append({
+        "type": "Servicerapport",
+        "name": "Service-Rapport-Augustus-2024.pdf",
+        "material": "Compressor Atlas Copco",
+        "material_serial": "CP-2022-112",
+        "date": "2024-08-01",
+        "size": "1.1 MB",
+        "uploaded_by": "Atlas Copco",
+        "path": None,
+        "status": "Servicerapport"
+    })
+    
+    # Filter op zoekterm
+    if q:
+        documents = [d for d in documents if q in d["name"].lower() or q in d["material"].lower()]
+    
+    # Filter op type
+    if doc_type and doc_type != "alle":
+        documents = [d for d in documents if d["type"].lower() == doc_type.lower()]
+    
+    total_docs = len(documents)
+    safety_certs = len([d for d in documents if d["type"] == "Veiligheidscertificaat"])
+    
+    return render_template(
+        "documenten.html",
+        documents=documents,
+        total_docs=total_docs,
+        safety_certs=safety_certs,
+        search_query=q,
+        selected_type=doc_type
+    )
 
 
 if __name__ == "__main__":
