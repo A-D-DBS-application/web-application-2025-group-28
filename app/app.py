@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, g
+from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify
 from datetime import datetime
 from functools import wraps
 
@@ -145,6 +145,40 @@ def dashboard():
         to_inspect=to_inspect,
         recent_activity=recent
     )
+
+
+@app.route("/api/search", methods=["GET"])
+@login_required
+def api_search():
+    """API endpoint for searching materials - returns JSON"""
+    q = (request.args.get("q") or "").strip().lower()
+    
+    if not q:
+        return {"items": []}, 200
+    
+    like = f"%{q}%"
+    items = Material.query.filter(
+        or_(Material.name.ilike(like), Material.serial.ilike(like))
+    ).limit(10).all()
+    
+    results = []
+    for item in items:
+        results.append({
+            "serial": item.serial,
+            "name": item.name,
+            "category": item.category or "",
+            "type": item.type or "",
+            "status": item.status or "",
+            "assigned_to": item.assigned_to or "",
+            "site": item.site or "",
+            "purchase_date": item.purchase_date.strftime("%Y-%m-%d") if item.purchase_date else "",
+            "note": item.note or "",
+            "nummer_op_materieel": item.nummer_op_materieel or "",
+            "documentation_path": item.documentation_path or "",
+            "safety_sheet_path": item.safety_sheet_path or "",
+        })
+    
+    return jsonify({"items": results}), 200
 
 
 # ---------------- Materiaal-overzicht ----------------

@@ -1,50 +1,54 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header">
-  <div>
-    <h2 class="h-title">Dashboard</h2>
-    <div class="h-sub">Overzicht van materieelbeheer</div>
+<div class="dashboard-top-section">
+  <div class="dashboard-left">
+    <div class="section-header">
+      <div>
+        <h2 class="h-title">Dashboard</h2>
+        <div class="h-sub">Overzicht van materieelbeheer</div>
+      </div>
+    </div>
+
+    <!-- KPI's -->
+    <div class="grid grid-top">
+      <div class="card kpi">
+        <div class="kpi-title">
+          <span style="font-size: 18px;">📦</span>
+          Totaal materiaal
+        </div>
+        <div class="kpi-value">{{ total_items }}</div>
+        <div class="kpi-sub">Items in het systeem</div>
+      </div>
+
+      <div class="card kpi warn">
+        <div class="kpi-title">
+          <span class="kpi-alert">⚠</span>
+          Keuring vereiste
+        </div>
+        <div class="kpi-value">{{ to_inspect }}</div>
+        <div class="kpi-sub">Items te keuren</div>
+      </div>
+    </div>
   </div>
-  <div class="hero-image" aria-hidden="true"></div>
+
+  <div class="hero-image">
+    <img src="{{ url_for('static', filename='img/dashboard-hero.jpg.png') }}" alt="Dashboard hero" class="hero-image-img">
+  </div>
 </div>
 
-<!-- KPI's -->
-<div class="grid grid-top">
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 18px;">📦</span>
-      Totaal materiaal
-    </div>
-    <div class="kpi-value">{{ total_items }}</div>
-    <div class="kpi-sub">Items in het systeem</div>
-  </div>
-
-  <div class="card kpi warn">
-    <div class="kpi-title">
-      <span class="kpi-alert">⚠</span>
-      Keuring vereiste
-    </div>
-    <div class="kpi-value">{{ to_inspect }}</div>
-    <div class="kpi-sub">Items te keuren</div>
-  </div>
-
-  <div class="hero-image" aria-hidden="true"></div>
-</div>
-
-<!-- Zoekbalk: stuurt naar /materiaal met q=... -->
-<form class="card search" method="get" action="{{ url_for('materiaal') }}">
+<!-- Zoekbalk: zoekt via API en toont popup -->
+<form class="card search" id="searchForm" onsubmit="return false;">
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
     <input
       type="text"
-      name="q"
+      id="searchInput"
       class="search-input form-control"
       placeholder="Zoek een item in het systeem"
-      value="{{ request.args.get('q','') }}"
       aria-label="Zoek in materiaal"
     >
-    <button class="btn btn-primary" type="submit">Zoeken</button>
+    <button class="btn btn-primary" type="submit" id="searchBtn">Zoeken</button>
   </div>
 </form>
 
@@ -82,5 +86,233 @@
     <div class="text-muted">Nog geen keuringen gepland…</div>
   </div>
 </div>
+
+<!-- Search Results Modal -->
+<div class="modal fade" id="searchResultsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalTitle">Zoekresultaten</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+      <div class="modal-body" id="searchModalBody">
+        <div class="text-muted">Zoeken...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const searchForm = document.getElementById('searchForm');
+  const searchInput = document.getElementById('searchInput');
+  const searchBtn = document.getElementById('searchBtn');
+  const searchModal = new bootstrap.Modal(document.getElementById('searchResultsModal'));
+  
+  function performSearch() {
+    const query = searchInput.value.trim();
+    if (!query) {
+      return;
+    }
+    
+    const modalBody = document.getElementById('searchModalBody');
+    const modalTitle = document.getElementById('searchModalTitle');
+    modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
+    modalTitle.textContent = `Zoekresultaten voor "${query}"`;
+    searchModal.show();
+    
+    fetch(`/api/search?q=${encodeURIComponent(query)}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.items && data.items.length > 0) {
+          // If single result, show detailed view; otherwise show list
+          if (data.items.length === 1) {
+            const item = data.items[0];
+            const statusClass = item.status === 'goedgekeurd' ? 'bg-dark' : 
+                               item.status === 'afgekeurd' ? 'bg-danger' : 'bg-secondary';
+            const statusText = item.status === 'goedgekeurd' ? 'Operationeel' : 
+                              item.status === 'afgekeurd' ? 'Keuring Vereist' : (item.status || 'Onbekend');
+            
+            // Helper function to display value or "onbekend"
+            const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
+            
+            modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
+            modalBody.innerHTML = `
+              <div class="material-detail">
+                <div class="mb-3">
+                  <strong>ID:</strong> ${displayValue(item.serial)}
+                </div>
+                <div class="row g-3 mb-3">
+                  <div class="col-md-6">
+                    <strong>Categorie:</strong><br>
+                    ${displayValue(item.category)}
+                  </div>
+                  <div class="col-md-6">
+                    <strong>Type:</strong><br>
+                    ${displayValue(item.type)}
+                  </div>
+                  <div class="col-md-6">
+                    <strong>Status:</strong><br>
+                    <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
+                  </div>
+                  <div class="col-md-6">
+                    <strong>Toegewezen aan:</strong><br>
+                    ${displayValue(item.assigned_to)}
+                  </div>
+                  <div class="col-md-6">
+                    <strong>Werf:</strong><br>
+                    ${displayValue(item.site)}
+                  </div>
+                  <div class="col-md-6">
+                    <strong>Aankoopdatum:</strong><br>
+                    ${displayValue(item.purchase_date)}
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <strong>Opmerking:</strong><br>
+                  ${displayValue(item.note)}
+                </div>
+                <div class="d-flex gap-2 mt-4">
+                  <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-outline-secondary">Bewerken</a>
+                  <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-dark">Bekijk op Materiaal pagina</a>
+                </div>
+              </div>
+            `;
+          } else {
+            // Multiple results - show list
+            let html = '<div class="list-group" style="max-height: 500px; overflow-y: auto;">';
+            data.items.forEach(item => {
+              const statusClass = item.status === 'goedgekeurd' ? 'bg-dark' : 
+                                 item.status === 'afgekeurd' ? 'bg-danger' : 'bg-secondary';
+              const statusText = item.status === 'goedgekeurd' ? 'Operationeel' : 
+                                item.status === 'afgekeurd' ? 'Keuring Vereist' : (item.status || 'Onbekend');
+              html += `
+                <div class="list-group-item list-group-item-action" 
+                     style="cursor: pointer; transition: background-color 0.2s;" 
+                     onmouseover="this.style.backgroundColor='#f8f9fa'" 
+                     onmouseout="this.style.backgroundColor=''" 
+                     onclick="showMaterialDetail('${escapeHtml(item.serial)}')">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                      <h6 class="mb-1 fw-bold">${escapeHtml(item.name)}</h6>
+                      <small class="text-muted">ID: ${escapeHtml(item.serial)}</small>
+                    </div>
+                    <span class="badge ${statusClass} ms-2">${escapeHtml(statusText)}</span>
+                  </div>
+                </div>
+              `;
+            });
+            html += '</div>';
+            modalBody.innerHTML = html;
+          }
+        } else {
+          modalBody.innerHTML = '<div class="text-muted text-center py-4">Geen resultaten gevonden.</div>';
+        }
+      })
+      .catch(error => {
+        console.error('Search error:', error);
+        modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het zoeken.</div>';
+      });
+  }
+  
+  searchForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    performSearch();
+  });
+  
+  searchBtn.addEventListener('click', function(e) {
+    e.preventDefault();
+    performSearch();
+  });
+  
+  function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+  }
+  
+  window.showMaterialDetail = function(serial) {
+    // Re-fetch and show single item detail
+    const modalBody = document.getElementById('searchModalBody');
+    const modalTitle = document.getElementById('searchModalTitle');
+    modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
+    
+    fetch(`/api/search?q=${encodeURIComponent(serial)}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Network response was not ok');
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.items && data.items.length > 0) {
+          const item = data.items[0];
+          const statusClass = item.status === 'goedgekeurd' ? 'bg-dark' : 
+                             item.status === 'afgekeurd' ? 'bg-danger' : 'bg-secondary';
+          const statusText = item.status === 'goedgekeurd' ? 'Operationeel' : 
+                            item.status === 'afgekeurd' ? 'Keuring Vereist' : (item.status || 'Onbekend');
+          
+          // Helper function to display value or "onbekend"
+          const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
+          
+          modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
+          modalBody.innerHTML = `
+            <div class="material-detail">
+              <div class="mb-3">
+                <strong>ID:</strong> ${displayValue(item.serial)}
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <strong>Categorie:</strong><br>
+                  ${displayValue(item.category)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Type:</strong><br>
+                  ${displayValue(item.type)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Status:</strong><br>
+                  <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
+                </div>
+                <div class="col-md-6">
+                  <strong>Toegewezen aan:</strong><br>
+                  ${displayValue(item.assigned_to)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Werf:</strong><br>
+                  ${displayValue(item.site)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Aankoopdatum:</strong><br>
+                  ${displayValue(item.purchase_date)}
+                </div>
+              </div>
+              <div class="mb-3">
+                <strong>Opmerking:</strong><br>
+                ${displayValue(item.note)}
+              </div>
+              <div class="d-flex gap-2 mt-4">
+                <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-outline-secondary">Bewerken</a>
+                <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-dark">Bekijk op Materiaal pagina</a>
+              </div>
+            </div>
+          `;
+        } else {
+          modalBody.innerHTML = '<div class="alert alert-warning">Item niet gevonden.</div>';
+        }
+      })
+      .catch(error => {
+        console.error('Error loading material detail:', error);
+        modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
+      });
+  };
+});
+</script>
 
 {% endblock %}
