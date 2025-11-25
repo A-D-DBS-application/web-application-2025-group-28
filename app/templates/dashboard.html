@@ -10,24 +10,32 @@
 </div>
 
 <!-- KPI's -->
-<div class="grid grid-top" style="margin-top:16px;">
+<div class="grid grid-top">
   <div class="card kpi">
-    <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
+    <div class="kpi-title">
+      <span style="font-size: 18px;">📦</span>
+      Totaal materiaal
+    </div>
     <div class="kpi-value">{{ total_items }}</div>
     <div class="kpi-sub">Items in het systeem</div>
   </div>
 
   <div class="card kpi warn">
-    <div class="kpi-title">Keuring vereiste <span class="kpi-alert">⚠</span></div>
+    <div class="kpi-title">
+      <span class="kpi-alert">⚠</span>
+      Keuring vereiste
+    </div>
     <div class="kpi-value">{{ to_inspect }}</div>
     <div class="kpi-sub">Items te keuren</div>
   </div>
+
+  <div class="hero-image" aria-hidden="true"></div>
 </div>
 
 <!-- Zoekbalk: stuurt naar /materiaal met q=... -->
-<form class="card search" method="get" action="{{ url_for('materiaal') }}" style="margin-top:16px;">
+<form class="card search" method="get" action="{{ url_for('materiaal') }}">
   <div class="search-wrap">
-    <span class="search-icon">🔎</span>
+    <span class="search-icon">🔍</span>
     <input
       type="text"
       name="q"
@@ -36,18 +44,18 @@
       value="{{ request.args.get('q','') }}"
       aria-label="Zoek in materiaal"
     >
-    <button class="btn btn-primary ms-2" type="submit">Zoeken</button>
+    <button class="btn btn-primary" type="submit">Zoeken</button>
   </div>
 </form>
 
 <!-- Panelen -->
-<div class="grid grid-bottom" style="margin-top:16px;">
+<div class="grid grid-bottom">
   <div class="card panel">
     <div class="panel-title">Recente Activiteit</div>
     <div class="panel-sub">Laatste wijzigingen in het systeem</div>
 
     {% if recent_activity and recent_activity|length > 0 %}
-      <ul class="list-group list-group-flush mt-2">
+      <ul class="list-group list-group-flush">
         {% for a in recent_activity %}
           <li class="list-group-item d-flex justify-content-between align-items-center">
             <div>
@@ -64,13 +72,14 @@
         {% endfor %}
       </ul>
     {% else %}
-      <div class="text-muted mt-2">Nog geen activiteit…</div>
+      <div class="text-muted">Nog geen activiteit…</div>
     {% endif %}
   </div>
 
   <div class="card panel">
     <div class="panel-title">Aankomende Keuringen</div>
     <div class="panel-sub">Volgende 30 dagen</div>
+    <div class="text-muted">Nog geen keuringen gepland…</div>
   </div>
 </div>
 
