@@ -61,6 +61,13 @@ body {
 }
 
 /* Brand/logo */
+.boek {
+  margin-bottom: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
 .brand {
   margin-bottom: 32px;
   display: flex;
@@ -288,8 +295,9 @@ body {
 .materiaal-grid .hero-image {
   margin-left: 0;
   z-index: 0;
-  height: 100%;
-  min-height: 47px;
+  height: 100% !important;
+  min-height: 110px !important;
+  overflow: hidden;
 }
 
 .hero-image-img {
@@ -336,21 +344,25 @@ body {
   align-items: stretch;
 }
 
-/* Ensure materiaal page KPI boxes match dashboard size exactly */
-.materiaal-grid .kpi {
-  width: 300px;
-  padding: 6px 12px;
-  min-height: 47px;
-  height: auto;
-}
-
+/* Standaard KPI-styling (dashboard etc.) */
 .kpi {
   padding: 16px 20px;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 140px;
+  min-height: 140px; /* hoge tegels op andere pagina's */
+}
+
+/* KPI-boxen voor Materiaal-pagina */
+.materiaal-grid .kpi {
+  width: 300px !important;
+  padding: 10px 16px !important;
+  min-height: 110px !important;
+  height: 110px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
 }
 
 .kpi-title {
@@ -367,9 +379,10 @@ body {
 }
 
 .materiaal-grid .kpi-title {
-  font-size: 9px;
-  margin-bottom: 2px;
-  gap: 4px;
+  font-size: 10px !important;
+  margin-bottom: 2px !important;
+  gap: 4px !important;
+  line-height: 1.2 !important;
 }
 
 .kpi-dot {
@@ -394,8 +407,9 @@ body {
 }
 
 .materiaal-grid .kpi-value {
-  font-size: 20px;
-  margin: 2px 0;
+  font-size: 26px !important;
+  margin: 3px 0 !important;
+  line-height: 1 !important;
 }
 
 .kpi-sub {
@@ -406,8 +420,9 @@ body {
 }
 
 .materiaal-grid .kpi-sub {
-  font-size: 9px;
-  margin-top: 2px;
+  font-size: 10px !important;
+  margin-top: 2px !important;
+  line-height: 1.2 !important;
 }
 
 /* Keuring vereiste styling */
