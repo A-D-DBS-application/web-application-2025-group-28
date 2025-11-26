@@ -1,13 +1,24 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    session,
+    g,
+    jsonify,
+)
 from datetime import datetime
 from functools import wraps
 import os
 
-from config import Config
-from models import db, Gebruiker, Material
-from sqlalchemy import or_, func
-from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+
+from config import Config
+from models import db, Gebruiker, Material, Activity
+from sqlalchemy import or_, func
 
 
 app = Flask(__name__)
@@ -18,21 +29,23 @@ app.config.from_object(Config)
 db.init_app(app)
 
 
-# ---------------- Recente activiteit (in-memory) ----------------
-ACTIVITY_LOG: list[dict] = []
-
-
+# ---------------- Recente activiteit (persistent in DB) ----------------
 def log_activity(action: str, name: str, serial: str):
-    """Sla een activiteit op, inclusief welke gebruiker het deed."""
-    ACTIVITY_LOG.insert(0, {
-        "ts": datetime.now(),
-        "action": action,
-        "name": name,
-        "serial": serial,
-        "user": g.user.Naam if getattr(g, "user", None) and g.user.Naam else "Onbekend"
-    })
-    if len(ACTIVITY_LOG) > 50:
-        ACTIVITY_LOG.pop()
+    """Sla een activiteit op in de activity_log tabel."""
+    user_name = (
+        g.user.Naam
+        if getattr(g, "user", None) is not None and g.user.Naam
+        else "Onbekend"
+    )
+
+    evt = Activity(
+        action=action,
+        name=name,
+        serial=serial,
+        user_name=user_name,
+    )
+    db.session.add(evt)
+    db.session.commit()
 
 
 # ---------------- Helper: materiaal zoeken ----------------
@@ -49,6 +62,7 @@ def login_required(view):
         if session.get("user_email") is None:
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
+
     return wrapped
 
 
@@ -67,7 +81,7 @@ def inject_user():
     return {"current_user": g.user}
 
 
-# ---------------- Auth routes (nu mét wachtwoord) ----------------
+# ---------------- Auth routes ----------------
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
@@ -75,45 +89,23 @@ def signup():
         email = (request.form.get("email") or "").strip().lower()
         functie = (request.form.get("functie") or "").strip()
         password = (request.form.get("password") or "").strip()
-        password_confirm = (request.form.get("password_confirm") or "").strip()
 
-        # Basisvalidatie
         if not email:
             flash("E-mail is verplicht.", "danger")
             return render_template("auth_signup.html")
 
-        if not password or not password_confirm:
-            flash("Wachtwoord en bevestiging zijn verplicht.", "danger")
-            return render_template("auth_signup.html")
-
-        if password != password_confirm:
-            flash("De twee wachtwoorden komen niet overeen.", "danger")
-            return render_template("auth_signup.html")
-
-        # Bestaat gebruiker al?
-        existing = Gebruiker.query.filter_by(Email=email).first()
-
-        if existing and existing.password_hash:
-            # Gebruiker bestaat al mét wachtwoord → doorsturen naar login
+        # bestaat al in Supabase?
+        if Gebruiker.query.filter_by(Email=email).first():
             flash("E-mail bestaat al. Log in a.u.b.", "warning")
             return redirect(url_for("login", email=email))
 
-        if existing and not existing.password_hash:
-            # Gebruiker bestond al zonder wachtwoord → upgrade account
-            existing.Naam = naam or existing.Naam
-            existing.Functie = functie or existing.Functie
-            existing.password_hash = generate_password_hash(password)
-            user = existing
-        else:
-            # Nieuwe gebruiker
-            user = Gebruiker(
-                Naam=naam,
-                Email=email,
-                Functie=functie,
-                password_hash=generate_password_hash(password),
-            )
-            db.session.add(user)
+        new_user = Gebruiker(Naam=naam, Email=email, Functie=functie)
 
+        # wachtwoord optioneel: als je een veld hebt, wordt het gehashed opgeslagen
+        if password:
+            new_user.password_hash = generate_password_hash(password)
+
+        db.session.add(new_user)
         db.session.commit()
 
         session["user_email"] = email
@@ -130,26 +122,32 @@ def login():
         email = (request.form.get("email") or "").strip().lower()
         password = (request.form.get("password") or "").strip()
 
-        if not email or not password:
-            flash("E-mail en wachtwoord zijn verplicht.", "danger")
-            return render_template("auth_login.html", prefill_email=email)
+        if not email:
+            flash("E-mail is verplicht.", "danger")
+            return render_template("auth_login.html")
 
         user = Gebruiker.query.filter_by(Email=email).first()
-        if not user or not user.password_hash:
-            flash("Onjuiste inloggegevens. Controleer je e-mail en wachtwoord of registreer je eerst.", "danger")
-            return render_template("auth_login.html", prefill_email=email)
+        if not user:
+            flash("Geen account gevonden. Registreer je even.", "info")
+            return redirect(url_for("signup", email=email))
 
-        if not check_password_hash(user.password_hash, password):
-            flash("Onjuiste inloggegevens. Controleer je e-mail en wachtwoord.", "danger")
-            return render_template("auth_login.html", prefill_email=email)
-
+        # Als user een password_hash heeft, moet het wachtwoord kloppen
+        if user.password_hash:
+            if not password or not check_password_hash(user.password_hash, password):
+                flash("Onjuist wachtwoord.", "danger")
+                return render_template(
+                    "auth_login.html", prefill_email=email
+                )
+        # Als geen password_hash: tijdelijk nog zonder wachtwoord inloggen
         session["user_email"] = email
         flash("Je bent ingelogd.", "success")
         next_url = request.args.get("next")
         return redirect(next_url or url_for("dashboard"))
 
     # GET
-    return render_template("auth_login.html", prefill_email=request.args.get("email", ""))
+    return render_template(
+        "auth_login.html", prefill_email=request.args.get("email", "")
+    )
 
 
 @app.route("/logout")
@@ -174,15 +172,18 @@ def dashboard():
     # voorbeeld: aantal items met status 'afgekeurd' als "te keuren"
     to_inspect = Material.query.filter_by(status="afgekeurd").count()
 
-    recent = ACTIVITY_LOG[:8]
+    # laatste 8 activiteiten uit DB
+    recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
+
     return render_template(
         "dashboard.html",
         total_items=total_items,
         to_inspect=to_inspect,
-        recent_activity=recent
+        recent_activity=recent,
     )
 
 
+# ---------------- API: search ----------------
 @app.route("/api/search", methods=["GET"])
 @login_required
 def api_search():
@@ -193,26 +194,34 @@ def api_search():
         return {"items": []}, 200
 
     like = f"%{q}%"
-    items = Material.query.filter(
-        or_(Material.name.ilike(like), Material.serial.ilike(like))
-    ).limit(10).all()
+    items = (
+        Material.query.filter(
+            or_(Material.name.ilike(like), Material.serial.ilike(like))
+        )
+        .limit(10)
+        .all()
+    )
 
     results = []
     for item in items:
-        results.append({
-            "serial": item.serial,
-            "name": item.name,
-            "category": item.category or "",
-            "type": item.type or "",
-            "status": item.status or "",
-            "assigned_to": item.assigned_to or "",
-            "site": item.site or "",
-            "purchase_date": item.purchase_date.strftime("%Y-%m-%d") if item.purchase_date else "",
-            "note": item.note or "",
-            "nummer_op_materieel": item.nummer_op_materieel or "",
-            "documentation_path": item.documentation_path or "",
-            "safety_sheet_path": item.safety_sheet_path or "",
-        })
+        results.append(
+            {
+                "serial": item.serial,
+                "name": item.name,
+                "category": item.category or "",
+                "type": item.type or "",
+                "status": item.status or "",
+                "assigned_to": item.assigned_to or "",
+                "site": item.site or "",
+                "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
+                if item.purchase_date
+                else "",
+                "note": item.note or "",
+                "nummer_op_materieel": item.nummer_op_materieel or "",
+                "documentation_path": item.documentation_path or "",
+                "safety_sheet_path": item.safety_sheet_path or "",
+            }
+        )
 
     return jsonify({"items": results}), 200
 
@@ -230,8 +239,7 @@ def materiaal():
     if q:
         like = f"%{q}%"
         query = query.filter(
-            or_(Material.name.ilike(like),
-                Material.serial.ilike(like))
+            or_(Material.name.ilike(like), Material.serial.ilike(like))
         )
 
     if category:
@@ -245,10 +253,14 @@ def materiaal():
     total_items = Material.query.count()
 
     # "in gebruik" = assigned_to OF site niet leeg
-    in_use = db.session.query(func.count(Material.id)).filter(
-        (func.coalesce(Material.assigned_to, "") != "") |
-        (func.coalesce(Material.site, "") != "")
-    ).scalar()
+    in_use = (
+        db.session.query(func.count(Material.id))
+        .filter(
+            (func.coalesce(Material.assigned_to, "") != "")
+            | (func.coalesce(Material.site, "") != "")
+        )
+        .scalar()
+    )
 
     # alle materialen voor datalist in "Gebruik Materieel"
     all_materials = Material.query.all()
@@ -370,14 +382,21 @@ def materiaal_toevoegen():
     # aankoopdatum (optioneel) parsen
     if purchase_date_str:
         from datetime import datetime as _dt
+
         try:
-            item.purchase_date = _dt.strptime(purchase_date_str, "%Y-%m-%d").date()
+            item.purchase_date = _dt.strptime(
+                purchase_date_str, "%Y-%m-%d"
+            ).date()
         except ValueError:
             pass
 
     # als je een kolom hebt voor keuring/inspection_status in je model, zet die hier:
     if hasattr(item, "inspection_status"):
-        setattr(item, "inspection_status", inspection_status if inspection_status else None)
+        setattr(
+            item,
+            "inspection_status",
+            inspection_status if inspection_status else None,
+        )
 
     db.session.add(item)
     db.session.commit()
@@ -415,8 +434,11 @@ def materiaal_bewerken():
     purchase_date = (f.get("purchase_date") or "").strip()
     if purchase_date:
         from datetime import datetime as _dt
+
         try:
-            item.purchase_date = _dt.strptime(purchase_date, "%Y-%m-%d").date()
+            item.purchase_date = _dt.strptime(
+                purchase_date, "%Y-%m-%d"
+            ).date()
         except ValueError:
             pass
 
@@ -429,7 +451,11 @@ def materiaal_bewerken():
     # optioneel keuringstatus
     inspection_status = (f.get("inspection_status") or "").strip()
     if hasattr(item, "inspection_status"):
-        setattr(item, "inspection_status", inspection_status if inspection_status else None)
+        setattr(
+            item,
+            "inspection_status",
+            inspection_status if inspection_status else None,
+        )
 
     # NIEUW: bestanden (overschrijven als je er nieuwe uploadt)
     documentation_file = request.files.get("documentation")
@@ -437,12 +463,16 @@ def materiaal_bewerken():
 
     if documentation_file and documentation_file.filename:
         item.documentation_path = save_upload(
-            documentation_file, app.config["DOC_UPLOAD_FOLDER"], f"{item.serial}_doc"
+            documentation_file,
+            app.config["DOC_UPLOAD_FOLDER"],
+            f"{item.serial}_doc",
         )
 
     if safety_file and safety_file.filename:
         item.safety_sheet_path = save_upload(
-            safety_file, app.config["SAFETY_UPLOAD_FOLDER"], f"{item.serial}_safety"
+            safety_file,
+            app.config["SAFETY_UPLOAD_FOLDER"],
+            f"{item.serial}_safety",
         )
 
     db.session.commit()
@@ -526,7 +556,7 @@ def keuringen():
 @login_required
 def documenten():
     """Documenten overzicht met zoeken en filteren"""
-    import os
+    import os as _os
 
     q = (request.args.get("q") or "").strip().lower()
     doc_type = (request.args.get("type") or "").strip().lower()
@@ -538,60 +568,85 @@ def documenten():
     for material in all_materials:
         # Documentatie toevoegen
         if material.documentation_path:
-            doc_name = os.path.basename(material.documentation_path)
+            doc_name = _os.path.basename(material.documentation_path)
             # Bepaal type op basis van bestandsnaam
-            doc_type_from_name = "Handleiding" if "handleiding" in doc_name.lower() or "manual" in doc_name.lower() else "Overige"
+            doc_type_from_name = (
+                "Handleiding"
+                if "handleiding" in doc_name.lower()
+                or "manual" in doc_name.lower()
+                else "Overige"
+            )
 
-            documents.append({
-                "type": doc_type_from_name,
-                "name": doc_name,
-                "material": material.name or "Onbekend",
-                "material_serial": material.serial,
-                "date": material.created_at.strftime("%Y-%m-%d") if material.created_at else "",
-                "size": "2.3 MB",  # Dummy size
-                "uploaded_by": material.assigned_to or "Systeem",
-                "path": material.documentation_path,
-                "status": doc_type_from_name
-            })
+            documents.append(
+                {
+                    "type": doc_type_from_name,
+                    "name": doc_name,
+                    "material": material.name or "Onbekend",
+                    "material_serial": material.serial,
+                    "date": material.created_at.strftime("%Y-%m-%d")
+                    if material.created_at
+                    else "",
+                    "size": "2.3 MB",  # Dummy size
+                    "uploaded_by": material.assigned_to or "Systeem",
+                    "path": material.documentation_path,
+                    "status": doc_type_from_name,
+                }
+            )
 
         # Veiligheidsfiche toevoegen
         if material.safety_sheet_path:
-            doc_name = os.path.basename(material.safety_sheet_path)
-            documents.append({
-                "type": "Veiligheidscertificaat",
-                "name": doc_name,
-                "material": material.name or "Onbekend",
-                "material_serial": material.serial,
-                "date": material.created_at.strftime("%Y-%m-%d") if material.created_at else "",
-                "size": "456 KB",  # Dummy size
-                "uploaded_by": material.assigned_to or "Systeem",
-                "path": material.safety_sheet_path,
-                "status": "Veiligheidscertificaat"
-            })
+            doc_name = _os.path.basename(material.safety_sheet_path)
+            documents.append(
+                {
+                    "type": "Veiligheidscertificaat",
+                    "name": doc_name,
+                    "material": material.name or "Onbekend",
+                    "material_serial": material.serial,
+                    "date": material.created_at.strftime("%Y-%m-%d")
+                    if material.created_at
+                    else "",
+                    "size": "456 KB",  # Dummy size
+                    "uploaded_by": material.assigned_to or "Systeem",
+                    "path": material.safety_sheet_path,
+                    "status": "Veiligheidscertificaat",
+                }
+            )
 
     # Voeg dummy documenten toe voor voorbeelden
-    documents.append({
-        "type": "Servicerapport",
-        "name": "Service-Rapport-Augustus-2024.pdf",
-        "material": "Compressor Atlas Copco",
-        "material_serial": "CP-2022-112",
-        "date": "2024-08-01",
-        "size": "1.1 MB",
-        "uploaded_by": "Atlas Copco",
-        "path": None,
-        "status": "Servicerapport"
-    })
+    documents.append(
+        {
+            "type": "Servicerapport",
+            "name": "Service-Rapport-Augustus-2024.pdf",
+            "material": "Compressor Atlas Copco",
+            "material_serial": "CP-2022-112",
+            "date": "2024-08-01",
+            "size": "1.1 MB",
+            "uploaded_by": "Atlas Copco",
+            "path": None,
+            "status": "Servicerapport",
+        }
+    )
 
     # Filter op zoekterm
     if q:
-        documents = [d for d in documents if q in d["name"].lower() or q in d["material"].lower()]
+        documents = [
+            d
+            for d in documents
+            if q in d["name"].lower() or q in d["material"].lower()
+        ]
 
     # Filter op type
     if doc_type and doc_type != "alle":
-        documents = [d for d in documents if d["type"].lower() == doc_type.lower()]
+        documents = [
+            d
+            for d in documents
+            if d["type"].lower() == doc_type.lower()
+        ]
 
     total_docs = len(documents)
-    safety_certs = len([d for d in documents if d["type"] == "Veiligheidscertificaat"])
+    safety_certs = len(
+        [d for d in documents if d["type"] == "Veiligheidscertificaat"]
+    )
 
     return render_template(
         "documenten.html",
@@ -599,7 +654,7 @@ def documenten():
         total_docs=total_docs,
         safety_certs=safety_certs,
         search_query=q,
-        selected_type=doc_type
+        selected_type=doc_type,
     )
 
 
