@@ -43,11 +43,45 @@ class Material(db.Model):
 
 
 class Activity(db.Model):
+    """
+    Map naar Supabase tabel 'activity_log'
+    kolommen: id, created_at, action, name, serial, user_name
+    """
     __tablename__ = "activity_log"
 
     id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
-    action = db.Column(db.String, nullable=False)
-    name = db.Column(db.String, nullable=True)
-    serial = db.Column(db.String, nullable=True)
-    user_name = db.Column(db.String, nullable=True)
+    action = db.Column(db.String)
+    name = db.Column(db.String)
+    serial = db.Column(db.String)
+    user_name = db.Column(db.String)
+
+
+class MaterialUsage(db.Model):
+    """
+    Map naar Supabase tabel 'material_usage'
+
+    Kolommen volgens jouw screenshot:
+    id, material_id, user_id, site, note, start_time, end_time, is_active, used_by
+    """
+    __tablename__ = "material_usage"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+
+    material_id = db.Column(db.BigInteger,
+                            db.ForeignKey("materials.id"),
+                            nullable=False)
+    user_id = db.Column(db.BigInteger,
+                        db.ForeignKey("Gebruiker.gebruiker_id"),
+                        nullable=True)
+
+    site = db.Column(db.Text, nullable=True)
+    note = db.Column(db.Text, nullable=True)
+    start_time = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    end_time = db.Column(db.DateTime(timezone=True), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    used_by = db.Column(db.Text, nullable=True)
+
+    # handige relaties
+    material = db.relationship("Material", backref="usages")
+    user = db.relationship("Gebruiker", backref="usages")
