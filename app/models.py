@@ -40,3 +40,14 @@ class Material(db.Model):
 
     # nieuw veld
     nummer_op_materieel = db.Column("nummer_op_materieel", db.String, nullable=True)
+
+
+class Activity(db.Model):
+    __tablename__ = "activity_log"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    action = db.Column(db.String, nullable=False)
+    name = db.Column(db.String, nullable=True)
+    serial = db.Column(db.String, nullable=True)
+    user_name = db.Column(db.String, nullable=True)

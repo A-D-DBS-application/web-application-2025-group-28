@@ -1,11 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session, g, jsonify
 from datetime import datetime
 from functools import wraps
-
+import os
 
 from config import Config
 from models import db, Gebruiker, Material
 from sqlalchemy import or_, func
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 
 
 app = Flask(__name__)
@@ -65,25 +67,53 @@ def inject_user():
     return {"current_user": g.user}
 
 
-# ---------------- Auth routes (wachtwoordloos) ----------------
+# ---------------- Auth routes (nu mét wachtwoord) ----------------
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
         naam = (request.form.get("naam") or "").strip()
         email = (request.form.get("email") or "").strip().lower()
         functie = (request.form.get("functie") or "").strip()
+        password = (request.form.get("password") or "").strip()
+        password_confirm = (request.form.get("password_confirm") or "").strip()
 
+        # Basisvalidatie
         if not email:
             flash("E-mail is verplicht.", "danger")
             return render_template("auth_signup.html")
 
-        # bestaat al in Supabase?
-        if Gebruiker.query.filter_by(Email=email).first():
+        if not password or not password_confirm:
+            flash("Wachtwoord en bevestiging zijn verplicht.", "danger")
+            return render_template("auth_signup.html")
+
+        if password != password_confirm:
+            flash("De twee wachtwoorden komen niet overeen.", "danger")
+            return render_template("auth_signup.html")
+
+        # Bestaat gebruiker al?
+        existing = Gebruiker.query.filter_by(Email=email).first()
+
+        if existing and existing.password_hash:
+            # Gebruiker bestaat al mét wachtwoord → doorsturen naar login
             flash("E-mail bestaat al. Log in a.u.b.", "warning")
             return redirect(url_for("login", email=email))
 
-        new_user = Gebruiker(Naam=naam, Email=email, Functie=functie)
-        db.session.add(new_user)
+        if existing and not existing.password_hash:
+            # Gebruiker bestond al zonder wachtwoord → upgrade account
+            existing.Naam = naam or existing.Naam
+            existing.Functie = functie or existing.Functie
+            existing.password_hash = generate_password_hash(password)
+            user = existing
+        else:
+            # Nieuwe gebruiker
+            user = Gebruiker(
+                Naam=naam,
+                Email=email,
+                Functie=functie,
+                password_hash=generate_password_hash(password),
+            )
+            db.session.add(user)
+
         db.session.commit()
 
         session["user_email"] = email
@@ -98,14 +128,20 @@ def signup():
 def login():
     if request.method == "POST":
         email = (request.form.get("email") or "").strip().lower()
-        if not email:
-            flash("E-mail is verplicht.", "danger")
-            return render_template("auth_login.html")
+        password = (request.form.get("password") or "").strip()
+
+        if not email or not password:
+            flash("E-mail en wachtwoord zijn verplicht.", "danger")
+            return render_template("auth_login.html", prefill_email=email)
 
         user = Gebruiker.query.filter_by(Email=email).first()
-        if not user:
-            flash("Geen account gevonden. Registreer je even.", "info")
-            return redirect(url_for("signup", email=email))
+        if not user or not user.password_hash:
+            flash("Onjuiste inloggegevens. Controleer je e-mail en wachtwoord of registreer je eerst.", "danger")
+            return render_template("auth_login.html", prefill_email=email)
+
+        if not check_password_hash(user.password_hash, password):
+            flash("Onjuiste inloggegevens. Controleer je e-mail en wachtwoord.", "danger")
+            return render_template("auth_login.html", prefill_email=email)
 
         session["user_email"] = email
         flash("Je bent ingelogd.", "success")
@@ -152,15 +188,15 @@ def dashboard():
 def api_search():
     """API endpoint for searching materials - returns JSON"""
     q = (request.args.get("q") or "").strip().lower()
-    
+
     if not q:
         return {"items": []}, 200
-    
+
     like = f"%{q}%"
     items = Material.query.filter(
         or_(Material.name.ilike(like), Material.serial.ilike(like))
     ).limit(10).all()
-    
+
     results = []
     for item in items:
         results.append({
@@ -177,7 +213,7 @@ def api_search():
             "documentation_path": item.documentation_path or "",
             "safety_sheet_path": item.safety_sheet_path or "",
         })
-    
+
     return jsonify({"items": results}), 200
 
 
@@ -225,12 +261,10 @@ def materiaal():
         all_materials=all_materials,
     )
 
+
 # -----------------------------------------------------
 # UPLOAD CONFIGURATIE – documentatie & veiligheidsfiches
 # -----------------------------------------------------
-import os
-from werkzeug.utils import secure_filename
-
 BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
 DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
 SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
@@ -240,6 +274,7 @@ os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
 
 app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER
 app.config["SAFETY_UPLOAD_FOLDER"] = SAFETY_UPLOAD_FOLDER
+
 
 # -----------------------------------------------------
 # BESTAND UPLOAD HELPER – documentatie & veiligheidsfiches
@@ -271,6 +306,7 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
 
     # Relatief pad teruggeven (voor opslag in DB)
     return f"{relative_folder}/{final_filename}"
+
 
 # ---------------- Materiaal: toevoegen (via + in KPI) ----------------
 @app.route("/materiaal/new", methods=["POST"])
@@ -491,21 +527,21 @@ def keuringen():
 def documenten():
     """Documenten overzicht met zoeken en filteren"""
     import os
-    
+
     q = (request.args.get("q") or "").strip().lower()
     doc_type = (request.args.get("type") or "").strip().lower()
-    
+
     # Verzamel alle documenten uit Material records
     all_materials = Material.query.all()
     documents = []
-    
+
     for material in all_materials:
         # Documentatie toevoegen
         if material.documentation_path:
             doc_name = os.path.basename(material.documentation_path)
             # Bepaal type op basis van bestandsnaam
             doc_type_from_name = "Handleiding" if "handleiding" in doc_name.lower() or "manual" in doc_name.lower() else "Overige"
-            
+
             documents.append({
                 "type": doc_type_from_name,
                 "name": doc_name,
@@ -517,7 +553,7 @@ def documenten():
                 "path": material.documentation_path,
                 "status": doc_type_from_name
             })
-        
+
         # Veiligheidsfiche toevoegen
         if material.safety_sheet_path:
             doc_name = os.path.basename(material.safety_sheet_path)
@@ -532,7 +568,7 @@ def documenten():
                 "path": material.safety_sheet_path,
                 "status": "Veiligheidscertificaat"
             })
-    
+
     # Voeg dummy documenten toe voor voorbeelden
     documents.append({
         "type": "Servicerapport",
@@ -545,18 +581,18 @@ def documenten():
         "path": None,
         "status": "Servicerapport"
     })
-    
+
     # Filter op zoekterm
     if q:
         documents = [d for d in documents if q in d["name"].lower() or q in d["material"].lower()]
-    
+
     # Filter op type
     if doc_type and doc_type != "alle":
         documents = [d for d in documents if d["type"].lower() == doc_type.lower()]
-    
+
     total_docs = len(documents)
     safety_certs = len([d for d in documents if d["type"] == "Veiligheidscertificaat"])
-    
+
     return render_template(
         "documenten.html",
         documents=documents,
