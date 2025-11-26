@@ -145,38 +145,63 @@
       {% endwith %}
 
       <h3 class="auth-title">Registreer</h3>
-      <p class="auth-subtitle">Maak je account aan met e-mail. Wachtwoord is niet nodig.</p>
+      <p class="auth-subtitle">Maak je account aan met e-mail en wachtwoord.</p>
 
       <form method="POST" action="{{ url_for('signup') }}">
         <div class="mb-3">
           <label class="form-label">Naam</label>
-          <input 
-            type="text" 
-            name="naam" 
-            class="form-control" 
+          <input
+            type="text"
+            name="naam"
+            class="form-control"
             placeholder="Bv. Jan Jansens"
           >
         </div>
+
         <div class="mb-3">
           <label class="form-label">E-mail</label>
-          <input 
-            type="email" 
-            name="email" 
-            class="form-control" 
-            required 
+          <input
+            type="email"
+            name="email"
+            class="form-control"
+            required
             value="{{ request.args.get('email','') }}"
-            placeholder="Jan.jansens@example.com"
+            placeholder="jan.jansens@example.com"
           >
         </div>
+
         <div class="mb-3">
           <label class="form-label">Functie (optioneel)</label>
-          <input 
-            type="text" 
-            name="functie" 
-            class="form-control" 
+          <input
+            type="text"
+            name="functie"
+            class="form-control"
             placeholder="Bv. Magazijnier"
           >
         </div>
+
+        <div class="mb-3">
+          <label class="form-label">Wachtwoord</label>
+          <input
+            type="password"
+            name="password"
+            class="form-control"
+            required
+            placeholder="Kies een veilig wachtwoord"
+          >
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Bevestig wachtwoord</label>
+          <input
+            type="password"
+            name="password_confirm"
+            class="form-control"
+            required
+            placeholder="Herhaal je wachtwoord"
+          >
+        </div>
+
         <div class="auth-buttons">
           <button class="btn btn-register" type="submit">Registreer</button>
           <a class="btn-login" href="{{ url_for('login', email=request.args.get('email','')) }}">Ik heb al een account</a>

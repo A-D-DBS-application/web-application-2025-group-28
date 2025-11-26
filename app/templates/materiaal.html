@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header">
+<div class="section-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
   <div>
     <h2 class="h-title">Materieelbeheer</h2>
     <div class="h-sub">Overzicht van beheer van al het bedrijfsmateriaal</div>
@@ -10,13 +10,16 @@
   <!-- Nieuwe knop rechtsboven -->
   <button class="btn btn-dark"
           data-bs-toggle="modal"
-          data-bs-target="#gebruikMaterieelModal">
-    Gebruik Materieel
+          data-bs-target="#gebruikMaterieelModal"
+          style="display: flex; align-items: center; gap: 8px;">
+    <span style="font-size: 18px; line-height: 1;">+</span>
+    <span>Gebruik materiaal</span>
   </button>
 </div>
 
-<!-- KPI's -->
-<div class="grid grid-top" style="margin-top:16px;">
+<!-- KPI's + hero + blok "Materieel in gebruik" in één grid -->
+<div class="grid materiaal-grid" style="margin-top:16px;">
+  <!-- KPI totaal -->
   <div class="card kpi kpi-with-plus">
     <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
     <div class="kpi-value">{{ total_items }}</div>
@@ -32,13 +35,146 @@
     </button>
   </div>
 
+  <!-- KPI in gebruik -->
   <div class="card kpi">
     <div class="kpi-title">Momenteel in gebruik <span class="kpi-dot"></span></div>
     <div class="kpi-value">{{ in_use }}</div>
-    <div class="kpi-sub">Items in een project</div>
+    <div class="kpi-sub">Items in een project (actieve sessies)</div>
   </div>
 
-  <div class="hero-image d-none d-md-block" aria-hidden="true"></div>
+  <!-- Hero image rechts (neemt 2 rijen) -->
+  <div class="hero-image d-none d-md-block materiaal-hero">
+    <img src="{{ url_for('static', filename='img/afbeelding.png.jpg') }}" alt="Materiaal" class="hero-image-img">
+  </div>
+
+  <!-- NIEUWE BLOK: Materieel in gebruik (neemt de 2 linkse kolommen op rij 2) -->
+  <div class="card panel usage-panel">
+    <div class="panel-title">Materieel in gebruik</div>
+    <div class="panel-sub">Overzicht van gebruikte items</div>
+
+    <ul class="nav nav-tabs mt-3" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="my-usage-tab" data-bs-toggle="tab"
+                data-bs-target="#my-usage" type="button" role="tab">
+          Door mij in gebruik ({{ my_usages|length }})
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="others-usage-tab" data-bs-toggle="tab"
+                data-bs-target="#others-usage" type="button" role="tab">
+          Door anderen in gebruik ({{ other_usages|length }})
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content mt-3">
+      <!-- TAB: door mij -->
+      <div class="tab-pane fade show active" id="my-usage" role="tabpanel" aria-labelledby="my-usage-tab">
+        {% if my_usages %}
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Serienummer</th>
+                  <th>Naam</th>
+                  <th>Werf</th>
+                  <th>In gebruik sinds</th>
+                  <th class="text-end">Acties</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in my_usages %}
+                  <tr>
+                    <td>{{ u.serial }}</td>
+                    <td>{{ u.name }}</td>
+                    <td>{{ u.site or '-' }}</td>
+                    <td>
+                      {% if u.start_time %}
+                        {{ u.start_time.strftime("%Y-%m-%d %H:%M") }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <form method="post"
+                            action="{{ url_for('materiaal_stop_gebruik') }}"
+                            class="d-inline"
+                            onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+                        <input type="hidden" name="usage_id" value="{{ u.id }}">
+                        <button class="btn btn-sm btn-outline-secondary">
+                          Niet meer gebruiken
+                        </button>
+                      </form>
+                      <a href="{{ url_for('materiaal', q=u.serial) }}"
+                         class="btn btn-sm btn-outline-dark">
+                        Bekijk / bewerk
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted mt-2">Je hebt momenteel geen materiaal in gebruik.</div>
+        {% endif %}
+      </div>
+
+      <!-- TAB: door anderen -->
+      <div class="tab-pane fade" id="others-usage" role="tabpanel" aria-labelledby="others-usage-tab">
+        {% if other_usages %}
+          <div class="table-responsive">
+            <table class="table align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Serienummer</th>
+                  <th>Naam</th>
+                  <th>Werf</th>
+                  <th>Gebruikt door</th>
+                  <th>In gebruik sinds</th>
+                  <th class="text-end">Acties</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for u in other_usages %}
+                  <tr>
+                    <td>{{ u.serial }}</td>
+                    <td>{{ u.name }}</td>
+                    <td>{{ u.site or '-' }}</td>
+                    <td>{{ u.used_by or '-' }}</td>
+                    <td>
+                      {% if u.start_time %}
+                        {{ u.start_time.strftime("%Y-%m-%d %H:%M") }}
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
+                    <td class="text-end">
+                      <form method="post"
+                            action="{{ url_for('materiaal_stop_gebruik') }}"
+                            class="d-inline"
+                            onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+                        <input type="hidden" name="usage_id" value="{{ u.id }}">
+                        <button class="btn btn-sm btn-outline-secondary">
+                          Niet meer gebruiken
+                        </button>
+                      </form>
+                      <a href="{{ url_for('materiaal', q=u.serial) }}"
+                         class="btn btn-sm btn-outline-dark">
+                        Bekijk / bewerk
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted mt-2">Geen materiaal in gebruik door andere gebruikers.</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Flash messages -->
@@ -278,7 +414,6 @@
               <input name="name"
                      id="use-name"
                      list="materiaal-namen"
-                     required
                      class="form-control"
                      placeholder="Kies of typ een naam">
               <datalist id="materiaal-namen">
@@ -431,6 +566,24 @@
 </div>
 
 <style>
+/* grid lay-out: 3 kolommen, hero rechts over 2 rijen */
+.materiaal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, auto);
+  gap: 16px;
+}
+
+.materiaal-hero {
+  grid-row: 1 / span 2;
+  grid-column: 3 / 4;
+}
+
+.usage-panel {
+  grid-row: 2 / 3;
+  grid-column: 1 / span 2;
+}
+
 /* laat de modal rechtsboven “inschuiven” */
 .modal-dialog-end { margin-right: 0; margin-left: auto; }
 
@@ -440,25 +593,19 @@
 }
 .kpi-plus-btn {
   position: absolute;
-  right: 16px;
-  bottom: 16px;
-
-  width: 48px;
-  height: 48px;
-
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   border: none;
-
   background: #000;
   color: #fff;
-
-  font-size: 32px;
+  font-size: 18px;
   font-weight: bold;
-
   display: flex;
   align-items: center;
   justify-content: center;
-
   cursor: pointer;
   line-height: 1;
 }

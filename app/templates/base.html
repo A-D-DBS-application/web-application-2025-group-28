@@ -14,7 +14,7 @@
   <!-- Your main stylesheet -->
   <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/style.css') }}?v=26"
+    href="{{ url_for('static', filename='css/style.css') }}?v=32"
   >
 </head>
 <body>
@@ -49,6 +49,12 @@
           href="{{ url_for('keuringen') }}"
         >
           Keuringen
+        </a>
+        <a
+          class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
+          href="{{ url_for('documenten') }}"
+        >
+          Documenten
         </a>
       </nav>
     </div>
