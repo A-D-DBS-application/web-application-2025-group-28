@@ -17,6 +17,7 @@ from config import Config
 from models import db, Gebruiker, Material, Activity, MaterialUsage
 from sqlalchemy import or_, func
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = "dev"  # voor flash() + sessies
@@ -91,7 +92,6 @@ def find_material_by_name_or_number(name: str, nummer: str | None):
 # -----------------------------------------------------
 # AUTH – met wachtwoord-hash in Gebruiker.password_hash
 # -----------------------------------------------------
-from werkzeug.security import generate_password_hash, check_password_hash
 
 
 @app.route("/signup", methods=["GET", "POST"])
@@ -309,8 +309,7 @@ def materiaal():
     if status:
         query = query.filter(Material.status.ilike(status))
 
-    items = query.all()
-
+    # totaal aantal in systeem
     total_items = Material.query.count()
 
     # Aantal in gebruik via material_usage (actieve sessies)
@@ -334,10 +333,13 @@ def materiaal():
 
     my_usages = []
     other_usages = []
+    active_material_ids = set()
 
     current_user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
 
     for usage, mat in active_usages:
+        active_material_ids.add(mat.id)
+
         row = {
             "id": usage.id,
             "material_id": mat.id,
@@ -353,6 +355,17 @@ def materiaal():
         else:
             other_usages.append(row)
 
+    # Items ophalen en sorteren:
+    #   - eerst materiaal dat in gebruik is (groen lichtje)
+    #   - daarna de rest (alfabetisch op naam)
+    items = query.all()
+    items.sort(
+        key=lambda it: (
+            it.id not in active_material_ids,  # in gebruik (False) komt eerst
+            (it.name or "").lower(),
+        )
+    )
+
     return render_template(
         "materiaal.html",
         items=items,
@@ -361,6 +374,7 @@ def materiaal():
         all_materials=all_materials,
         my_usages=my_usages,
         other_usages=other_usages,
+        active_material_ids=active_material_ids,
     )
 
 
@@ -377,6 +391,12 @@ def materiaal_toevoegen():
     Dit is wat gebeurt via het plus-icoon.
     """
     f = request.form
+
+    # Beheerwachtwoord controleren
+    admin_pw = (f.get("admin_password") or "").strip()
+    if admin_pw != "Sunset":
+        flash("Onjuist wachtwoord voor het toevoegen van nieuw materieel.", "danger")
+        return redirect(url_for("materiaal"))
 
     name = (f.get("name") or "").strip()
     serial = (f.get("serial") or "").strip()
@@ -538,7 +558,7 @@ def materiaal_verwijderen():
 
 
 # -----------------------------------------------------
-# MATERIAAL – IN GEBRUIK NEMEN (met extra validatie)
+# MATERIAAL – IN GEBRUIK NEMEN
 # -----------------------------------------------------
 
 
@@ -547,10 +567,6 @@ def materiaal_verwijderen():
 def materiaal_gebruiken():
     """
     Materieel in gebruik nemen – schrijft naar material_usage + activity_log.
-
-    EXTRA VALIDATIE:
-    - Materiaal moet bestaan
-    - Materiaal mag niet al een actieve gebruikssessie hebben
     """
     f = request.form
 
@@ -563,38 +579,19 @@ def materiaal_gebruiken():
         flash("Naam of nummer op materieel is verplicht.", "danger")
         return redirect(url_for("materiaal"))
 
-    # 1) Zoek het materiaal
     item = find_material_by_name_or_number(name, nummer)
     if not item:
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
         return redirect(url_for("materiaal"))
 
-    # 2) Check of dit materiaal al actief in gebruik is
-    bestaande_usage = MaterialUsage.query.filter_by(
-        material_id=item.id,
-        is_active=True
-    ).first()
-
-    if bestaande_usage:
-        msg = (
-            f"Dit materieel is al in gebruik door "
-            f"{bestaande_usage.used_by or 'onbekende gebruiker'}"
-        )
-        if bestaande_usage.site:
-            msg += f" op werf {bestaande_usage.site}"
-        msg += ". Beëindig eerst dat gebruik voordat je het opnieuw in gebruik neemt."
-        flash(msg, "danger")
-        return redirect(url_for("materiaal"))
-
-    # 3) assigned_to automatisch invullen met huidige gebruiker
     if not assigned_to and getattr(g, "user", None):
         assigned_to = g.user.Naam or ""
 
-    # 4) Materiaal zelf bijwerken (optioneel)
-    item.assigned_to = assigned_to or item.assigned_to
+    # update materiaal zelf (optioneel)
+    item.assigned_to = assigned_to
     item.site = site or item.site
 
-    # 5) Nieuwe gebruik-sessie aanmaken
+    # Nieuwe gebruik-sessie
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
     usage = MaterialUsage(
         material_id=item.id,
@@ -610,7 +607,6 @@ def materiaal_gebruiken():
     db.session.add(usage)
     db.session.commit()
 
-    # 6) Activiteit loggen
     log_activity_db("In gebruik", item.name or "", item.serial or "")
     flash("Materieel staat nu als 'in gebruik'.", "success")
     return redirect(url_for("materiaal"))

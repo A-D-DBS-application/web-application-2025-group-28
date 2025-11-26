@@ -190,12 +190,12 @@
   {% endwith %}
 </div>
 
-<!-- Recente activiteit / Lijst -->
+<!-- Materiaallijst / overzicht -->
 <div class="card panel" style="margin-top:16px;">
   <div class="panel-title d-flex align-items-center justify-content-between">
     <div>
-      Recente Activiteit
-      <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+      Materiaal in het systeem
+      <div class="panel-sub">Alle geregistreerde items</div>
     </div>
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('materiaal') }}">Herstel filters</a>
   </div>
@@ -240,7 +240,7 @@
           <th>Serienummer</th>
           <th>Naam</th>
           <th>Categorie</th>
-          <th>Status</th>
+          <th>Status (in gebruik)</th>
           <th>Keuring</th>
           <th class="text-end">Acties</th>
         </tr>
@@ -253,8 +253,9 @@
             <td>{{ it.name }}</td>
             <td>{{ it.category|title if it.category else '' }}</td>
             <td>
-              <span class="badge {% if it.status=='goedgekeurd' %}bg-success{% else %}bg-danger{% endif %}">
-                {{ it.status|title if it.status else '' }}
+              {% set in_use_flag = it.id in active_material_ids %}
+              <span class="badge {% if in_use_flag %}bg-success{% else %}bg-danger{% endif %}">
+                &nbsp;
               </span>
             </td>
             <td>{{ it.inspection_status or "-" }}</td>
@@ -385,6 +386,16 @@
                 name="safety_sheet"
                 class="form-control"
                 accept="image/*,.pdf">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Beheerwachtwoord*</label>
+              <input
+                type="password"
+                name="admin_password"
+                class="form-control"
+                placeholder="Voer beheerwachtwoord in"
+                required>
             </div>
             
           </div>
@@ -665,11 +676,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function updateUseCategory() {
     const nameInput = document.getElementById('use-name');
-    const numInput = document.getElementById('use-nummer');
+    theNumInput = document.getElementById('use-nummer');
     const catInput = document.getElementById('use-category');
 
     const name = (nameInput?.value || '').trim();
-    const nummer = (numInput?.value || '').trim();
+    const nummer = (theNumInput?.value || '').trim();
 
     let found = null;
     if (nummer) {
