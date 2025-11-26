@@ -538,7 +538,7 @@ def materiaal_verwijderen():
 
 
 # -----------------------------------------------------
-# MATERIAAL – IN GEBRUIK NEMEN
+# MATERIAAL – IN GEBRUIK NEMEN (met extra validatie)
 # -----------------------------------------------------
 
 
@@ -547,6 +547,10 @@ def materiaal_verwijderen():
 def materiaal_gebruiken():
     """
     Materieel in gebruik nemen – schrijft naar material_usage + activity_log.
+
+    EXTRA VALIDATIE:
+    - Materiaal moet bestaan
+    - Materiaal mag niet al een actieve gebruikssessie hebben
     """
     f = request.form
 
@@ -559,19 +563,38 @@ def materiaal_gebruiken():
         flash("Naam of nummer op materieel is verplicht.", "danger")
         return redirect(url_for("materiaal"))
 
+    # 1) Zoek het materiaal
     item = find_material_by_name_or_number(name, nummer)
     if not item:
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
         return redirect(url_for("materiaal"))
 
+    # 2) Check of dit materiaal al actief in gebruik is
+    bestaande_usage = MaterialUsage.query.filter_by(
+        material_id=item.id,
+        is_active=True
+    ).first()
+
+    if bestaande_usage:
+        msg = (
+            f"Dit materieel is al in gebruik door "
+            f"{bestaande_usage.used_by or 'onbekende gebruiker'}"
+        )
+        if bestaande_usage.site:
+            msg += f" op werf {bestaande_usage.site}"
+        msg += ". Beëindig eerst dat gebruik voordat je het opnieuw in gebruik neemt."
+        flash(msg, "danger")
+        return redirect(url_for("materiaal"))
+
+    # 3) assigned_to automatisch invullen met huidige gebruiker
     if not assigned_to and getattr(g, "user", None):
         assigned_to = g.user.Naam or ""
 
-    # update materiaal zelf (optioneel)
-    item.assigned_to = assigned_to
+    # 4) Materiaal zelf bijwerken (optioneel)
+    item.assigned_to = assigned_to or item.assigned_to
     item.site = site or item.site
 
-    # Nieuwe gebruik-sessie
+    # 5) Nieuwe gebruik-sessie aanmaken
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
     usage = MaterialUsage(
         material_id=item.id,
@@ -587,6 +610,7 @@ def materiaal_gebruiken():
     db.session.add(usage)
     db.session.commit()
 
+    # 6) Activiteit loggen
     log_activity_db("In gebruik", item.name or "", item.serial or "")
     flash("Materieel staat nu als 'in gebruik'.", "success")
     return redirect(url_for("materiaal"))
