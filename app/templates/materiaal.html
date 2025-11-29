@@ -47,7 +47,7 @@
     <img src="{{ url_for('static', filename='img/afbeelding.png.jpg') }}" alt="Materiaal" class="hero-image-img">
   </div>
 
-  <!-- NIEUWE BLOK: Materieel in gebruik (neemt de 2 linkse kolommen op rij 2) -->
+  <!-- BLOK: Materieel in gebruik -->
   <div class="card panel usage-panel">
     <div class="panel-title">Materieel in gebruik</div>
     <div class="panel-sub">Overzicht van gebruikte items</div>
@@ -177,7 +177,7 @@
   </div>
 </div>
 
-<!-- Flash messages -->
+<!-- Flash messages (worden meestal al door base.html getoond, maar kan geen kwaad) -->
 <div class="container px-0 mt-3">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -342,7 +342,7 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Werf (optioneel)</label>
+              <label class="form-label">Werf (optioneel, vrije tekst)</label>
               <input name="site" class="form-control" placeholder="Bv. Project Turnhout">
             </div>
 
@@ -397,7 +397,6 @@
                 placeholder="Voer beheerwachtwoord in"
                 required>
             </div>
-            
           </div>
         </div>
         <div class="modal-footer">
@@ -457,9 +456,21 @@
                      value="{{ current_user.Naam if current_user else '' }}">
             </div>
 
-            <div class="col-md-6">
-              <label class="form-label">Werf</label>
-              <input name="site" id="use-site" class="form-control" placeholder="Bv. Werf Antwerpen">
+            <div class="col-md-12">
+              <label class="form-label">Werf (project)</label>
+              <select name="project_id" class="form-select">
+                <option value="">Geen specifieke werf</option>
+                {% for p in projects %}
+                  {% set is_future = p.start_date and p.start_date > today %}
+                  <option value="{{ p.id }}">
+                    {{ p.name or 'Werf ' ~ p.id }}
+                    {% if is_future and p.start_date %}
+                      (start {{ p.start_date.strftime('%Y-%m-%d') }})
+                    {% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+              <small class="text-muted">De gekozen werf wordt gelinkt aan dit gebruik.</small>
             </div>
           </div>
         </div>
@@ -520,7 +531,7 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Werf (optioneel)</label>
+              <label class="form-label">Werf (optioneel, vrije tekst)</label>
               <input name="site" id="edit-site" class="form-control">
             </div>
 
@@ -577,7 +588,6 @@
 </div>
 
 <style>
-/* grid lay-out: 3 kolommen, hero rechts over 2 rijen */
 .materiaal-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -595,10 +605,8 @@
   grid-column: 1 / span 2;
 }
 
-/* laat de modal rechtsboven “inschuiven” */
 .modal-dialog-end { margin-right: 0; margin-left: auto; }
 
-/* KPI plus-knop rechtsonder */
 .kpi-with-plus {
   position: relative;
 }
@@ -676,7 +684,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function updateUseCategory() {
     const nameInput = document.getElementById('use-name');
-    theNumInput = document.getElementById('use-nummer');
+    const theNumInput = document.getElementById('use-nummer');
     const catInput = document.getElementById('use-category');
 
     const name = (nameInput?.value || '').trim();

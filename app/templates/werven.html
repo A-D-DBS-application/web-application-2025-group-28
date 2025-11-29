@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+  <div>
+    <h2 class="h-title">Werven</h2>
+    <div class="h-sub">Overzicht van lopende en toekomstige werven</div>
+  </div>
+
+  <button class="btn btn-dark"
+          data-bs-toggle="modal"
+          data-bs-target="#nieuwWerfModal">
+    + Werf toevoegen
+  </button>
+</div>
+
+<div class="row g-3 mt-2">
+  {% if projects %}
+    {% for p in projects %}
+      {% set is_future = p.start_date and p.start_date > today %}
+      {% set days_to_start = (p.start_date - today).days if is_future else 0 %}
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100" style="border-radius:16px; overflow:hidden; position:relative;
+             {% if is_future %}opacity:0.75;{% endif %}">
+          {% if p.image_url %}
+            <div style="height:160px; overflow:hidden;">
+              <img src="{{ p.image_url }}"
+                   alt="Werf afbeelding"
+                   style="width:100%; height:100%; object-fit:cover;">
+            </div>
+          {% endif %}
+
+          <div class="card-body">
+            <h5 class="card-title mb-1">
+              {{ p.name or 'Werf ' ~ p.id }}
+            </h5>
+            <div class="text-muted small mb-2">
+              {{ p.address or 'Adres onbekend' }}
+            </div>
+
+            <div class="small mb-2">
+              <strong>Start:</strong>
+              {% if p.start_date %}
+                {{ p.start_date.strftime('%Y-%m-%d') }}
+              {% else %}
+                onbekend
+              {% endif %}
+              {% if p.end_date %}
+                &nbsp;·&nbsp;<strong>Einde:</strong> {{ p.end_date.strftime('%Y-%m-%d') }}
+              {% endif %}
+            </div>
+
+            {% if is_future %}
+              <div class="alert alert-secondary py-1 px-2 small mb-2">
+                Begint over {{ days_to_start }} dag{% if days_to_start != 1 %}en{% endif %}.
+              </div>
+            {% endif %}
+
+            {% if p.note %}
+              <div class="small text-muted mb-2" style="min-height:2.5em;">
+                {{ p.note }}
+              </div>
+            {% endif %}
+
+            <div class="d-flex justify-content-between align-items-center mt-2">
+              {% if not is_future %}
+                <a href="{{ url_for('werf_detail', project_id=p.id) }}" class="btn btn-sm btn-outline-dark">
+                  Details
+                </a>
+              {% else %}
+                <button class="btn btn-sm btn-outline-secondary" disabled>
+                  Nog niet gestart
+                </button>
+              {% endif %}
+
+              <form method="post"
+                    action="{{ url_for('werf_verwijderen') }}"
+                    onsubmit="return confirm('Deze werf verwijderen?');">
+                <input type="hidden" name="project_id" value="{{ p.id }}">
+                <button class="btn btn-sm btn-outline-danger" type="submit">
+                  Verwijderen
+                </button>
+              </form>
+            </div>
+          </div>
+
+          {% if is_future %}
+            <div style="position:absolute; inset:0; pointer-events:none; border-radius:16px;"></div>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="col-12">
+      <div class="card panel">
+        <div class="panel-title">Nog geen werven</div>
+        <div class="panel-sub">Klik op "Werf toevoegen" om je eerste werf aan te maken.</div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Modal: nieuwe werf -->
+<div class="modal fade" id="nieuwWerfModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nieuwe werf toevoegen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('werf_toevoegen') }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam werf*</label>
+              <input name="name" class="form-control" required placeholder="Bv. Werf Antwerpen Centrum">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Type / omschrijving</label>
+              <input name="type" class="form-control" placeholder="Bv. Appartementen, renovatie,…">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Adres</label>
+              <input name="address" class="form-control" placeholder="Straat, nummer, gemeente">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Startdatum*</label>
+              <input type="date" name="start_date" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Einddatum (optioneel)</label>
+              <input type="date" name="end_date" class="form-control">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Afbeelding (URL, optioneel)</label>
+              <input name="image_url" class="form-control" placeholder="https://…">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Opmerking (optioneel)</label>
+              <textarea name="note" class="form-control" rows="3" placeholder="Extra info over de werf…"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Werf toevoegen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

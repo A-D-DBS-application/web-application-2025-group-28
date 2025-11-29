@@ -38,18 +38,28 @@
         >
           Dashboard
         </a>
+
+        <a
+          class="menu-item {% if request.endpoint in ['werven', 'werf_detail'] %}active{% endif %}"
+          href="{{ url_for('werven') }}"
+        >
+          Werven
+        </a>
+
         <a
           class="menu-item {% if request.endpoint=='materiaal' %}active{% endif %}"
           href="{{ url_for('materiaal') }}"
         >
           Materiaal
         </a>
+
         <a
           class="menu-item {% if request.endpoint=='keuringen' %}active{% endif %}"
           href="{{ url_for('keuringen') }}"
         >
           Keuringen
         </a>
+
         <a
           class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
           href="{{ url_for('documenten') }}"
