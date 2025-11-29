@@ -9,12 +9,44 @@ class Gebruiker(db.Model):
 
     gebruiker_id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
-    Naam = db.Column(db.String)
-    Email = db.Column(db.String, unique=True, nullable=False)
-    Functie = db.Column(db.String)
-    project_id = db.Column(db.Numeric, nullable=True)
+
+    Naam = db.Column(db.String)                      # "Naam"
+    Email = db.Column(db.String, unique=True, nullable=False)  # "Email"
+    Functie = db.Column(db.String)                   # "Functie"
+
+    # na de SQL hierboven is dit BIGINT in de database
+    project_id = db.Column(db.BigInteger, nullable=True)
+
     telefoon_nummer = db.Column(db.Numeric, nullable=True)
     password_hash = db.Column(db.String, nullable=True)
+
+
+class Project(db.Model):
+    """
+    Werf / project.
+    Map naar Supabase tabel 'Project'.
+
+    Belangrijk:
+      - PK: ProjectID (bigint)
+      - StartDate, EndDate, Type, created_at
+      - extra: Naam, Adres, image_url, note, is_deleted
+    """
+    __tablename__ = "Project"
+
+    id = db.Column("ProjectID", db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+
+    # kolommen met hoofdletters zoals in Supabase
+    name = db.Column("Naam", db.String, nullable=True)
+    address = db.Column("Adres", db.String, nullable=True)
+
+    start_date = db.Column("StartDate", db.Date, nullable=True)
+    end_date = db.Column("EndDate", db.Date, nullable=True)
+    type = db.Column("Type", db.String, nullable=True)
+
+    image_url = db.Column("image_url", db.Text, nullable=True)
+    note = db.Column("note", db.Text, nullable=True)
+    is_deleted = db.Column("is_deleted", db.Boolean, default=False)
 
 
 class Material(db.Model):
@@ -24,22 +56,35 @@ class Material(db.Model):
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
 
     # mappen op kolomnamen in Supabase
-    name = db.Column("Naam", db.String)
-    status = db.Column("Status", db.String)
+    name = db.Column("Naam", db.String)              # "Naam"
+    status = db.Column("Status", db.String)          # "Status"
     keuring_id = db.Column("Keuring", db.BigInteger, nullable=True)
-    project_id = db.Column("project_id", db.Numeric, nullable=True)
+
+    # na SQL hierboven is dit BIGINT in de database
+    project_id = db.Column("project_id", db.BigInteger, nullable=True)
+
     serial = db.Column("Serienummer", db.String, unique=True, nullable=False)
-    category = db.Column("Categorie", db.String)
-    type = db.Column("type", db.String)
+    category = db.Column("Categorie", db.String)     # "Categorie"
+    type = db.Column("type", db.String)              # "type"
+
     purchase_date = db.Column("purchase_date", db.Date, nullable=True)
     assigned_to = db.Column("assigned_to", db.String, nullable=True)
     site = db.Column("site", db.String, nullable=True)
     note = db.Column("note", db.String, nullable=True)
+
     documentation_path = db.Column("documentation_path", db.Text, nullable=True)
     safety_sheet_path = db.Column("safety_sheet_path", db.Text, nullable=True)
 
-    # nieuw veld
     nummer_op_materieel = db.Column("nummer_op_materieel", db.String, nullable=True)
+    inspection_status = db.Column("inspection_status", db.String, nullable=True)
+
+    # handige (read-only) relatie naar Project
+    project = db.relationship(
+        "Project",
+        backref="materials",
+        primaryjoin="Project.id == foreign(Material.project_id)",
+        viewonly=True,
+    )
 
 
 class Activity(db.Model):
@@ -61,19 +106,27 @@ class MaterialUsage(db.Model):
     """
     Map naar Supabase tabel 'material_usage'
 
-    Kolommen volgens jouw screenshot:
-    id, material_id, user_id, site, note, start_time, end_time, is_active, used_by
+    Kolommen in Supabase:
+    id, material_id, user_id, site, note,
+    start_time, end_time, is_active, used_by, project_id
     """
     __tablename__ = "material_usage"
 
     id = db.Column(db.BigInteger, primary_key=True)
 
-    material_id = db.Column(db.BigInteger,
-                            db.ForeignKey("materials.id"),
-                            nullable=False)
-    user_id = db.Column(db.BigInteger,
-                        db.ForeignKey("Gebruiker.gebruiker_id"),
-                        nullable=True)
+    material_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("materials.id"),
+        nullable=False,
+    )
+    user_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("Gebruiker.gebruiker_id"),
+        nullable=True,
+    )
+
+    # na SQL hierboven is dit BIGINT
+    project_id = db.Column("project_id", db.BigInteger, nullable=True)
 
     site = db.Column(db.Text, nullable=True)
     note = db.Column(db.Text, nullable=True)
@@ -85,3 +138,10 @@ class MaterialUsage(db.Model):
     # handige relaties
     material = db.relationship("Material", backref="usages")
     user = db.relationship("Gebruiker", backref="usages")
+
+    project = db.relationship(
+        "Project",
+        backref="material_usages",
+        primaryjoin="Project.id == foreign(MaterialUsage.project_id)",
+        viewonly=True,
+    )

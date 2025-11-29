@@ -14,9 +14,10 @@ from functools import wraps
 import os
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project
 from sqlalchemy import or_, func
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = "dev"  # voor flash() + sessies
@@ -91,7 +92,6 @@ def find_material_by_name_or_number(name: str, nummer: str | None):
 # -----------------------------------------------------
 # AUTH – met wachtwoord-hash in Gebruiker.password_hash
 # -----------------------------------------------------
-from werkzeug.security import generate_password_hash, check_password_hash
 
 
 @app.route("/signup", methods=["GET", "POST"])
@@ -250,12 +250,15 @@ def api_search():
 BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
 DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
 SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
+PROJECT_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "projects")
 
 os.makedirs(DOC_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PROJECT_UPLOAD_FOLDER, exist_ok=True)
 
 app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER
 app.config["SAFETY_UPLOAD_FOLDER"] = SAFETY_UPLOAD_FOLDER
+app.config["PROJECT_UPLOAD_FOLDER"] = PROJECT_UPLOAD_FOLDER
 
 
 def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
@@ -277,10 +280,29 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
 
     if upload_folder == app.config["DOC_UPLOAD_FOLDER"]:
         relative_folder = "uploads/docs"
-    else:
+    elif upload_folder == app.config["SAFETY_UPLOAD_FOLDER"]:
         relative_folder = "uploads/safety"
+    else:
+        relative_folder = "uploads"
 
     return f"{relative_folder}/{final_filename}"
+
+
+def save_project_image(file_storage, prefix: str) -> str | None:
+    """
+    Sla een werf-afbeelding op in static/uploads/projects
+    en geef het relatieve pad terug (bv. 'uploads/projects/werf1_foto.jpg').
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+
+    filename = secure_filename(file_storage.filename)
+    final_filename = f"{prefix}_{filename}"
+
+    full_path = os.path.join(app.config["PROJECT_UPLOAD_FOLDER"], final_filename)
+    file_storage.save(full_path)
+
+    return f"uploads/projects/{final_filename}"
 
 
 # -----------------------------------------------------
@@ -309,8 +331,7 @@ def materiaal():
     if status:
         query = query.filter(Material.status.ilike(status))
 
-    items = query.all()
-
+    # totaal aantal in systeem
     total_items = Material.query.count()
 
     # Aantal in gebruik via material_usage (actieve sessies)
@@ -334,10 +355,13 @@ def materiaal():
 
     my_usages = []
     other_usages = []
+    active_material_ids = set()
 
     current_user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
 
     for usage, mat in active_usages:
+        active_material_ids.add(mat.id)
+
         row = {
             "id": usage.id,
             "material_id": mat.id,
@@ -353,6 +377,25 @@ def materiaal():
         else:
             other_usages.append(row)
 
+    # Items ophalen en sorteren:
+    #   - eerst materiaal dat in gebruik is (groen lichtje)
+    #   - daarna de rest (alfabetisch op naam)
+    items = query.all()
+    items.sort(
+        key=lambda it: (
+            it.id not in active_material_ids,  # in gebruik (False) komt eerst
+            (it.name or "").lower(),
+        )
+    )
+
+    # Werven voor de dropdown in "Gebruik Materieel"
+    today = datetime.utcnow().date()
+    projects = (
+        Project.query.filter_by(is_deleted=False)
+        .order_by(Project.start_date.asc())
+        .all()
+    )
+
     return render_template(
         "materiaal.html",
         items=items,
@@ -361,6 +404,9 @@ def materiaal():
         all_materials=all_materials,
         my_usages=my_usages,
         other_usages=other_usages,
+        active_material_ids=active_material_ids,
+        projects=projects,
+        today=today,
     )
 
 
@@ -377,6 +423,12 @@ def materiaal_toevoegen():
     Dit is wat gebeurt via het plus-icoon.
     """
     f = request.form
+
+    # Beheerwachtwoord controleren
+    admin_pw = (f.get("admin_password") or "").strip()
+    if admin_pw != "Sunset":
+        flash("Onjuist wachtwoord voor het toevoegen van nieuw materieel.", "danger")
+        return redirect(url_for("materiaal"))
 
     name = (f.get("name") or "").strip()
     serial = (f.get("serial") or "").strip()
@@ -554,6 +606,12 @@ def materiaal_gebruiken():
     nummer = (f.get("nummer_op_materieel") or "").strip()
     assigned_to = (f.get("assigned_to") or "").strip()
     site = (f.get("site") or "").strip()
+    project_id_str = (f.get("project_id") or "").strip()
+
+    project_id = int(project_id_str) if project_id_str else None
+    project = None
+    if project_id:
+        project = Project.query.filter_by(id=project_id, is_deleted=False).first()
 
     if not name and not nummer:
         flash("Naam of nummer op materieel is verplicht.", "danger")
@@ -567,21 +625,24 @@ def materiaal_gebruiken():
     if not assigned_to and getattr(g, "user", None):
         assigned_to = g.user.Naam or ""
 
-    # update materiaal zelf (optioneel)
+    # update materiaal zelf
     item.assigned_to = assigned_to
-    item.site = site or item.site
+    item.site = site or (project.name if project else item.site)
+    if project_id:
+        item.project_id = project_id
 
     # Nieuwe gebruik-sessie
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
     usage = MaterialUsage(
         material_id=item.id,
         user_id=user_id,
-        site=site or None,
+        site=item.site,
         note=None,
         start_time=datetime.utcnow(),
         end_time=None,
         is_active=True,
         used_by=assigned_to or (g.user.Naam if getattr(g, "user", None) else None),
+        project_id=project_id,
     )
 
     db.session.add(usage)
@@ -626,6 +687,267 @@ def materiaal_stop_gebruik():
 
     flash("Materieel wordt niet langer als 'in gebruik' getoond.", "success")
     return redirect(url_for("materiaal"))
+
+
+# -----------------------------------------------------
+# WERVEN
+# -----------------------------------------------------
+
+
+@app.route("/werven")
+@login_required
+def werven():
+    today = datetime.utcnow().date()
+    projects = (
+        Project.query.filter_by(is_deleted=False)
+        .order_by(Project.start_date.asc())
+        .all()
+    )
+    return render_template("werven.html", projects=projects, today=today)
+
+
+@app.route("/werven/new", methods=["POST"])
+@login_required
+def werf_toevoegen():
+    f = request.form
+
+    name = (f.get("name") or "").strip()
+    type_ = (f.get("type") or "").strip()
+    address = (f.get("address") or "").strip()
+    start_date_str = (f.get("start_date") or "").strip()
+    end_date_str = (f.get("end_date") or "").strip()
+    note = (f.get("note") or "").strip()
+
+    image_file = request.files.get("image_file")
+
+    if not name or not start_date_str:
+        flash("Naam en startdatum zijn verplicht voor een werf.", "danger")
+        return redirect(url_for("werven"))
+
+    start_date = None
+    end_date = None
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Ongeldige startdatum.", "danger")
+        return redirect(url_for("werven"))
+
+    if end_date_str:
+        try:
+            end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Ongeldige einddatum.", "danger")
+            return redirect(url_for("werven"))
+
+    image_path = save_project_image(image_file, name.replace(" ", "_")) if image_file else None
+
+    project = Project(
+        name=name,
+        address=address or None,
+        start_date=start_date,
+        end_date=end_date,
+        type=type_ or None,
+        image_url=image_path,
+        note=note or None,
+        is_deleted=False,
+        created_at=datetime.utcnow(),
+    )
+
+    db.session.add(project)
+    db.session.commit()
+
+    flash("Nieuwe werf toegevoegd.", "success")
+    return redirect(url_for("werven"))
+
+
+@app.route("/werven/delete", methods=["POST"])
+@login_required
+def werf_verwijderen():
+    project_id = (request.form.get("project_id") or "").strip()
+    admin_pw = (request.form.get("admin_password") or "").strip()
+
+    if admin_pw != "Sunset":
+        flash("Onjuist wachtwoord voor het verwijderen van een werf.", "danger")
+        return redirect(url_for("werven"))
+
+    if not project_id:
+        flash("Geen werf geselecteerd.", "danger")
+        return redirect(url_for("werven"))
+
+    project = Project.query.filter_by(id=project_id, is_deleted=False).first()
+    if not project:
+        flash("Werf niet gevonden.", "danger")
+        return redirect(url_for("werven"))
+
+    project.is_deleted = True
+    db.session.commit()
+
+    flash("Werf werd verwijderd (soft delete).", "success")
+    return redirect(url_for("werven"))
+
+
+@app.route("/werven/<int:project_id>")
+@login_required
+def werf_detail(project_id):
+    project = Project.query.filter_by(id=project_id, is_deleted=False).first_or_404()
+    today = datetime.utcnow().date()
+
+    # alle materialen
+    all_materials = Material.query.all()
+
+    # actieve usages op deze werf
+    active_usages = (
+        db.session.query(MaterialUsage, Material)
+        .join(Material, MaterialUsage.material_id == Material.id)
+        .filter(
+            MaterialUsage.is_active.is_(True),
+            MaterialUsage.project_id == project_id,
+        )
+        .order_by(MaterialUsage.start_time.desc())
+        .all()
+    )
+
+    # alle materialen die aan deze werf gekoppeld zijn
+    materials = Material.query.filter(Material.project_id == project_id).all()
+
+    return render_template(
+        "werf_detail.html",
+        project=project,
+        today=today,
+        all_materials=all_materials,
+        active_usages=active_usages,
+        materials=materials,
+    )
+
+
+@app.route("/werven/<int:project_id>/edit", methods=["POST"])
+@login_required
+def werf_bewerken(project_id):
+    project = Project.query.filter_by(id=project_id, is_deleted=False).first_or_404()
+    f = request.form
+
+    name = (f.get("name") or "").strip()
+    type_ = (f.get("type") or "").strip()
+    address = (f.get("address") or "").strip()
+    start_date_str = (f.get("start_date") or "").strip()
+    end_date_str = (f.get("end_date") or "").strip()
+    note = (f.get("note") or "").strip()
+
+    image_file = request.files.get("image_file")
+
+    if not name or not start_date_str:
+        flash("Naam en startdatum zijn verplicht voor een werf.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    try:
+        project.start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Ongeldige startdatum.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    if end_date_str:
+        try:
+            project.end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Ongeldige einddatum.", "danger")
+            return redirect(url_for("werf_detail", project_id=project_id))
+    else:
+        project.end_date = None
+
+    project.name = name
+    project.type = type_ or None
+    project.address = address or None
+    project.note = note or None
+
+    if image_file and image_file.filename:
+        project.image_url = save_project_image(image_file, name.replace(" ", "_"))
+
+    db.session.commit()
+    flash("Werfgegevens bijgewerkt.", "success")
+    return redirect(url_for("werf_detail", project_id=project_id))
+
+
+@app.route("/werven/<int:project_id>/use_material", methods=["POST"])
+@login_required
+def werf_materiaal_gebruiken(project_id):
+    project = Project.query.filter_by(id=project_id, is_deleted=False).first_or_404()
+    f = request.form
+
+    name = (f.get("name") or "").strip()
+    nummer = (f.get("nummer_op_materieel") or "").strip()
+    assigned_to = (f.get("assigned_to") or "").strip()
+
+    if not name and not nummer:
+        flash("Naam of nummer op materieel is verplicht.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    item = find_material_by_name_or_number(name, nummer)
+    if not item:
+        flash("Materiaal niet gevonden in het datasysteem.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    if not assigned_to and getattr(g, "user", None):
+        assigned_to = g.user.Naam or ""
+
+    # update materiaal zelf
+    item.assigned_to = assigned_to
+    item.site = project.name or item.site
+    item.project_id = project_id
+
+    user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    usage = MaterialUsage(
+        material_id=item.id,
+        user_id=user_id,
+        site=item.site,
+        note=None,
+        start_time=datetime.utcnow(),
+        end_time=None,
+        is_active=True,
+        used_by=assigned_to or (g.user.Naam if getattr(g, "user", None) else None),
+        project_id=project_id,
+    )
+
+    db.session.add(usage)
+    db.session.commit()
+
+    log_activity_db("In gebruik (werf)", item.name or "", item.serial or "")
+    flash("Materiaal staat nu als 'in gebruik' op deze werf.", "success")
+    return redirect(url_for("werf_detail", project_id=project_id))
+
+
+@app.route("/werven/<int:project_id>/stop_usage", methods=["POST"])
+@login_required
+def werf_stop_gebruik(project_id):
+    """
+    Stop gebruik van materiaal vanuit de werf-detailpagina.
+    """
+    usage_id = (request.form.get("usage_id") or "").strip()
+    if not usage_id:
+        flash("Geen gebruiksessie gevonden.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    usage = MaterialUsage.query.filter_by(id=usage_id, project_id=project_id).first()
+    if not usage or not usage.is_active:
+        flash("Gebruiksregistratie niet gevonden.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    usage.is_active = False
+    usage.end_time = datetime.utcnow()
+
+    mat = Material.query.filter_by(id=usage.material_id).first()
+    if mat and mat.assigned_to == usage.used_by:
+        mat.assigned_to = None
+        mat.site = None
+
+    db.session.commit()
+
+    if mat:
+        log_activity_db(
+            "Niet meer in gebruik (werf)", mat.name or "", mat.serial or ""
+        )
+
+    flash("Materiaal is niet langer in gebruik op deze werf.", "success")
+    return redirect(url_for("werf_detail", project_id=project_id))
 
 
 # -----------------------------------------------------
