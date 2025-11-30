@@ -12,9 +12,10 @@ from flask import (
 from datetime import datetime
 from functools import wraps
 import os
+from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus
 from sqlalchemy import or_, func
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -188,11 +189,23 @@ def dashboard():
     # recente activiteit uit activity_log tabel
     recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
 
+    # Data voor "Materiaal in gebruik nemen" modal
+    all_materials = Material.query.all()
+    today = datetime.utcnow().date()
+    projects = (
+        Project.query.filter_by(is_deleted=False)
+        .order_by(Project.start_date.asc())
+        .all()
+    )
+
     return render_template(
         "dashboard.html",
         total_items=total_items,
         to_inspect=to_inspect,
         recent_activity=recent,
+        all_materials=all_materials,
+        projects=projects,
+        today=today,
     )
 
 
@@ -206,40 +219,60 @@ def dashboard():
 def api_search():
     """API endpoint for searching materials - returns JSON"""
     q = (request.args.get("q") or "").strip().lower()
-
+    
     if not q:
         return {"items": []}, 200
-
+    
     like = f"%{q}%"
     items = (
         Material.query.filter(
-            or_(Material.name.ilike(like), Material.serial.ilike(like))
+        or_(Material.name.ilike(like), Material.serial.ilike(like))
         )
         .limit(10)
         .all()
     )
-
+    
     results = []
     for item in items:
+        # Check if material has active usages
+        active_usages_count = MaterialUsage.query.filter_by(
+            material_id=item.id, 
+            is_active=True
+        ).count()
+        
+        # Determine actual status: if has active usages, status is "in gebruik"
+        actual_status = "in gebruik" if active_usages_count > 0 else (item.status or "")
+        
+        # Haal keuring informatie op
+        keuring_info = None
+        if item.keuring_id:
+            keuring_info = Keuringstatus.query.filter_by(id=item.keuring_id).first()
+        
+        # Als er geen keuring_id is, probeer via serienummer
+        if not keuring_info:
+            keuring_info = Keuringstatus.query.filter_by(serienummer=item.serial).first()
+        
         results.append(
             {
-                "serial": item.serial,
-                "name": item.name,
-                "category": item.category or "",
-                "type": item.type or "",
-                "status": item.status or "",
-                "assigned_to": item.assigned_to or "",
-                "site": item.site or "",
+            "serial": item.serial,
+            "name": item.name,
+            "type": item.type or "",
+                "status": actual_status,
+            "assigned_to": item.assigned_to or "",
+            "site": item.site or "",
                 "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
                 if item.purchase_date
                 else "",
-                "note": item.note or "",
-                "nummer_op_materieel": item.nummer_op_materieel or "",
-                "documentation_path": item.documentation_path or "",
-                "safety_sheet_path": item.safety_sheet_path or "",
+            "note": item.note or "",
+            "nummer_op_materieel": item.nummer_op_materieel or "",
+            "documentation_path": item.documentation_path or "",
+            "safety_sheet_path": item.safety_sheet_path or "",
+                "inspection_status": item.inspection_status or "",
+                "keuring_gepland": keuring_info.volgende_controle.strftime("%Y-%m-%d") if keuring_info and keuring_info.volgende_controle else None,
+                "laatste_keuring": keuring_info.laatste_controle.strftime("%Y-%m-%d") if keuring_info and keuring_info.laatste_controle else None,
             }
         )
-
+    
     return jsonify({"items": results}), 200
 
 
@@ -314,7 +347,7 @@ def save_project_image(file_storage, prefix: str) -> str | None:
 @login_required
 def materiaal():
     q = (request.args.get("q") or "").strip().lower()
-    category = (request.args.get("category") or "").strip().lower()
+    type_filter = (request.args.get("type") or "").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
 
     query = Material.query
@@ -325,11 +358,14 @@ def materiaal():
             or_(Material.name.ilike(like), Material.serial.ilike(like))
         )
 
-    if category:
-        query = query.filter(Material.category.ilike(category))
+    if type_filter:
+        query = query.filter(Material.type.ilike(f"%{type_filter}%"))
 
     if status:
-        query = query.filter(Material.status.ilike(status))
+        if status == "in gebruik":
+            query = query.filter(Material.status == "in gebruik")
+        elif status == "niet in gebruik":
+            query = query.filter(Material.status != "in gebruik")
 
     # totaal aantal in systeem
     total_items = Material.query.count()
@@ -358,6 +394,7 @@ def materiaal():
     active_material_ids = set()
 
     current_user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    current_user_name = g.user.Naam if getattr(g, "user", None) else None
 
     for usage, mat in active_usages:
         active_material_ids.add(mat.id)
@@ -372,7 +409,9 @@ def materiaal():
             "start_time": usage.start_time,
         }
 
-        if current_user_id and usage.user_id == current_user_id:
+        # Check if the "used_by" name matches the logged-in user's name
+        usage_name = (usage.used_by or "").strip()
+        if current_user_name and usage_name.lower() == current_user_name.lower():
             my_usages.append(row)
         else:
             other_usages.append(row)
@@ -396,6 +435,17 @@ def materiaal():
         .all()
     )
 
+    # Get all unique types from materials for the filter dropdown
+    unique_types = (
+        db.session.query(Material.type)
+        .filter(Material.type.isnot(None))
+        .filter(Material.type != "")
+        .distinct()
+        .order_by(Material.type)
+        .all()
+    )
+    types_list = [t[0] for t in unique_types if t[0]]
+
     return render_template(
         "materiaal.html",
         items=items,
@@ -407,6 +457,7 @@ def materiaal():
         active_material_ids=active_material_ids,
         projects=projects,
         today=today,
+        types_list=types_list,
     )
 
 
@@ -433,14 +484,22 @@ def materiaal_toevoegen():
     name = (f.get("name") or "").strip()
     serial = (f.get("serial") or "").strip()
     nummer = (f.get("nummer_op_materieel") or "").strip()
-    category = (f.get("category") or "").strip()
     type_ = (f.get("type") or "").strip()
     purchase_date_str = (f.get("purchase_date") or "").strip()
-    site = (f.get("site") or "").strip()
+    project_id_str = (f.get("project_id") or "").strip()
     assigned_to = (f.get("assigned_to") or "").strip()
     note = (f.get("note") or "").strip()
     status = (f.get("status") or "goedgekeurd").strip()
     inspection_status = (f.get("inspection_status") or "").strip()
+
+    # Get project if project_id is provided
+    project_id = int(project_id_str) if project_id_str else None
+    project = None
+    site = None
+    if project_id:
+        project = Project.query.filter_by(id=project_id, is_deleted=False).first()
+        if project:
+            site = project.name
 
     documentation_file = request.files.get("documentation")
     safety_file = request.files.get("safety_sheet")
@@ -464,10 +523,10 @@ def materiaal_toevoegen():
     item = Material(
         name=name,
         serial=serial,
-        category=category,
         type=type_,
         assigned_to=assigned_to if assigned_to else None,
         site=site if site else None,
+        project_id=project_id,
         note=note if note else None,
         status=status,
         nummer_op_materieel=nummer if nummer else None,
@@ -523,7 +582,6 @@ def materiaal_bewerken():
 
     item.serial = new_serial
     item.name = (f.get("name") or "").strip()
-    item.category = (f.get("category") or "").strip()
     item.type = (f.get("type") or "").strip()
 
     purchase_date = (f.get("purchase_date") or "").strip()
@@ -536,16 +594,37 @@ def materiaal_bewerken():
     item.assigned_to = (f.get("assigned_to") or "").strip()
     item.site = (f.get("site") or "").strip()
     item.note = (f.get("note") or "").strip()
-    item.status = (f.get("status") or "goedgekeurd").strip()
+    
+    # Get keuring status from form (goedgekeurd or afgekeurd)
+    keuring_status = (f.get("status") or "goedgekeurd").strip()
+    
+    # Check if material has active usages - if so, keep status as "in gebruik"
+    active_usages_count = MaterialUsage.query.filter_by(
+        material_id=item.id, 
+        is_active=True
+    ).count()
+    
+    if active_usages_count > 0:
+        # Material is in use, keep status as "in gebruik"
+        item.status = "in gebruik"
+        # Store the keuring status in inspection_status so we can preserve it
+    if hasattr(item, "inspection_status"):
+            # Always update inspection_status with the keuring value from the form
+            item.inspection_status = keuring_status
+    else:
+        # No active usages, use keuring status from form as the main status
+        item.status = keuring_status
+        # Also store in inspection_status for consistency
+        if hasattr(item, "inspection_status"):
+            item.inspection_status = keuring_status
+    
     item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
 
-    inspection_status = (f.get("inspection_status") or "").strip()
-    if hasattr(item, "inspection_status"):
-        setattr(
-            item,
-            "inspection_status",
-            inspection_status if inspection_status else None,
-        )
+    # Handle "Volgende keuring" field (separate from keuring status)
+    next_inspection = (f.get("inspection_status") or "").strip()
+    # Only update if it's different from keuring status (to preserve "Volgende keuring" info)
+    # For now, we'll use inspection_status for keuring status, so we skip this
+    # If you need a separate "Volgende keuring" field, we'd need to add a new column
 
     documentation_file = request.files.get("documentation")
     safety_file = request.files.get("safety_sheet")
@@ -576,6 +655,12 @@ def materiaal_bewerken():
 @login_required
 def materiaal_verwijderen():
     serial = (request.form.get("serial") or "").strip()
+    admin_pw = (request.form.get("admin_password") or "").strip()
+
+    if admin_pw != "Sunset":
+        flash("Onjuist wachtwoord voor het verwijderen van materiaal.", "danger")
+        return redirect(url_for("materiaal"))
+
     item = find_material_by_serial(serial)
     if not item:
         flash("Item niet gevonden.", "danger")
@@ -586,6 +671,61 @@ def materiaal_verwijderen():
 
     log_activity_db("Verwijderd", item.name or "", serial)
     flash("Materieel verwijderd.", "success")
+    return redirect(url_for("materiaal"))
+
+
+# -----------------------------------------------------
+# MATERIAAL – DOCUMENT VERWIJDEREN
+# -----------------------------------------------------
+
+
+@app.route("/materiaal/document/delete", methods=["POST"])
+@login_required
+def materiaal_document_verwijderen():
+    """Verwijder een document (documentatie of veiligheidsfiche) van een materiaal item"""
+    serial = (request.form.get("serial") or "").strip()
+    doc_type = (request.form.get("doc_type") or "").strip()  # "documentation" of "safety"
+    
+    if not serial or not doc_type:
+        flash("Ongeldige aanvraag.", "danger")
+        return redirect(url_for("materiaal"))
+    
+    item = find_material_by_serial(serial)
+    if not item:
+        flash("Item niet gevonden.", "danger")
+        return redirect(url_for("materiaal"))
+    
+    # Bepaal welk pad moet worden verwijderd
+    file_path = None
+    field_name = None
+    
+    if doc_type == "documentation":
+        file_path = item.documentation_path
+        field_name = "documentation_path"
+    elif doc_type == "safety":
+        file_path = item.safety_sheet_path
+        field_name = "safety_sheet_path"
+    else:
+        flash("Ongeldig document type.", "danger")
+        return redirect(url_for("materiaal"))
+    
+    # Verwijder fysiek bestand als het bestaat
+    if file_path:
+        full_path = os.path.join(app.root_path, "static", file_path)
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+            except OSError as e:
+                # Log error maar ga door met database update
+                print(f"Fout bij verwijderen bestand {full_path}: {e}")
+    
+    # Verwijder pad uit database
+    setattr(item, field_name, None)
+    db.session.commit()
+    
+    doc_name = "Documentatie" if doc_type == "documentation" else "Veiligheidsfiche"
+    log_activity_db(f"{doc_name} verwijderd", item.name or "", item.serial or "")
+    flash(f"{doc_name} verwijderd.", "success")
     return redirect(url_for("materiaal"))
 
 
@@ -622,6 +762,16 @@ def materiaal_gebruiken():
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
         return redirect(url_for("materiaal"))
 
+    # Check if material is already in use
+    active_usage = MaterialUsage.query.filter_by(
+        material_id=item.id,
+        is_active=True
+    ).first()
+    
+    if active_usage:
+        flash("Materiaal is niet beschikbaar voor deze toewijzing.", "danger")
+        return redirect(url_for("materiaal"))
+
     if not assigned_to and getattr(g, "user", None):
         assigned_to = g.user.Naam or ""
 
@@ -630,6 +780,9 @@ def materiaal_gebruiken():
     item.site = site or (project.name if project else item.site)
     if project_id:
         item.project_id = project_id
+    
+    # Set status to "in gebruik"
+    item.status = "in gebruik"
 
     # Nieuwe gebruik-sessie
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
@@ -676,9 +829,20 @@ def materiaal_stop_gebruik():
 
     # optioneel ook materiaal resetten
     mat = Material.query.filter_by(id=usage.material_id).first()
-    if mat and mat.assigned_to == usage.used_by:
-        mat.assigned_to = None
-        mat.site = None
+    if mat:
+        if mat.assigned_to == usage.used_by:
+            mat.assigned_to = None
+            mat.site = None
+        
+        # Check if there are any other active usages for this material
+        other_active_usages = MaterialUsage.query.filter_by(
+            material_id=mat.id, 
+            is_active=True
+        ).count()
+        
+        # If no other active usages, revert status to "goedgekeurd"
+        if other_active_usages == 0:
+            mat.status = "goedgekeurd"
 
     db.session.commit()
 
@@ -886,6 +1050,16 @@ def werf_materiaal_gebruiken(project_id):
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
         return redirect(url_for("werf_detail", project_id=project_id))
 
+    # Check if material is already in use
+    active_usage = MaterialUsage.query.filter_by(
+        material_id=item.id,
+        is_active=True
+    ).first()
+    
+    if active_usage:
+        flash("Materiaal is niet beschikbaar voor deze toewijzing.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
     if not assigned_to and getattr(g, "user", None):
         assigned_to = g.user.Naam or ""
 
@@ -893,6 +1067,9 @@ def werf_materiaal_gebruiken(project_id):
     item.assigned_to = assigned_to
     item.site = project.name or item.site
     item.project_id = project_id
+    
+    # Set status to "in gebruik"
+    item.status = "in gebruik"
 
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
     usage = MaterialUsage(
@@ -935,9 +1112,20 @@ def werf_stop_gebruik(project_id):
     usage.end_time = datetime.utcnow()
 
     mat = Material.query.filter_by(id=usage.material_id).first()
-    if mat and mat.assigned_to == usage.used_by:
-        mat.assigned_to = None
-        mat.site = None
+    if mat:
+        if mat.assigned_to == usage.used_by:
+            mat.assigned_to = None
+            mat.site = None
+        
+        # Check if there are any other active usages for this material
+        other_active_usages = MaterialUsage.query.filter_by(
+            material_id=mat.id, 
+            is_active=True
+        ).count()
+        
+        # If no other active usages, revert status to "goedgekeurd"
+        if other_active_usages == 0:
+            mat.status = "goedgekeurd"
 
     db.session.commit()
 
@@ -951,6 +1139,66 @@ def werf_stop_gebruik(project_id):
 
 
 # -----------------------------------------------------
+# -----------------------------------------------------
+# KEURINGEN
+# -----------------------------------------------------
+
+
+@app.route("/keuringen/new", methods=["POST"])
+@login_required
+def keuring_toevoegen():
+    """Nieuwe keuring aanmaken"""
+    f = request.form
+    
+    serial = (f.get("serial") or "").strip()
+    keuring_datum_str = (f.get("keuring_datum") or "").strip()
+    uitgevoerd_door = (f.get("uitgevoerd_door") or "").strip()
+    opmerking = (f.get("opmerking") or "").strip()
+    
+    if not serial or not keuring_datum_str or not uitgevoerd_door:
+        flash("Serienummer, keuring datum en uitgevoerd door zijn verplicht.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Zoek materiaal op serienummer
+    material = find_material_by_serial(serial)
+    if not material:
+        flash("Materiaal niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Parse datum
+    try:
+        keuring_datum = datetime.strptime(keuring_datum_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Ongeldige datum formaat.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Bereken volgende keuring (standaard 6 maanden later)
+    volgende_keuring = keuring_datum + relativedelta(months=6)
+    
+    # Maak nieuwe keuring aan
+    nieuwe_keuring = Keuringstatus(
+        serienummer=serial,
+        laatste_controle=keuring_datum,
+        volgende_controle=volgende_keuring,
+    )
+    # Voeg uitgevoerd_door toe als de kolom bestaat
+    if hasattr(Keuringstatus, 'uitgevoerd_door'):
+        nieuwe_keuring.uitgevoerd_door = uitgevoerd_door
+    
+    db.session.add(nieuwe_keuring)
+    db.session.flush()  # Om de ID te krijgen
+    
+    # Koppel keuring aan materiaal
+    material.keuring_id = nieuwe_keuring.id
+    material.status = "goedgekeurd"  # Update status naar goedgekeurd
+    
+    db.session.commit()
+    
+    log_activity_db("Keuring toegevoegd", material.name or "", serial)
+    flash("Keuring succesvol toegevoegd.", "success")
+    return redirect(url_for("keuringen"))
+
+
 # KEURINGEN EN DOCUMENTEN
 # -----------------------------------------------------
 
@@ -958,7 +1206,84 @@ def werf_stop_gebruik(project_id):
 @app.route("/keuringen")
 @login_required
 def keuringen():
-    return render_template("keuringen.html")
+    """Keuringen overzicht pagina"""
+    today = datetime.utcnow().date()
+    
+    # Haal uitgevoerde keuringen op (met laatste_controle in het verleden of vandaag)
+    # Gebruik try/except om te werken met of zonder uitgevoerd_door kolom
+    try:
+        uitgevoerde_keuringen = (
+            Keuringstatus.query
+            .filter(Keuringstatus.laatste_controle <= today)
+            .order_by(Keuringstatus.laatste_controle.desc())
+            .all()
+        )
+        
+        # Haal geplande keuringen op (volgende_controle in de toekomst)
+        geplande_keuringen = (
+            Keuringstatus.query
+            .filter(Keuringstatus.volgende_controle > today)
+            .order_by(Keuringstatus.volgende_controle.asc())
+            .all()
+        )
+    except Exception as e:
+        # Als de kolom nog niet bestaat, gebruik een workaround
+        # Haal alle keuringen op en filter in Python
+        all_keuringen = Keuringstatus.query.all()
+        uitgevoerde_keuringen = [
+            k for k in all_keuringen 
+            if k.laatste_controle and k.laatste_controle <= today
+        ]
+        uitgevoerde_keuringen.sort(key=lambda x: x.laatste_controle or datetime.min.date(), reverse=True)
+        
+        geplande_keuringen = [
+            k for k in all_keuringen 
+            if k.volgende_controle and k.volgende_controle > today
+        ]
+        geplande_keuringen.sort(key=lambda x: x.volgende_controle or datetime.max.date())
+    
+    # Haal alle materialen op voor de dropdown
+    all_materials = Material.query.order_by(Material.name).all()
+    
+    # Tel keuringen - alleen die gekoppeld zijn aan bestaande materialen
+    # Dit is het aantal materialen met een keuring_id
+    total_keuringen = Material.query.filter(Material.keuring_id.isnot(None)).count()
+    
+    # Tel goedgekeurde items (items met status "goedgekeurd")
+    goedgekeurd_count = Material.query.filter_by(status="goedgekeurd").count()
+    
+    # Tel afgekeurde items
+    afgekeurd_count = Material.query.filter_by(status="afgekeurd").count()
+    
+    # Tel items die keuring vereisen
+    # Dit zijn materialen zonder keuring_id OF met een verlopen volgende_controle
+    # Materialen zonder keuring
+    zonder_keuring = Material.query.filter(Material.keuring_id.is_(None)).count()
+    
+    # Materialen met verlopen keuring (volgende_controle in het verleden)
+    verlopen_keuringen = db.session.query(Material).join(
+        Keuringstatus, Material.keuring_id == Keuringstatus.id
+    ).filter(
+        Keuringstatus.volgende_controle < today
+    ).count()
+    
+    te_keuren = zonder_keuring + verlopen_keuringen
+    
+    # Haal afgekeurde items op voor de "Items die Keuring Vereisen" box
+    afgekeurde_items = Material.query.filter_by(status="afgekeurd").order_by(Material.name).all()
+    
+    return render_template(
+        "keuringen.html",
+        uitgevoerde_keuringen=uitgevoerde_keuringen,
+        geplande_keuringen=geplande_keuringen,
+        all_materials=all_materials,
+        total_keuringen=total_keuringen,
+        goedgekeurd_count=goedgekeurd_count,
+        afgekeurd_count=afgekeurd_count,
+        te_keuren=te_keuren,
+        today=today,
+        afgekeurde_items=afgekeurde_items,
+    )
 
 
 @app.route("/documenten")
@@ -966,13 +1291,13 @@ def keuringen():
 def documenten():
     """Documenten overzicht met zoeken en filteren"""
     import os as _os
-
+    
     q = (request.args.get("q") or "").strip().lower()
     doc_type = (request.args.get("type") or "").strip().lower()
-
+    
     all_materials = Material.query.all()
     documents = []
-
+    
     for material in all_materials:
         if material.documentation_path:
             doc_name = _os.path.basename(material.documentation_path)
@@ -985,48 +1310,48 @@ def documenten():
 
             documents.append(
                 {
-                    "type": doc_type_from_name,
-                    "name": doc_name,
-                    "material": material.name or "Onbekend",
-                    "material_serial": material.serial,
+                "type": doc_type_from_name,
+                "name": doc_name,
+                "material": material.name or "Onbekend",
+                "material_serial": material.serial,
                     "date": material.created_at.strftime("%Y-%m-%d")
                     if getattr(material, "created_at", None)
                     else "",
                     "size": "2.3 MB",
-                    "uploaded_by": material.assigned_to or "Systeem",
-                    "path": material.documentation_path,
+                "uploaded_by": material.assigned_to or "Systeem",
+                "path": material.documentation_path,
                     "status": doc_type_from_name,
                 }
             )
-
+        
         if material.safety_sheet_path:
             doc_name = _os.path.basename(material.safety_sheet_path)
             documents.append(
                 {
-                    "type": "Veiligheidscertificaat",
-                    "name": doc_name,
-                    "material": material.name or "Onbekend",
-                    "material_serial": material.serial,
+                "type": "Veiligheidscertificaat",
+                "name": doc_name,
+                "material": material.name or "Onbekend",
+                "material_serial": material.serial,
                     "date": material.created_at.strftime("%Y-%m-%d")
                     if getattr(material, "created_at", None)
                     else "",
                     "size": "456 KB",
-                    "uploaded_by": material.assigned_to or "Systeem",
-                    "path": material.safety_sheet_path,
+                "uploaded_by": material.assigned_to or "Systeem",
+                "path": material.safety_sheet_path,
                     "status": "Veiligheidscertificaat",
                 }
             )
-
+    
     documents.append(
         {
-            "type": "Servicerapport",
-            "name": "Service-Rapport-Augustus-2024.pdf",
-            "material": "Compressor Atlas Copco",
-            "material_serial": "CP-2022-112",
-            "date": "2024-08-01",
-            "size": "1.1 MB",
-            "uploaded_by": "Atlas Copco",
-            "path": None,
+        "type": "Servicerapport",
+        "name": "Service-Rapport-Augustus-2024.pdf",
+        "material": "Compressor Atlas Copco",
+        "material_serial": "CP-2022-112",
+        "date": "2024-08-01",
+        "size": "1.1 MB",
+        "uploaded_by": "Atlas Copco",
+        "path": None,
             "status": "Servicerapport",
         }
     )
@@ -1042,12 +1367,12 @@ def documenten():
         documents = [
             d for d in documents if d["type"].lower() == doc_type.lower()
         ]
-
+    
     total_docs = len(documents)
     safety_certs = len(
         [d for d in documents if d["type"] == "Veiligheidscertificaat"]
     )
-
+    
     return render_template(
         "documenten.html",
         documents=documents,

@@ -133,6 +133,12 @@ body {
   line-height: 1;
 }
 
+.menu-item[href*="werven"]::before {
+  content: "🏗️";
+  font-size: 16px;
+  line-height: 1;
+}
+
 .menu-item[href*="keuringen"]::before {
   content: "✓";
   font-size: 16px;
