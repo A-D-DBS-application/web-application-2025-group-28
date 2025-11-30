@@ -848,7 +848,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
                 <div class="col-md-6">
                   <strong>Keuring:</strong><br>
-                  <span class="badge ${keuringClass}">${escapeHtml(keuringText)}</span>
+                  ${item.keuring_gepland ? `
+                    <span class="badge bg-info">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>
+                  ` : `
+                    <span class="badge ${keuringClass}">${escapeHtml(keuringText)}</span>
+                  `}
+                  ${item.laatste_keuring ? `
+                    <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
+                  ` : ''}
                 </div>
                 <div class="col-md-6">
                   <strong>Toegewezen aan:</strong><br>

@@ -144,3 +144,23 @@ class MaterialUsage(db.Model):
         primaryjoin="Project.id == foreign(MaterialUsage.project_id)",
         viewonly=True,
     )
+
+
+class Keuringstatus(db.Model):
+    """
+    Map naar Supabase tabel 'Keuringstatus'
+    
+    Kolommen in Supabase:
+    id, created_at, laatste_controle, volgende_controle, serienummer, uitgevoerd_door
+    """
+    __tablename__ = "Keuringstatus"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    
+    laatste_controle = db.Column("laatste_controle", db.Date, nullable=True)
+    volgende_controle = db.Column("volgende_controle", db.Date, nullable=True)
+    serienummer = db.Column("serienummer", db.String, nullable=True)
+    uitgevoerd_door = db.Column("uitgevoerd_door", db.String, nullable=True)
+    
+    # Relatie naar Material via serienummer (niet via foreign key, maar via serienummer match)
