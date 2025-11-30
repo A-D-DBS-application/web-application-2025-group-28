@@ -183,40 +183,6 @@
       </form>
     </div>
 
-    <!-- Overzicht materialen gekoppeld aan deze werf -->
-    <div class="card panel">
-      <div class="panel-title">Alle materiaal gekoppeld aan deze werf</div>
-      <div class="panel-sub">Op basis van het veld 'project_id' in materials</div>
-
-      {% if materials %}
-        <div class="table-responsive mt-2">
-          <table class="table align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Serienummer</th>
-                <th>Naam</th>
-                <th>Type</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for m in materials %}
-                <tr>
-                  <td>{{ m.serial }}</td>
-                  <td>{{ m.name }}</td>
-                  <td>{{ m.type or '-' }}</td>
-                  <td>{{ m.status or '-' }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <div class="text-muted mt-2">
-          Nog geen materiaal structureel gekoppeld aan deze werf.
-        </div>
-      {% endif %}
-    </div>
   </div>
 </div>
 

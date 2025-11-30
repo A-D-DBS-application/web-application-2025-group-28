@@ -39,7 +39,7 @@
   <div class="card kpi">
     <div class="kpi-title">Momenteel in gebruik <span class="kpi-dot"></span></div>
     <div class="kpi-value">{{ in_use }}</div>
-    <div class="kpi-sub">Items in een project (actieve sessies)</div>
+    <div class="kpi-sub">Items in een project</div>
   </div>
 
   <!-- Hero image rechts (neemt 2 rijen) -->
@@ -96,19 +96,13 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <form method="post"
-                            action="{{ url_for('materiaal_stop_gebruik') }}"
-                            class="d-inline"
-                            onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
-                        <input type="hidden" name="usage_id" value="{{ u.id }}">
-                        <button class="btn btn-sm btn-outline-secondary">
-                          Niet meer gebruiken
+                      <button type="button"
+                              class="btn btn-sm btn-outline-dark"
+                              data-bs-toggle="modal"
+                              data-bs-target="#materieelDetailsModal"
+                              onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
+                        Bekijk en bewerk
                         </button>
-                      </form>
-                      <a href="{{ url_for('materiaal', q=u.serial) }}"
-                         class="btn btn-sm btn-outline-dark">
-                        Bekijk / bewerk
-                      </a>
                     </td>
                   </tr>
                 {% endfor %}
@@ -150,19 +144,13 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <form method="post"
-                            action="{{ url_for('materiaal_stop_gebruik') }}"
-                            class="d-inline"
-                            onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
-                        <input type="hidden" name="usage_id" value="{{ u.id }}">
-                        <button class="btn btn-sm btn-outline-secondary">
-                          Niet meer gebruiken
+                      <button type="button"
+                              class="btn btn-sm btn-outline-dark"
+                              data-bs-toggle="modal"
+                              data-bs-target="#materieelDetailsModal"
+                              onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
+                        Bekijk en bewerk
                         </button>
-                      </form>
-                      <a href="{{ url_for('materiaal', q=u.serial) }}"
-                         class="btn btn-sm btn-outline-dark">
-                        Bekijk / bewerk
-                      </a>
                     </td>
                   </tr>
                 {% endfor %}
@@ -247,12 +235,16 @@
       <tbody>
         {% if items %}
           {% for it in items %}
-          <tr>
+          <tr style="cursor: pointer;" 
+              onclick="showMaterialDetails('{{ it.serial }}', null)"
+              onmouseover="this.style.backgroundColor='#f8f9fa'" 
+              onmouseout="this.style.backgroundColor=''">
             <td>{{ it.serial }}</td>
             <td>{{ it.name }}</td>
             <td>{{ it.type|title if it.type else '' }}</td>
             <td>
-              {% if it.status == "in gebruik" %}
+              {% set is_in_use = it.id in active_material_ids %}
+              {% if is_in_use %}
                 <span class="badge bg-success">In gebruik</span>
               {% else %}
                 <span class="badge bg-danger">Niet in gebruik</span>
@@ -270,34 +262,15 @@
                 <span class="badge bg-secondary">{{ it.status|title if it.status else "-" }}</span>
               {% endif %}
             </td>
-            <td class="text-end">
-              <div class="btn-group">
-                <button
-                  class="btn btn-sm btn-outline-secondary"
+            <td class="text-end" onclick="event.stopPropagation();">
+              <button type="button"
+                      class="btn btn-sm btn-outline-danger"
                   data-bs-toggle="modal"
-                  data-bs-target="#editMaterieelModal"
+                      data-bs-target="#deleteMaterieelModal"
                   data-serial="{{ it.serial }}"
-                  data-name="{{ it.name }}"
-                  data-type="{{ it.type }}"
-                  data-purchase_date="{{ it.purchase_date }}"
-                  data-assigned_to="{{ it.assigned_to }}"
-                  data-site="{{ it.site }}"
-                  data-note="{{ it.note }}"
-                  data-status="{{ it.status }}"
-                  data-inspection_status="{{ it.inspection_status }}"
-                  data-nummer_op_materieel="{{ it.nummer_op_materieel }}"
-                >
-                  Bewerken
+                      data-name="{{ it.name }}">
+                Verwijderen
                 </button>
-                <button type="button"
-                        class="btn btn-sm btn-outline-danger"
-                        data-bs-toggle="modal"
-                        data-bs-target="#deleteMaterieelModal"
-                        data-serial="{{ it.serial }}"
-                        data-name="{{ it.name }}">
-                  Verwijderen
-                </button>
-              </div>
             </td>
           </tr>
           {% endfor %}
@@ -405,7 +378,7 @@
       </form>
     </div>
   </div>
-</div>
+            </div>
 
 <!-- Modal: Beheerwachtwoord -->
 <div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
@@ -418,8 +391,8 @@
       <div class="modal-body">
         <div class="mb-3">
           <label class="form-label">Voer beheerwachtwoord in*</label>
-          <input
-            type="password"
+              <input
+                type="password"
             id="admin-password-input"
             class="form-control"
             placeholder="Beheerwachtwoord"
@@ -456,9 +429,9 @@
           <div class="mb-3">
             <label class="form-label">Beheerwachtwoord*</label>
             <input type="password"
-                   name="admin_password"
-                   class="form-control"
-                   required>
+                name="admin_password"
+                class="form-control"
+                required>
           </div>
         </div>
         <div class="modal-footer">
@@ -466,6 +439,34 @@
           <button type="submit" class="btn btn-danger">Verwijderen</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Materieel Details -->
+<div class="modal fade" id="materieelDetailsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="details-material-name">Materieel Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+      <div class="modal-body" id="materieelDetailsBody">
+        <div class="text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Laden...</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
+        <form method="post" action="{{ url_for('materiaal_stop_gebruik') }}" id="stop-gebruik-form" class="d-inline" style="display: none !important;" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+          <input type="hidden" name="usage_id" id="stop-usage-id">
+          <button type="submit" class="btn btn-outline-secondary" id="details-stop-btn">Niet meer gebruiken</button>
+        </form>
+        <button type="button" class="btn btn-outline-primary" id="details-use-btn" style="display: none !important;">In gebruik nemen</button>
+        <button type="button" class="btn btn-primary" id="details-edit-btn">Bewerken</button>
+      </div>
     </div>
   </div>
 </div>
@@ -587,7 +588,7 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Status*</label>
+              <label class="form-label">Keuring*</label>
               <select name="status" id="edit-status" class="form-select" required>
                 <option value="goedgekeurd">Goedgekeurd</option>
                 <option value="afgekeurd">Afgekeurd</option>
@@ -681,8 +682,9 @@ document.addEventListener('DOMContentLoaded', function () {
   if (editModal) {
     editModal.addEventListener('show.bs.modal', function (event) {
       const button = event.relatedTarget;
-      if (!button) return;
-
+      // Only populate from button if button exists (when opened from table)
+      // If opened programmatically, values are already set
+      if (button) {
       const data = {
         serial: button.getAttribute('data-serial') || '',
         name: button.getAttribute('data-name') || '',
@@ -707,6 +709,7 @@ document.addEventListener('DOMContentLoaded', function () {
       document.getElementById('edit-status').value = data.status;
       document.getElementById('edit-inspection_status').value = data.inspection_status;
       document.getElementById('edit-nummer_op_materieel').value = data.nummer_op_materieel;
+      }
     });
   }
 
@@ -789,6 +792,218 @@ document.addEventListener('DOMContentLoaded', function () {
       if (serialInput) serialInput.value = serial;
       if (nameSpan) nameSpan.textContent = name;
     });
+  }
+
+  // Function to show material details
+  window.showMaterialDetails = function(serial, usageId) {
+    const modal = new bootstrap.Modal(document.getElementById('materieelDetailsModal'));
+    const modalBody = document.getElementById('materieelDetailsBody');
+    const modalTitle = document.getElementById('details-material-name');
+    const editBtn = document.getElementById('details-edit-btn');
+    
+    // Initially hide both buttons, will be shown based on status from API
+    const stopForm = document.getElementById('stop-gebruik-form');
+    const useBtn = document.getElementById('details-use-btn');
+    if (stopForm) stopForm.style.display = 'none';
+    if (useBtn) useBtn.style.display = 'none';
+    
+    modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
+    modal.show();
+    
+    fetch(`/api/search?q=${encodeURIComponent(serial)}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.items && data.items.length > 0) {
+          const item = data.items[0];
+          // Status: "in gebruik" or "niet in gebruik"
+          const isInUse = item.status === 'in gebruik';
+          const statusClass = isInUse ? 'bg-success' : 'bg-danger';
+          const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
+          
+          // Keuring: based on original status (goedgekeurd/afgekeurd)
+          // If status is "in gebruik", check if we can determine the approval status
+          // For now, we'll show goedgekeurd when in gebruik (as per previous logic)
+          const keuringClass = item.status === 'goedgekeurd' ? 'bg-success' : 
+                              item.status === 'afgekeurd' ? 'bg-danger' : 'bg-success';
+          const keuringText = item.status === 'goedgekeurd' ? 'Goedgekeurd' : 
+                             item.status === 'afgekeurd' ? 'Afgekeurd' : 'Goedgekeurd';
+          
+          const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
+          
+          modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
+          
+          modalBody.innerHTML = `
+            <div class="material-detail">
+              <div class="mb-3">
+                <strong>Serienummer:</strong> ${displayValue(item.serial)}
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <strong>Type:</strong><br>
+                  ${displayValue(item.type)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Status:</strong><br>
+                  <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
+                </div>
+                <div class="col-md-6">
+                  <strong>Keuring:</strong><br>
+                  <span class="badge ${keuringClass}">${escapeHtml(keuringText)}</span>
+                </div>
+                <div class="col-md-6">
+                  <strong>Toegewezen aan:</strong><br>
+                  ${displayValue(item.assigned_to)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Werf:</strong><br>
+                  ${displayValue(item.site)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Aankoopdatum:</strong><br>
+                  ${displayValue(item.purchase_date)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Nummer op Materieel:</strong><br>
+                  ${displayValue(item.nummer_op_materieel)}
+                </div>
+              </div>
+              <div class="mb-3">
+                <strong>Opmerking:</strong><br>
+                ${displayValue(item.note)}
+              </div>
+              ${item.documentation_path ? `
+                <div class="mb-3">
+                  <strong>Documentatie:</strong><br>
+                  <a href="/static/${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                    📄 Bekijk documentatie
+                  </a>
+                  <a href="/static/${escapeHtml(item.documentation_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                    ⬇️ Download
+                  </a>
+                  <form method="post" action="{{ url_for('materiaal_document_verwijderen') }}" class="d-inline" onsubmit="return confirm('Weet je zeker dat je dit document wilt verwijderen?');">
+                    <input type="hidden" name="serial" value="${escapeHtml(item.serial)}">
+                    <input type="hidden" name="doc_type" value="documentation">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      🗑️ Verwijder
+                    </button>
+                  </form>
+                </div>
+              ` : ''}
+              ${item.safety_sheet_path ? `
+                <div class="mb-3">
+                  <strong>Veiligheidsfiche:</strong><br>
+                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                    📄 Bekijk veiligheidsfiche
+                  </a>
+                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                    ⬇️ Download
+                  </a>
+                  <form method="post" action="{{ url_for('materiaal_document_verwijderen') }}" class="d-inline" onsubmit="return confirm('Weet je zeker dat je dit document wilt verwijderen?');">
+                    <input type="hidden" name="serial" value="${escapeHtml(item.serial)}">
+                    <input type="hidden" name="doc_type" value="safety">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      🗑️ Verwijder
+                    </button>
+                  </form>
+                </div>
+              ` : ''}
+            </div>
+          `;
+          
+          // Show/hide buttons based on status - ensure only one is visible
+          const stopForm = document.getElementById('stop-gebruik-form');
+          const stopBtn = document.getElementById('details-stop-btn');
+          const useBtn = document.getElementById('details-use-btn');
+          
+          // Always hide both first, then show the correct one
+          if (stopForm) {
+            stopForm.style.setProperty('display', 'none', 'important');
+          }
+          if (stopBtn) {
+            stopBtn.style.setProperty('display', 'none', 'important');
+          }
+          if (useBtn) {
+            useBtn.style.setProperty('display', 'none', 'important');
+            // Remove any existing onclick handlers
+            useBtn.onclick = null;
+          }
+          
+          if (isInUse) {
+            // Material is in use - show "Niet meer gebruiken" button only
+            if (stopForm) {
+              stopForm.style.setProperty('display', 'inline-block', 'important');
+            }
+            // Set usage_id if available (from usageId parameter)
+            if (usageId && document.getElementById('stop-usage-id')) {
+              document.getElementById('stop-usage-id').value = usageId;
+            }
+          } else {
+            // Material is not in use - show "In gebruik nemen" button only
+            if (useBtn) {
+              useBtn.style.setProperty('display', 'inline-block', 'important');
+              // Set up the button to open usage modal and pre-fill data
+              useBtn.onclick = function() {
+                modal.hide();
+                // Open usage modal and pre-fill with material data
+                const usageModal = new bootstrap.Modal(document.getElementById('gebruikMaterieelModal'));
+                const nameInput = document.querySelector('#gebruikMaterieelModal input[name="name"]');
+                if (nameInput) nameInput.value = item.name || '';
+                usageModal.show();
+              };
+            }
+          }
+          
+          // Set up edit button - populate edit modal with data from API
+          if (editBtn) {
+            editBtn.onclick = function() {
+              modal.hide();
+              // Populate edit modal with the material data
+              const editModal = new bootstrap.Modal(document.getElementById('editMaterieelModal'));
+              document.getElementById('edit-original-serial').value = item.serial || '';
+              document.getElementById('edit-serial').value = item.serial || '';
+              document.getElementById('edit-name').value = item.name || '';
+              document.getElementById('edit-type').value = item.type || '';
+              document.getElementById('edit-purchase_date').value = item.purchase_date || '';
+              document.getElementById('edit-assigned_to').value = item.assigned_to || '';
+              document.getElementById('edit-site').value = item.site || '';
+              document.getElementById('edit-note').value = item.note || '';
+              
+              // For keuring status: if status is "in gebruik", use inspection_status if available, otherwise default to "goedgekeurd"
+              let keuringValue = 'goedgekeurd';
+              if (item.status === 'in gebruik') {
+                // Material is in use, check inspection_status for the original keuring
+                keuringValue = item.inspection_status || 'goedgekeurd';
+              } else {
+                // Material is not in use, status is the keuring status
+                keuringValue = item.status || 'goedgekeurd';
+              }
+              document.getElementById('edit-status').value = keuringValue;
+              
+              document.getElementById('edit-inspection_status').value = item.inspection_status || '';
+              document.getElementById('edit-nummer_op_materieel').value = item.nummer_op_materieel || '';
+              editModal.show();
+            };
+          }
+        } else {
+          modalBody.innerHTML = '<div class="alert alert-warning">Item niet gevonden.</div>';
+        }
+      })
+      .catch(error => {
+        console.error('Error loading material detail:', error);
+        modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
+      });
+  };
+  
+  function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
   }
 
 });

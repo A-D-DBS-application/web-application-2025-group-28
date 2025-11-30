@@ -233,12 +233,21 @@ def api_search():
 
     results = []
     for item in items:
+        # Check if material has active usages
+        active_usages_count = MaterialUsage.query.filter_by(
+            material_id=item.id, 
+            is_active=True
+        ).count()
+        
+        # Determine actual status: if has active usages, status is "in gebruik"
+        actual_status = "in gebruik" if active_usages_count > 0 else (item.status or "")
+        
         results.append(
             {
                 "serial": item.serial,
                 "name": item.name,
                 "type": item.type or "",
-                "status": item.status or "",
+                "status": actual_status,
                 "assigned_to": item.assigned_to or "",
                 "site": item.site or "",
                 "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
@@ -248,6 +257,7 @@ def api_search():
                 "nummer_op_materieel": item.nummer_op_materieel or "",
                 "documentation_path": item.documentation_path or "",
                 "safety_sheet_path": item.safety_sheet_path or "",
+                "inspection_status": item.inspection_status or "",
             }
         )
 
@@ -372,6 +382,7 @@ def materiaal():
     active_material_ids = set()
 
     current_user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    current_user_name = g.user.Naam if getattr(g, "user", None) else None
 
     for usage, mat in active_usages:
         active_material_ids.add(mat.id)
@@ -386,7 +397,9 @@ def materiaal():
             "start_time": usage.start_time,
         }
 
-        if current_user_id and usage.user_id == current_user_id:
+        # Check if the "used_by" name matches the logged-in user's name
+        usage_name = (usage.used_by or "").strip()
+        if current_user_name and usage_name.lower() == current_user_name.lower():
             my_usages.append(row)
         else:
             other_usages.append(row)
@@ -569,16 +582,37 @@ def materiaal_bewerken():
     item.assigned_to = (f.get("assigned_to") or "").strip()
     item.site = (f.get("site") or "").strip()
     item.note = (f.get("note") or "").strip()
-    item.status = (f.get("status") or "goedgekeurd").strip()
+    
+    # Get keuring status from form (goedgekeurd or afgekeurd)
+    keuring_status = (f.get("status") or "goedgekeurd").strip()
+    
+    # Check if material has active usages - if so, keep status as "in gebruik"
+    active_usages_count = MaterialUsage.query.filter_by(
+        material_id=item.id, 
+        is_active=True
+    ).count()
+    
+    if active_usages_count > 0:
+        # Material is in use, keep status as "in gebruik"
+        item.status = "in gebruik"
+        # Store the keuring status in inspection_status so we can preserve it
+        if hasattr(item, "inspection_status"):
+            # Always update inspection_status with the keuring value from the form
+            item.inspection_status = keuring_status
+    else:
+        # No active usages, use keuring status from form as the main status
+        item.status = keuring_status
+        # Also store in inspection_status for consistency
+        if hasattr(item, "inspection_status"):
+            item.inspection_status = keuring_status
+    
     item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
 
-    inspection_status = (f.get("inspection_status") or "").strip()
-    if hasattr(item, "inspection_status"):
-        setattr(
-            item,
-            "inspection_status",
-            inspection_status if inspection_status else None,
-        )
+    # Handle "Volgende keuring" field (separate from keuring status)
+    next_inspection = (f.get("inspection_status") or "").strip()
+    # Only update if it's different from keuring status (to preserve "Volgende keuring" info)
+    # For now, we'll use inspection_status for keuring status, so we skip this
+    # If you need a separate "Volgende keuring" field, we'd need to add a new column
 
     documentation_file = request.files.get("documentation")
     safety_file = request.files.get("safety_sheet")
@@ -629,6 +663,61 @@ def materiaal_verwijderen():
 
 
 # -----------------------------------------------------
+# MATERIAAL – DOCUMENT VERWIJDEREN
+# -----------------------------------------------------
+
+
+@app.route("/materiaal/document/delete", methods=["POST"])
+@login_required
+def materiaal_document_verwijderen():
+    """Verwijder een document (documentatie of veiligheidsfiche) van een materiaal item"""
+    serial = (request.form.get("serial") or "").strip()
+    doc_type = (request.form.get("doc_type") or "").strip()  # "documentation" of "safety"
+    
+    if not serial or not doc_type:
+        flash("Ongeldige aanvraag.", "danger")
+        return redirect(url_for("materiaal"))
+    
+    item = find_material_by_serial(serial)
+    if not item:
+        flash("Item niet gevonden.", "danger")
+        return redirect(url_for("materiaal"))
+    
+    # Bepaal welk pad moet worden verwijderd
+    file_path = None
+    field_name = None
+    
+    if doc_type == "documentation":
+        file_path = item.documentation_path
+        field_name = "documentation_path"
+    elif doc_type == "safety":
+        file_path = item.safety_sheet_path
+        field_name = "safety_sheet_path"
+    else:
+        flash("Ongeldig document type.", "danger")
+        return redirect(url_for("materiaal"))
+    
+    # Verwijder fysiek bestand als het bestaat
+    if file_path:
+        full_path = os.path.join(app.root_path, "static", file_path)
+        if os.path.exists(full_path):
+            try:
+                os.remove(full_path)
+            except OSError as e:
+                # Log error maar ga door met database update
+                print(f"Fout bij verwijderen bestand {full_path}: {e}")
+    
+    # Verwijder pad uit database
+    setattr(item, field_name, None)
+    db.session.commit()
+    
+    doc_name = "Documentatie" if doc_type == "documentation" else "Veiligheidsfiche"
+    log_activity_db(f"{doc_name} verwijderd", item.name or "", item.serial or "")
+    flash(f"{doc_name} verwijderd.", "success")
+    return redirect(url_for("materiaal"))
+
+
+# -----------------------------------------------------
 # MATERIAAL – IN GEBRUIK NEMEN
 # -----------------------------------------------------
 
@@ -659,6 +748,16 @@ def materiaal_gebruiken():
     item = find_material_by_name_or_number(name, nummer)
     if not item:
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # Check if material is already in use
+    active_usage = MaterialUsage.query.filter_by(
+        material_id=item.id,
+        is_active=True
+    ).first()
+    
+    if active_usage:
+        flash("Materiaal is niet beschikbaar voor deze toewijzing.", "danger")
         return redirect(url_for("materiaal"))
 
     if not assigned_to and getattr(g, "user", None):
@@ -937,6 +1036,16 @@ def werf_materiaal_gebruiken(project_id):
     item = find_material_by_name_or_number(name, nummer)
     if not item:
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    # Check if material is already in use
+    active_usage = MaterialUsage.query.filter_by(
+        material_id=item.id,
+        is_active=True
+    ).first()
+    
+    if active_usage:
+        flash("Materiaal is niet beschikbaar voor deze toewijzing.", "danger")
         return redirect(url_for("werf_detail", project_id=project_id))
 
     if not assigned_to and getattr(g, "user", None):
