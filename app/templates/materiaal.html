@@ -221,9 +221,8 @@
     <div class="col-6 col-md-3">
       <select name="status" class="form-select">
         <option value="">Alle statussen</option>
-        {% for s in ["goedgekeurd","afgekeurd"] %}
-          <option value="{{ s }}" {% if request.args.get('status')==s %}selected{% endif %}>{{ s|title }}</option>
-        {% endfor %}
+        <option value="in gebruik" {% if request.args.get('status')=='in gebruik' %}selected{% endif %}>In gebruik</option>
+        <option value="niet in gebruik" {% if request.args.get('status')=='niet in gebruik' %}selected{% endif %}>Niet in gebruik</option>
       </select>
     </div>
 
@@ -253,12 +252,24 @@
             <td>{{ it.name }}</td>
             <td>{{ it.type|title if it.type else '' }}</td>
             <td>
-              {% set in_use_flag = it.id in active_material_ids %}
-              <span class="badge {% if in_use_flag %}bg-success{% else %}bg-danger{% endif %}">
-                &nbsp;
-              </span>
+              {% if it.status == "in gebruik" %}
+                <span class="badge bg-success">In gebruik</span>
+              {% else %}
+                <span class="badge bg-danger">Niet in gebruik</span>
+              {% endif %}
             </td>
-            <td>{{ it.inspection_status or "-" }}</td>
+            <td>
+              {% if it.status == "goedgekeurd" %}
+                <span class="badge bg-success">Goedgekeurd</span>
+              {% elif it.status == "afgekeurd" %}
+                <span class="badge bg-danger">Afgekeurd</span>
+              {% elif it.status == "in gebruik" %}
+                {# When in gebruik, we assume it was goedgekeurd before #}
+                <span class="badge bg-success">Goedgekeurd</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ it.status|title if it.status else "-" }}</span>
+              {% endif %}
+            </td>
             <td class="text-end">
               <div class="btn-group">
                 <button
@@ -278,10 +289,14 @@
                 >
                   Bewerken
                 </button>
-                <form method="post" action="{{ url_for('materiaal_verwijderen') }}" onsubmit="return confirm('Verwijderen?');">
-                  <input type="hidden" name="serial" value="{{ it.serial }}">
-                  <button class="btn btn-sm btn-outline-danger">Verwijderen</button>
-                </form>
+                <button type="button"
+                        class="btn btn-sm btn-outline-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#deleteMaterieelModal"
+                        data-serial="{{ it.serial }}"
+                        data-name="{{ it.name }}">
+                  Verwijderen
+                </button>
               </div>
             </td>
           </tr>
@@ -339,8 +354,19 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Werf (optioneel, vrije tekst)</label>
-              <input name="site" class="form-control" placeholder="Bv. Project Turnhout">
+              <label class="form-label">Werf (optioneel)</label>
+              <select name="project_id" class="form-select">
+                <option value="">Geen specifieke werf</option>
+                {% for p in projects %}
+                  {% set is_future = p.start_date and p.start_date > today %}
+                  <option value="{{ p.id }}">
+                    {{ p.name or 'Werf ' ~ p.id }}
+                    {% if is_future and p.start_date %}
+                      (start {{ p.start_date.strftime('%Y-%m-%d') }})
+                    {% endif %}
+                  </option>
+                {% endfor %}
+              </select>
             </div>
 
             <div class="col-md-6">
@@ -411,6 +437,39 @@
   </div>
 </div>
 
+<!-- Modal: Materieel verwijderen (met wachtwoord) -->
+<div class="modal fade" id="deleteMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('materiaal_verwijderen') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Materieel verwijderen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="serial" id="delete-material-serial">
+          <p>
+            Weet je zeker dat je het materiaal
+            <strong id="delete-material-name"></strong>
+            wilt verwijderen?
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Beheerwachtwoord*</label>
+            <input type="password"
+                   name="admin_password"
+                   class="form-control"
+                   required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-danger">Verwijderen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Gebruik Materieel -->
 <div class="modal fade" id="gebruikMaterieelModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-end modal-lg">
@@ -437,14 +496,6 @@
                   {% endif %}
                 {% endfor %}
               </datalist>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Nummer op Materieel</label>
-              <input name="nummer_op_materieel"
-                     id="use-nummer"
-                     class="form-control"
-                     placeholder="Sticker / nummer op toestel">
             </div>
 
             <div class="col-md-6">
@@ -719,6 +770,24 @@ document.addEventListener('DOMContentLoaded', function () {
     passwordModalElement.addEventListener('show.bs.modal', function() {
       passwordError.style.display = 'none';
       passwordInput.value = '';
+    });
+  }
+
+  // Handle "Materieel verwijderen" modal
+  const deleteMaterieelModal = document.getElementById('deleteMaterieelModal');
+  if (deleteMaterieelModal) {
+    deleteMaterieelModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      if (!button) return;
+
+      const serial = button.getAttribute('data-serial') || '';
+      const name = button.getAttribute('data-name') || 'dit materiaal';
+
+      const serialInput = document.getElementById('delete-material-serial');
+      const nameSpan = document.getElementById('delete-material-name');
+
+      if (serialInput) serialInput.value = serial;
+      if (nameSpan) nameSpan.textContent = name;
     });
   }
 

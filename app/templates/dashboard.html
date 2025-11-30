@@ -131,14 +131,6 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Nummer op Materieel</label>
-              <input name="nummer_op_materieel"
-                     id="use-nummer"
-                     class="form-control"
-                     placeholder="Sticker / nummer op toestel">
-            </div>
-
-            <div class="col-md-6">
               <label class="form-label">Gebruikt door</label>
               <input name="assigned_to"
                      id="use-assigned_to"
@@ -394,13 +386,10 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('click', function(e) {
     if (e.target && e.target.classList.contains('gebruik-btn')) {
       const name = e.target.getAttribute('data-item-name') || '';
-      const nummer = e.target.getAttribute('data-item-nummer') || '';
       
       const nameInput = document.getElementById('use-name');
-      const nummerInput = document.getElementById('use-nummer');
       
       if (nameInput) nameInput.value = name;
-      if (nummerInput) nummerInput.value = nummer;
     }
   });
   
@@ -411,13 +400,10 @@ document.addEventListener('DOMContentLoaded', function() {
       const button = event.relatedTarget;
       if (button && button.classList.contains('gebruik-btn')) {
         const name = button.getAttribute('data-item-name') || '';
-        const nummer = button.getAttribute('data-item-nummer') || '';
         
         const nameInput = document.getElementById('use-name');
-        const nummerInput = document.getElementById('use-nummer');
         
         if (nameInput) nameInput.value = name;
-        if (nummerInput) nummerInput.value = nummer;
       }
     });
   }

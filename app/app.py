@@ -340,7 +340,10 @@ def materiaal():
         query = query.filter(Material.type.ilike(f"%{type_filter}%"))
 
     if status:
-        query = query.filter(Material.status.ilike(status))
+        if status == "in gebruik":
+            query = query.filter(Material.status == "in gebruik")
+        elif status == "niet in gebruik":
+            query = query.filter(Material.status != "in gebruik")
 
     # totaal aantal in systeem
     total_items = Material.query.count()
@@ -458,11 +461,20 @@ def materiaal_toevoegen():
     nummer = (f.get("nummer_op_materieel") or "").strip()
     type_ = (f.get("type") or "").strip()
     purchase_date_str = (f.get("purchase_date") or "").strip()
-    site = (f.get("site") or "").strip()
+    project_id_str = (f.get("project_id") or "").strip()
     assigned_to = (f.get("assigned_to") or "").strip()
     note = (f.get("note") or "").strip()
     status = (f.get("status") or "goedgekeurd").strip()
     inspection_status = (f.get("inspection_status") or "").strip()
+    
+    # Get project if project_id is provided
+    project_id = int(project_id_str) if project_id_str else None
+    project = None
+    site = None
+    if project_id:
+        project = Project.query.filter_by(id=project_id, is_deleted=False).first()
+        if project:
+            site = project.name
 
     documentation_file = request.files.get("documentation")
     safety_file = request.files.get("safety_sheet")
@@ -489,6 +501,7 @@ def materiaal_toevoegen():
         type=type_,
         assigned_to=assigned_to if assigned_to else None,
         site=site if site else None,
+        project_id=project_id,
         note=note if note else None,
         status=status,
         nummer_op_materieel=nummer if nummer else None,
@@ -596,6 +609,12 @@ def materiaal_bewerken():
 @login_required
 def materiaal_verwijderen():
     serial = (request.form.get("serial") or "").strip()
+    admin_pw = (request.form.get("admin_password") or "").strip()
+
+    if admin_pw != "Sunset":
+        flash("Onjuist wachtwoord voor het verwijderen van materiaal.", "danger")
+        return redirect(url_for("materiaal"))
+
     item = find_material_by_serial(serial)
     if not item:
         flash("Item niet gevonden.", "danger")
@@ -650,6 +669,9 @@ def materiaal_gebruiken():
     item.site = site or (project.name if project else item.site)
     if project_id:
         item.project_id = project_id
+    
+    # Set status to "in gebruik"
+    item.status = "in gebruik"
 
     # Nieuwe gebruik-sessie
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
@@ -696,9 +718,20 @@ def materiaal_stop_gebruik():
 
     # optioneel ook materiaal resetten
     mat = Material.query.filter_by(id=usage.material_id).first()
-    if mat and mat.assigned_to == usage.used_by:
-        mat.assigned_to = None
-        mat.site = None
+    if mat:
+        if mat.assigned_to == usage.used_by:
+            mat.assigned_to = None
+            mat.site = None
+        
+        # Check if there are any other active usages for this material
+        other_active_usages = MaterialUsage.query.filter_by(
+            material_id=mat.id, 
+            is_active=True
+        ).count()
+        
+        # If no other active usages, revert status to "goedgekeurd"
+        if other_active_usages == 0:
+            mat.status = "goedgekeurd"
 
     db.session.commit()
 
@@ -913,6 +946,9 @@ def werf_materiaal_gebruiken(project_id):
     item.assigned_to = assigned_to
     item.site = project.name or item.site
     item.project_id = project_id
+    
+    # Set status to "in gebruik"
+    item.status = "in gebruik"
 
     user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
     usage = MaterialUsage(
@@ -955,9 +991,20 @@ def werf_stop_gebruik(project_id):
     usage.end_time = datetime.utcnow()
 
     mat = Material.query.filter_by(id=usage.material_id).first()
-    if mat and mat.assigned_to == usage.used_by:
-        mat.assigned_to = None
-        mat.site = None
+    if mat:
+        if mat.assigned_to == usage.used_by:
+            mat.assigned_to = None
+            mat.site = None
+        
+        # Check if there are any other active usages for this material
+        other_active_usages = MaterialUsage.query.filter_by(
+            material_id=mat.id, 
+            is_active=True
+        ).count()
+        
+        # If no other active usages, revert status to "goedgekeurd"
+        if other_active_usages == 0:
+            mat.status = "goedgekeurd"
 
     db.session.commit()
 
