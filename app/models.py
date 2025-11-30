@@ -64,7 +64,6 @@ class Material(db.Model):
     project_id = db.Column("project_id", db.BigInteger, nullable=True)
 
     serial = db.Column("Serienummer", db.String, unique=True, nullable=False)
-    category = db.Column("Categorie", db.String)     # "Categorie"
     type = db.Column("type", db.String)              # "type"
 
     purchase_date = db.Column("purchase_date", db.Date, nullable=True)

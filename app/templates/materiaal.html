@@ -210,10 +210,10 @@
     </div>
 
     <div class="col-6 col-md-3">
-      <select name="category" class="form-select">
-        <option value="">Alle categorieën</option>
-        {% for c in ["klein materieel","middel groot materieel","groot materieel"] %}
-          <option value="{{ c }}" {% if request.args.get('category')==c %}selected{% endif %}>{{ c|title }}</option>
+      <select name="type" class="form-select">
+        <option value="">Alle types</option>
+        {% for t in types_list %}
+          <option value="{{ t }}" {% if request.args.get('type')==t %}selected{% endif %}>{{ t|title }}</option>
         {% endfor %}
       </select>
     </div>
@@ -239,7 +239,7 @@
         <tr>
           <th>Serienummer</th>
           <th>Naam</th>
-          <th>Categorie</th>
+          <th>Type</th>
           <th>Status (in gebruik)</th>
           <th>Keuring</th>
           <th class="text-end">Acties</th>
@@ -251,7 +251,7 @@
           <tr>
             <td>{{ it.serial }}</td>
             <td>{{ it.name }}</td>
-            <td>{{ it.category|title if it.category else '' }}</td>
+            <td>{{ it.type|title if it.type else '' }}</td>
             <td>
               {% set in_use_flag = it.id in active_material_ids %}
               <span class="badge {% if in_use_flag %}bg-success{% else %}bg-danger{% endif %}">
@@ -267,7 +267,6 @@
                   data-bs-target="#editMaterieelModal"
                   data-serial="{{ it.serial }}"
                   data-name="{{ it.name }}"
-                  data-category="{{ it.category }}"
                   data-type="{{ it.type }}"
                   data-purchase_date="{{ it.purchase_date }}"
                   data-assigned_to="{{ it.assigned_to }}"
@@ -304,7 +303,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('materiaal_toevoegen') }}" enctype="multipart/form-data">
+      <form method="post" action="{{ url_for('materiaal_toevoegen') }}" enctype="multipart/form-data" id="nieuwMaterieelForm">
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
@@ -322,16 +321,6 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Categorie*</label>
-              <select name="category" class="form-select" required>
-                <option value="" disabled selected>Selecteer categorie</option>
-                <option>klein materieel</option>
-                <option>middel groot materieel</option>
-                <option>groot materieel</option>
-              </select>
-            </div>
-
-            <div class="col-md-6">
               <label class="form-label">Type*</label>
               <input name="type" required class="form-control" placeholder="Bv. Elektrisch gereedschap">
             </div>
@@ -339,6 +328,14 @@
             <div class="col-md-6">
               <label class="form-label">Aankoopdatum*</label>
               <input name="purchase_date" type="date" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Status*</label>
+              <select name="status" class="form-select" required>
+                <option value="goedgekeurd">Goedgekeurd</option>
+                <option value="afgekeurd">Afgekeurd</option>
+              </select>
             </div>
 
             <div class="col-md-6">
@@ -354,19 +351,6 @@
             <div class="col-12">
               <label class="form-label">Opmerking (optioneel)</label>
               <textarea name="note" class="form-control" rows="3" placeholder="Extra info over het materiaal…"></textarea>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Status*</label>
-              <select name="status" class="form-select" required>
-                <option value="goedgekeurd">Goedgekeurd</option>
-                <option value="afgekeurd">Afgekeurd</option>
-              </select>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Keuringstatus (optioneel)</label>
-              <input name="inspection_status" class="form-control" placeholder="Bv. Keuring 2025-05">
             </div>
 
             <div class="col-md-6">
@@ -387,22 +371,42 @@
                 class="form-control"
                 accept="image/*,.pdf">
             </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Beheerwachtwoord*</label>
-              <input
-                type="password"
-                name="admin_password"
-                class="form-control"
-                placeholder="Voer beheerwachtwoord in"
-                required>
-            </div>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-primary" type="submit">Materieel Toevoegen</button>
+          <button class="btn btn-primary" type="button" id="submitMaterieelBtn">Materieel Toevoegen</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Beheerwachtwoord -->
+<div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Beheerwachtwoord vereist</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Voer beheerwachtwoord in*</label>
+          <input
+            type="password"
+            id="admin-password-input"
+            class="form-control"
+            placeholder="Beheerwachtwoord"
+            autofocus>
+          <div id="password-error" class="text-danger small mt-2" style="display: none;">
+            Onjuist wachtwoord. Probeer opnieuw.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+        <button type="button" class="btn btn-primary" id="verifyPasswordBtn">Verifiëren</button>
+      </div>
     </div>
   </div>
 </div>
@@ -444,11 +448,6 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Categorie</label>
-              <input id="use-category" class="form-control" readonly>
-            </div>
-
-            <div class="col-md-6">
               <label class="form-label">Gebruikt door</label>
               <input name="assigned_to"
                      id="use-assigned_to"
@@ -456,7 +455,7 @@
                      value="{{ current_user.Naam if current_user else '' }}">
             </div>
 
-            <div class="col-md-12">
+            <div class="col-md-6">
               <label class="form-label">Werf (project)</label>
               <select name="project_id" class="form-select">
                 <option value="">Geen specifieke werf</option>
@@ -509,15 +508,6 @@
             <div class="col-md-6">
               <label class="form-label">Nummer op Materieel (optioneel)</label>
               <input name="nummer_op_materieel" id="edit-nummer_op_materieel" class="form-control">
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Categorie*</label>
-              <select name="category" id="edit-category" class="form-select" required>
-                <option>klein materieel</option>
-                <option>middel groot materieel</option>
-                <option>groot materieel</option>
-              </select>
             </div>
 
             <div class="col-md-6">
@@ -645,7 +635,6 @@ document.addEventListener('DOMContentLoaded', function () {
       const data = {
         serial: button.getAttribute('data-serial') || '',
         name: button.getAttribute('data-name') || '',
-        category: button.getAttribute('data-category') || '',
         type: button.getAttribute('data-type') || '',
         purchase_date: button.getAttribute('data-purchase_date') || '',
         assigned_to: button.getAttribute('data-assigned_to') || '',
@@ -659,7 +648,6 @@ document.addEventListener('DOMContentLoaded', function () {
       document.getElementById('edit-original-serial').value = data.serial;
       document.getElementById('edit-serial').value = data.serial;
       document.getElementById('edit-name').value = data.name;
-      document.getElementById('edit-category').value = data.category;
       document.getElementById('edit-type').value = data.type;
       document.getElementById('edit-purchase_date').value = data.purchase_date;
       document.getElementById('edit-assigned_to').value = data.assigned_to;
@@ -671,42 +659,69 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  // Data voor Gebruik Materieel
-  const materiaalData = [
-    {% for m in all_materials %}
-      {
-        name: "{{ m.name|e if m.name else '' }}",
-        nummer: "{{ (m.nummer_op_materieel or '')|e }}",
-        category: "{{ (m.category or '')|e }}"
-      }{% if not loop.last %},{% endif %}
-    {% endfor %}
-  ];
+  // Password modal for "Nieuw Materieel Toevoegen"
+  const submitBtn = document.getElementById('submitMaterieelBtn');
+  const nieuwMaterieelForm = document.getElementById('nieuwMaterieelForm');
+  const passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
+  const passwordInput = document.getElementById('admin-password-input');
+  const passwordError = document.getElementById('password-error');
+  const verifyPasswordBtn = document.getElementById('verifyPasswordBtn');
+  const correctPassword = 'Sunset'; // Should match backend
 
-  function updateUseCategory() {
-    const nameInput = document.getElementById('use-name');
-    const theNumInput = document.getElementById('use-nummer');
-    const catInput = document.getElementById('use-category');
-
-    const name = (nameInput?.value || '').trim();
-    const nummer = (theNumInput?.value || '').trim();
-
-    let found = null;
-    if (nummer) {
-      found = materiaalData.find(m => m.nummer === nummer);
-    }
-    if (!found && name) {
-      found = materiaalData.find(m => m.name === name);
-    }
-
-    if (catInput) {
-      catInput.value = found ? (found.category || '') : '';
-    }
+  if (submitBtn && nieuwMaterieelForm) {
+    submitBtn.addEventListener('click', function(e) {
+      e.preventDefault();
+      // Clear previous error and password
+      passwordError.style.display = 'none';
+      passwordInput.value = '';
+      // Show password modal
+      passwordModal.show();
+    });
   }
 
-  const useName = document.getElementById('use-name');
-  const useNummer = document.getElementById('use-nummer');
-  if (useName) useName.addEventListener('input', updateUseCategory);
-  if (useNummer) useNummer.addEventListener('input', updateUseCategory);
+  // Handle password verification
+  if (verifyPasswordBtn) {
+    verifyPasswordBtn.addEventListener('click', function() {
+      const enteredPassword = passwordInput.value.trim();
+      
+      if (enteredPassword === correctPassword) {
+        // Password is correct - add hidden input and submit form
+        const hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'admin_password';
+        hiddenInput.value = enteredPassword;
+        nieuwMaterieelForm.appendChild(hiddenInput);
+        
+        // Close password modal and submit form
+        passwordModal.hide();
+        nieuwMaterieelForm.submit();
+      } else {
+        // Password is incorrect - show error
+        passwordError.style.display = 'block';
+        passwordInput.value = '';
+        passwordInput.focus();
+      }
+    });
+  }
+
+  // Allow Enter key to submit password
+  if (passwordInput) {
+    passwordInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        verifyPasswordBtn.click();
+      }
+    });
+  }
+
+  // Clear error when modal is shown
+  const passwordModalElement = document.getElementById('passwordModal');
+  if (passwordModalElement) {
+    passwordModalElement.addEventListener('show.bs.modal', function() {
+      passwordError.style.display = 'none';
+      passwordInput.value = '';
+    });
+  }
+
 });
 </script>
 

@@ -195,7 +195,7 @@
               <tr>
                 <th>Serienummer</th>
                 <th>Naam</th>
-                <th>Categorie</th>
+                <th>Type</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -204,7 +204,7 @@
                 <tr>
                   <td>{{ m.serial }}</td>
                   <td>{{ m.name }}</td>
-                  <td>{{ m.category or '-' }}</td>
+                  <td>{{ m.type or '-' }}</td>
                   <td>{{ m.status or '-' }}</td>
                 </tr>
               {% endfor %}

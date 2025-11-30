@@ -188,11 +188,23 @@ def dashboard():
     # recente activiteit uit activity_log tabel
     recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
 
+    # Data voor "Materiaal in gebruik nemen" modal
+    all_materials = Material.query.all()
+    today = datetime.utcnow().date()
+    projects = (
+        Project.query.filter_by(is_deleted=False)
+        .order_by(Project.start_date.asc())
+        .all()
+    )
+
     return render_template(
         "dashboard.html",
         total_items=total_items,
         to_inspect=to_inspect,
         recent_activity=recent,
+        all_materials=all_materials,
+        projects=projects,
+        today=today,
     )
 
 
@@ -225,7 +237,6 @@ def api_search():
             {
                 "serial": item.serial,
                 "name": item.name,
-                "category": item.category or "",
                 "type": item.type or "",
                 "status": item.status or "",
                 "assigned_to": item.assigned_to or "",
@@ -314,7 +325,7 @@ def save_project_image(file_storage, prefix: str) -> str | None:
 @login_required
 def materiaal():
     q = (request.args.get("q") or "").strip().lower()
-    category = (request.args.get("category") or "").strip().lower()
+    type_filter = (request.args.get("type") or "").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
 
     query = Material.query
@@ -325,8 +336,8 @@ def materiaal():
             or_(Material.name.ilike(like), Material.serial.ilike(like))
         )
 
-    if category:
-        query = query.filter(Material.category.ilike(category))
+    if type_filter:
+        query = query.filter(Material.type.ilike(f"%{type_filter}%"))
 
     if status:
         query = query.filter(Material.status.ilike(status))
@@ -396,6 +407,17 @@ def materiaal():
         .all()
     )
 
+    # Get all unique types from materials for the filter dropdown
+    unique_types = (
+        db.session.query(Material.type)
+        .filter(Material.type.isnot(None))
+        .filter(Material.type != "")
+        .distinct()
+        .order_by(Material.type)
+        .all()
+    )
+    types_list = [t[0] for t in unique_types if t[0]]
+
     return render_template(
         "materiaal.html",
         items=items,
@@ -407,6 +429,7 @@ def materiaal():
         active_material_ids=active_material_ids,
         projects=projects,
         today=today,
+        types_list=types_list,
     )
 
 
@@ -433,7 +456,6 @@ def materiaal_toevoegen():
     name = (f.get("name") or "").strip()
     serial = (f.get("serial") or "").strip()
     nummer = (f.get("nummer_op_materieel") or "").strip()
-    category = (f.get("category") or "").strip()
     type_ = (f.get("type") or "").strip()
     purchase_date_str = (f.get("purchase_date") or "").strip()
     site = (f.get("site") or "").strip()
@@ -464,7 +486,6 @@ def materiaal_toevoegen():
     item = Material(
         name=name,
         serial=serial,
-        category=category,
         type=type_,
         assigned_to=assigned_to if assigned_to else None,
         site=site if site else None,
@@ -523,7 +544,6 @@ def materiaal_bewerken():
 
     item.serial = new_serial
     item.name = (f.get("name") or "").strip()
-    item.category = (f.get("category") or "").strip()
     item.type = (f.get("type") or "").strip()
 
     purchase_date = (f.get("purchase_date") or "").strip()

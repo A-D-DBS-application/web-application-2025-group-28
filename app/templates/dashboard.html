@@ -102,6 +102,77 @@
   </div>
 </div>
 
+<!-- Modal: Gebruik Materieel -->
+<div class="modal fade" id="gebruikMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Materiaal in gebruik nemen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal_gebruiken') }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name"
+                     id="use-name"
+                     list="materiaal-namen"
+                     class="form-control"
+                     placeholder="Kies of typ een naam">
+              <datalist id="materiaal-namen">
+                {% for m in all_materials %}
+                  {% if m.name %}
+                    <option value="{{ m.name }}">{{ m.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </datalist>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Nummer op Materieel</label>
+              <input name="nummer_op_materieel"
+                     id="use-nummer"
+                     class="form-control"
+                     placeholder="Sticker / nummer op toestel">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Gebruikt door</label>
+              <input name="assigned_to"
+                     id="use-assigned_to"
+                     class="form-control"
+                     value="{{ current_user.Naam if current_user else '' }}">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Werf (project)</label>
+              <select name="project_id" class="form-select">
+                <option value="">Geen specifieke werf</option>
+                {% for p in projects %}
+                  {% set is_future = p.start_date and p.start_date > today %}
+                  <option value="{{ p.id }}">
+                    {{ p.name or 'Werf ' ~ p.id }}
+                    {% if is_future and p.start_date %}
+                      (start {{ p.start_date.strftime('%Y-%m-%d') }})
+                    {% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+              <small class="text-muted">De gekozen werf wordt gelinkt aan dit gebruik.</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Materieel gebruiken</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   const searchForm = document.getElementById('searchForm');
@@ -140,13 +211,9 @@ document.addEventListener('DOMContentLoaded', function() {
             modalBody.innerHTML = `
               <div class="material-detail">
                 <div class="mb-3">
-                  <strong>ID:</strong> ${displayValue(item.serial)}
+                  <strong>Serienummer:</strong> ${displayValue(item.serial)}
                 </div>
                 <div class="row g-3 mb-3">
-                  <div class="col-md-6">
-                    <strong>Categorie:</strong><br>
-                    ${displayValue(item.category)}
-                  </div>
                   <div class="col-md-6">
                     <strong>Type:</strong><br>
                     ${displayValue(item.type)}
@@ -167,14 +234,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     <strong>Aankoopdatum:</strong><br>
                     ${displayValue(item.purchase_date)}
                   </div>
-                </div>
-                <div class="mb-3">
-                  <strong>Opmerking:</strong><br>
-                  ${displayValue(item.note)}
+                  <div class="col-md-6">
+                    <strong>Opmerking:</strong><br>
+                    ${displayValue(item.note)}
+                  </div>
                 </div>
                 <div class="d-flex gap-2 mt-4">
                   <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-outline-secondary">Bewerken</a>
-                  <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-dark">Bekijk op Materiaal pagina</a>
+                  <button type="button" 
+                          class="btn btn-dark gebruik-btn" 
+                          data-bs-toggle="modal" 
+                          data-bs-target="#gebruikMaterieelModal"
+                          data-item-name="${escapeHtml(item.name || '')}"
+                          data-item-nummer="${escapeHtml(item.nummer_op_materieel || '')}">
+                    Materiaal in gebruik nemen
+                  </button>
                 </div>
               </div>
             `;
@@ -265,13 +339,9 @@ document.addEventListener('DOMContentLoaded', function() {
           modalBody.innerHTML = `
             <div class="material-detail">
               <div class="mb-3">
-                <strong>ID:</strong> ${displayValue(item.serial)}
+                <strong>Serienummer:</strong> ${displayValue(item.serial)}
               </div>
               <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                  <strong>Categorie:</strong><br>
-                  ${displayValue(item.category)}
-                </div>
                 <div class="col-md-6">
                   <strong>Type:</strong><br>
                   ${displayValue(item.type)}
@@ -292,14 +362,21 @@ document.addEventListener('DOMContentLoaded', function() {
                   <strong>Aankoopdatum:</strong><br>
                   ${displayValue(item.purchase_date)}
                 </div>
-              </div>
-              <div class="mb-3">
-                <strong>Opmerking:</strong><br>
-                ${displayValue(item.note)}
+                <div class="col-md-6">
+                  <strong>Opmerking:</strong><br>
+                  ${displayValue(item.note)}
+                </div>
               </div>
               <div class="d-flex gap-2 mt-4">
                 <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-outline-secondary">Bewerken</a>
-                <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-dark">Bekijk op Materiaal pagina</a>
+                <button type="button" 
+                        class="btn btn-dark gebruik-btn" 
+                        data-bs-toggle="modal" 
+                        data-bs-target="#gebruikMaterieelModal"
+                        data-item-name="${escapeHtml(item.name || '')}"
+                        data-item-nummer="${escapeHtml(item.nummer_op_materieel || '')}">
+                  Materiaal in gebruik nemen
+                </button>
               </div>
             </div>
           `;
@@ -312,6 +389,38 @@ document.addEventListener('DOMContentLoaded', function() {
         modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
       });
   };
+  
+  // Handle "Gebruik Materieel" button clicks using event delegation
+  document.addEventListener('click', function(e) {
+    if (e.target && e.target.classList.contains('gebruik-btn')) {
+      const name = e.target.getAttribute('data-item-name') || '';
+      const nummer = e.target.getAttribute('data-item-nummer') || '';
+      
+      const nameInput = document.getElementById('use-name');
+      const nummerInput = document.getElementById('use-nummer');
+      
+      if (nameInput) nameInput.value = name;
+      if (nummerInput) nummerInput.value = nummer;
+    }
+  });
+  
+  // Also handle when modal is shown via Bootstrap
+  const gebruikModal = document.getElementById('gebruikMaterieelModal');
+  if (gebruikModal) {
+    gebruikModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      if (button && button.classList.contains('gebruik-btn')) {
+        const name = button.getAttribute('data-item-name') || '';
+        const nummer = button.getAttribute('data-item-nummer') || '';
+        
+        const nameInput = document.getElementById('use-name');
+        const nummerInput = document.getElementById('use-nummer');
+        
+        if (nameInput) nameInput.value = name;
+        if (nummerInput) nummerInput.value = nummer;
+      }
+    });
+  }
 });
 </script>
 
