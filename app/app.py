@@ -183,8 +183,26 @@ def root_redirect():
 def dashboard():
     total_items = Material.query.count()
 
-    # voorbeeld: aantal items met status 'afgekeurd' als "te keuren"
-    to_inspect = Material.query.filter_by(status="afgekeurd").count()
+    # Tel items die keuring vereisen (te keuren)
+    # Dit zijn alleen items met status "keuring verlopen" of "keuring gepland"
+    # Voor items "in gebruik": check inspection_status
+    today = datetime.utcnow().date()
+    
+    # Items met status "keuring verlopen" (direct of via inspection_status)
+    keuring_verlopen_direct = Material.query.filter_by(status="keuring verlopen").count()
+    keuring_verlopen_in_use = db.session.query(Material).filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "keuring verlopen"
+    ).count()
+    
+    # Items met status "keuring gepland" (direct of via inspection_status)
+    keuring_gepland_direct = Material.query.filter_by(status="keuring gepland").count()
+    keuring_gepland_in_use = db.session.query(Material).filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "keuring gepland"
+    ).count()
+    
+    to_inspect = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
 
     # recente activiteit uit activity_log tabel
     recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
@@ -622,7 +640,7 @@ def materiaal_bewerken():
     item.site = (f.get("site") or "").strip()
     item.note = (f.get("note") or "").strip()
     
-    # Get keuring status from form (goedgekeurd or afgekeurd)
+    # Get keuring status from form (goedgekeurd, afgekeurd, keuring verlopen, or keuring gepland)
     keuring_status = (f.get("status") or "goedgekeurd").strip()
     
     # Check if material has active usages - if so, keep status as "in gebruik"
@@ -635,8 +653,7 @@ def materiaal_bewerken():
         # Material is in use, keep status as "in gebruik"
         item.status = "in gebruik"
         # Store the keuring status in inspection_status so we can preserve it
-    if hasattr(item, "inspection_status"):
-            # Always update inspection_status with the keuring value from the form
+        if hasattr(item, "inspection_status"):
             item.inspection_status = keuring_status
     else:
         # No active usages, use keuring status from form as the main status
@@ -692,6 +709,12 @@ def materiaal_verwijderen():
     if not item:
         flash("Item niet gevonden.", "danger")
         return redirect(url_for("materiaal"))
+
+    # Verwijder ook de gekoppelde keuringstatus als die bestaat
+    if item.keuring_id:
+        keuring = Keuringstatus.query.filter_by(id=item.keuring_id).first()
+        if keuring:
+            db.session.delete(keuring)
 
     db.session.delete(item)
     db.session.commit()
@@ -867,9 +890,14 @@ def materiaal_stop_gebruik():
             is_active=True
         ).count()
         
-        # If no other active usages, revert status to "goedgekeurd"
+        # If no other active usages, revert status to original keuring status
         if other_active_usages == 0:
-            mat.status = "goedgekeurd"
+            # Restore original keuring status from inspection_status if available
+            if hasattr(mat, "inspection_status") and mat.inspection_status:
+                mat.status = mat.inspection_status
+            else:
+                # Default to goedgekeurd if no inspection_status is stored
+                mat.status = "goedgekeurd"
 
     db.session.commit()
 
@@ -1150,9 +1178,14 @@ def werf_stop_gebruik(project_id):
             is_active=True
         ).count()
         
-        # If no other active usages, revert status to "goedgekeurd"
+        # If no other active usages, revert status to original keuring status
         if other_active_usages == 0:
-            mat.status = "goedgekeurd"
+            # Restore original keuring status from inspection_status if available
+            if hasattr(mat, "inspection_status") and mat.inspection_status:
+                mat.status = mat.inspection_status
+            else:
+                # Default to goedgekeurd if no inspection_status is stored
+                mat.status = "goedgekeurd"
 
     db.session.commit()
 
@@ -1180,7 +1213,7 @@ def keuring_toevoegen():
     serial = (f.get("serial") or "").strip()
     keuring_datum_str = (f.get("keuring_datum") or "").strip()
     uitgevoerd_door = (f.get("uitgevoerd_door") or "").strip()
-    opmerking = (f.get("opmerking") or "").strip()
+    opmerking = (f.get("opmerking") or "").strip()  # Form field is "opmerking", maar database kolom is "opmerkingen"
     
     if not serial or not keuring_datum_str or not uitgevoerd_door:
         flash("Serienummer, keuring datum en uitgevoerd door zijn verplicht.", "danger")
@@ -1211,6 +1244,9 @@ def keuring_toevoegen():
     # Voeg uitgevoerd_door toe als de kolom bestaat
     if hasattr(Keuringstatus, 'uitgevoerd_door'):
         nieuwe_keuring.uitgevoerd_door = uitgevoerd_door
+    # Voeg opmerkingen toe als de kolom bestaat
+    if hasattr(Keuringstatus, 'opmerkingen'):
+        nieuwe_keuring.opmerkingen = opmerking if opmerking else None
     
     db.session.add(nieuwe_keuring)
     db.session.flush()  # Om de ID te krijgen
@@ -1223,6 +1259,54 @@ def keuring_toevoegen():
     
     log_activity_db("Keuring toegevoegd", material.name or "", serial)
     flash("Keuring succesvol toegevoegd.", "success")
+    return redirect(url_for("keuringen"))
+
+
+@app.route("/keuringen/edit", methods=["POST"])
+@login_required
+def keuring_bewerken():
+    """Bewerk een bestaande keuring"""
+    f = request.form
+    
+    keuring_id_str = (f.get("keuring_id") or "").strip()
+    volgende_keuring_str = (f.get("volgende_keuring_datum") or "").strip()
+    uitgevoerd_door = (f.get("uitgevoerd_door") or "").strip()
+    opmerking = (f.get("opmerking") or "").strip()  # Form field is "opmerking", maar database kolom is "opmerkingen"
+    
+    if not keuring_id_str or not volgende_keuring_str or not uitgevoerd_door:
+        flash("Keuring ID, volgende keuring datum en uitgevoerd door zijn verplicht.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    try:
+        keuring_id = int(keuring_id_str)
+    except ValueError:
+        flash("Ongeldig keuring ID.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Zoek keuring op
+    keuring = Keuringstatus.query.filter_by(id=keuring_id).first()
+    if not keuring:
+        flash("Keuring niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Parse datum
+    try:
+        volgende_keuring = datetime.strptime(volgende_keuring_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Ongeldige datum formaat.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Update keuring
+    keuring.volgende_controle = volgende_keuring
+    if hasattr(keuring, 'uitgevoerd_door'):
+        keuring.uitgevoerd_door = uitgevoerd_door
+    if hasattr(keuring, 'opmerkingen'):
+        keuring.opmerkingen = opmerking if opmerking else None
+    
+    db.session.commit()
+    
+    log_activity_db("Keuring bewerkt", keuring.serienummer or "", keuring.serienummer or "")
+    flash("Keuring succesvol bijgewerkt.", "success")
     return redirect(url_for("keuringen"))
 
 
@@ -1239,35 +1323,58 @@ def keuringen():
     # Haal uitgevoerde keuringen op (met laatste_controle in het verleden of vandaag)
     # Gebruik try/except om te werken met of zonder uitgevoerd_door kolom
     try:
-        uitgevoerde_keuringen = (
+        uitgevoerde_keuringen_raw = (
             Keuringstatus.query
             .filter(Keuringstatus.laatste_controle <= today)
             .order_by(Keuringstatus.laatste_controle.desc())
             .all()
         )
         
+        # Voeg opmerking attribuut toe aan elke keuring als het niet bestaat
+        uitgevoerde_keuringen = []
+        for keuring in uitgevoerde_keuringen_raw:
+            # opmerkingen kolom bestaat nu in de database
+            uitgevoerde_keuringen.append(keuring)
+        
         # Haal geplande keuringen op (volgende_controle in de toekomst)
-        geplande_keuringen = (
+        geplande_keuringen_raw = (
             Keuringstatus.query
             .filter(Keuringstatus.volgende_controle > today)
             .order_by(Keuringstatus.volgende_controle.asc())
             .all()
         )
+        
+        # Voeg opmerking attribuut toe aan elke keuring als het niet bestaat
+        geplande_keuringen = []
+        for keuring in geplande_keuringen_raw:
+            # opmerkingen kolom bestaat nu in de database
+            geplande_keuringen.append(keuring)
     except Exception as e:
         # Als de kolom nog niet bestaat, gebruik een workaround
         # Haal alle keuringen op en filter in Python
         all_keuringen = Keuringstatus.query.all()
-        uitgevoerde_keuringen = [
+        uitgevoerde_keuringen_raw = [
             k for k in all_keuringen 
             if k.laatste_controle and k.laatste_controle <= today
         ]
-        uitgevoerde_keuringen.sort(key=lambda x: x.laatste_controle or datetime.min.date(), reverse=True)
+        uitgevoerde_keuringen_raw.sort(key=lambda x: x.laatste_controle or datetime.min.date(), reverse=True)
         
-        geplande_keuringen = [
+        geplande_keuringen_raw = [
             k for k in all_keuringen 
             if k.volgende_controle and k.volgende_controle > today
         ]
-        geplande_keuringen.sort(key=lambda x: x.volgende_controle or datetime.max.date())
+        geplande_keuringen_raw.sort(key=lambda x: x.volgende_controle or datetime.max.date())
+        
+        # Voeg opmerking attribuut toe aan elke keuring als het niet bestaat
+        uitgevoerde_keuringen = []
+        for keuring in uitgevoerde_keuringen_raw:
+            # opmerkingen kolom bestaat nu in de database
+            uitgevoerde_keuringen.append(keuring)
+        
+        geplande_keuringen = []
+        for keuring in geplande_keuringen_raw:
+            # opmerkingen kolom bestaat nu in de database
+            geplande_keuringen.append(keuring)
     
     # Haal alle materialen op voor de dropdown
     all_materials = Material.query.order_by(Material.name).all()
@@ -1276,28 +1383,56 @@ def keuringen():
     # Dit is het aantal materialen met een keuring_id
     total_keuringen = Material.query.filter(Material.keuring_id.isnot(None)).count()
     
-    # Tel goedgekeurde items (items met status "goedgekeurd")
-    goedgekeurd_count = Material.query.filter_by(status="goedgekeurd").count()
+    # Tel goedgekeurde items
+    # Items met status "goedgekeurd" OF items "in gebruik" met inspection_status "goedgekeurd"
+    goedgekeurd_direct = Material.query.filter_by(status="goedgekeurd").count()
+    goedgekeurd_in_use = db.session.query(Material).filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "goedgekeurd"
+    ).count()
+    goedgekeurd_count = goedgekeurd_direct + goedgekeurd_in_use
     
     # Tel afgekeurde items
-    afgekeurd_count = Material.query.filter_by(status="afgekeurd").count()
+    # Items met status "afgekeurd" OF items "in gebruik" met inspection_status "afgekeurd"
+    afgekeurd_direct = Material.query.filter_by(status="afgekeurd").count()
+    afgekeurd_in_use = db.session.query(Material).filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "afgekeurd"
+    ).count()
+    afgekeurd_count = afgekeurd_direct + afgekeurd_in_use
     
-    # Tel items die keuring vereisen
-    # Dit zijn materialen zonder keuring_id OF met een verlopen volgende_controle
-    # Materialen zonder keuring
-    zonder_keuring = Material.query.filter(Material.keuring_id.is_(None)).count()
+    # Tel items die keuring vereisen (te keuren)
+    # Dit zijn alleen items met status "keuring verlopen" of "keuring gepland"
+    # Voor items "in gebruik": check inspection_status
     
-    # Materialen met verlopen keuring (volgende_controle in het verleden)
-    verlopen_keuringen = db.session.query(Material).join(
-        Keuringstatus, Material.keuring_id == Keuringstatus.id
-    ).filter(
-        Keuringstatus.volgende_controle < today
+    # Items met status "keuring verlopen" (direct of via inspection_status)
+    keuring_verlopen_direct = Material.query.filter_by(status="keuring verlopen").count()
+    keuring_verlopen_in_use = db.session.query(Material).filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "keuring verlopen"
     ).count()
     
-    te_keuren = zonder_keuring + verlopen_keuringen
+    # Items met status "keuring gepland" (direct of via inspection_status)
+    keuring_gepland_direct = Material.query.filter_by(status="keuring gepland").count()
+    keuring_gepland_in_use = db.session.query(Material).filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "keuring gepland"
+    ).count()
     
-    # Haal afgekeurde items op voor de "Items die Keuring Vereisen" box
-    afgekeurde_items = Material.query.filter_by(status="afgekeurd").order_by(Material.name).all()
+    te_keuren = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
+    
+    # Haal items op met status "keuring verlopen" voor de "Items die Keuring Vereisen" box
+    # Dit zijn items met status "keuring verlopen" OF items "in gebruik" met inspection_status "keuring verlopen"
+    keuring_verlopen_items_direct = Material.query.filter_by(status="keuring verlopen").all()
+    keuring_verlopen_items_in_use = Material.query.filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "keuring verlopen"
+    ).all()
+    # Combineer beide lijsten en sorteer op naam
+    afgekeurde_items = sorted(
+        keuring_verlopen_items_direct + keuring_verlopen_items_in_use,
+        key=lambda x: (x.name or "").lower()
+    )
     
     return render_template(
         "keuringen.html",

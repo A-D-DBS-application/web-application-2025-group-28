@@ -151,7 +151,7 @@ class Keuringstatus(db.Model):
     Map naar Supabase tabel 'Keuringstatus'
     
     Kolommen in Supabase:
-    id, created_at, laatste_controle, volgende_controle, serienummer, uitgevoerd_door
+    id, created_at, laatste_controle, volgende_controle, serienummer, uitgevoerd_door, opmerkingen
     """
     __tablename__ = "Keuringstatus"
 
@@ -162,5 +162,6 @@ class Keuringstatus(db.Model):
     volgende_controle = db.Column("volgende_controle", db.Date, nullable=True)
     serienummer = db.Column("serienummer", db.String, nullable=True)
     uitgevoerd_door = db.Column("uitgevoerd_door", db.String, nullable=True)
+    opmerkingen = db.Column("opmerkingen", db.Text, nullable=True)
     
     # Relatie naar Material via serienummer (niet via foreign key, maar via serienummer match)
