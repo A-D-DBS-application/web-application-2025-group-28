@@ -82,8 +82,31 @@
 
   <div class="card panel">
     <div class="panel-title">Aankomende Keuringen</div>
-    <div class="panel-sub">Volgende 30 dagen</div>
-    <div class="text-muted">Nog geen keuringen gepland…</div>
+    <div class="panel-sub">Overzicht van geplande keuringen</div>
+
+    {% if geplande_keuringen and geplande_keuringen|length > 0 %}
+      <ul class="list-group list-group-flush">
+        {% for keuring in geplande_keuringen %}
+          {% set material = all_materials|selectattr("serial", "equalto", keuring.serienummer)|first %}
+          {% set days_until = (keuring.volgende_controle - today).days if keuring.volgende_controle and today else 0 %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <strong>{{ material.name if material else 'Onbekend materiaal' }}</strong>
+              <span class="text-muted">({{ keuring.serienummer }})</span>
+              <br>
+              <small class="text-muted">
+                {{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '-' }}
+                {% if days_until > 0 %}
+                  - over {{ days_until }} dag{% if days_until != 1 %}en{% endif %}
+                {% endif %}
+              </small>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="text-muted">Nog geen keuringen gepland…</div>
+    {% endif %}
   </div>
 </div>
 
@@ -165,6 +188,107 @@
   </div>
 </div>
 
+<!-- Modal: Bewerken Materieel -->
+<div class="modal fade" id="editMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Materieel Bewerken</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal_bewerken') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <input type="hidden" name="original_serial" id="edit-original-serial">
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name" id="edit-name" required class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Serienummer*</label>
+              <input name="serial" id="edit-serial" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Nummer op Materieel (optioneel)</label>
+              <input name="nummer_op_materieel" id="edit-nummer_op_materieel" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Type*</label>
+              <input name="type" id="edit-type" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Aankoopdatum*</label>
+              <input name="purchase_date" id="edit-purchase_date" type="date" required class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Werf (optioneel, vrije tekst)</label>
+              <input name="site" id="edit-site" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Toegewezen aan (optioneel)</label>
+              <input name="assigned_to" id="edit-assigned_to" class="form-control">
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Opmerking (optioneel)</label>
+              <textarea name="note" id="edit-note" class="form-control" rows="3"></textarea>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Keuring*</label>
+              <select name="status" id="edit-status" class="form-select" required>
+                <option value="goedgekeurd">Goedgekeurd</option>
+                <option value="afgekeurd">Afgekeurd</option>
+                <option value="keuring verlopen">Keuring verlopen</option>
+                <option value="keuring gepland">Keuring gepland</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Keuringstatus (optioneel)</label>
+              <input name="inspection_status" id="edit-inspection_status" class="form-control">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Documentatie (foto of PDF)</label>
+              <input
+                type="file"
+                name="documentation"
+                class="form-control"
+                accept="image/*,.pdf"
+              >
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Veiligheidsfiche (handleiding)</label>
+              <input
+                type="file"
+                name="safety_sheet"
+                class="form-control"
+                accept="image/*,.pdf"
+              >
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<style>
+.modal-dialog-end { margin-right: 0; margin-left: auto; }
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
   const searchForm = document.getElementById('searchForm');
@@ -199,10 +323,62 @@ document.addEventListener('DOMContentLoaded', function() {
           // If single result, show detailed view; otherwise show list
           if (data.items.length === 1) {
             const item = data.items[0];
-            const statusClass = item.status === 'goedgekeurd' ? 'bg-dark' : 
-                               item.status === 'afgekeurd' ? 'bg-danger' : 'bg-secondary';
-            const statusText = item.status === 'goedgekeurd' ? 'Operationeel' : 
-                              item.status === 'afgekeurd' ? 'Keuring Vereist' : (item.status || 'Onbekend');
+            // Status: "in gebruik" or "niet in gebruik"
+            const isInUse = item.status === 'in gebruik';
+            const statusClass = isInUse ? 'bg-success' : 'bg-danger';
+            const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
+            
+            // Keuring: based on original status (goedgekeurd/afgekeurd/keuring verlopen/keuring gepland)
+            // If status is "in gebruik", check inspection_status for the original keuring status
+            let keuringStatus = item.status;
+            if (item.status === 'in gebruik' && item.inspection_status) {
+              keuringStatus = item.inspection_status;
+            }
+            
+            // Determine badge class and text based on keuring status
+            let keuringClass = 'bg-secondary';
+            let keuringText = 'Onbekend';
+            
+            if (keuringStatus === 'goedgekeurd') {
+              keuringClass = 'bg-success';
+              keuringText = 'Goedgekeurd';
+            } else if (keuringStatus === 'afgekeurd') {
+              keuringClass = 'bg-danger';
+              keuringText = 'Afgekeurd';
+            } else if (keuringStatus === 'keuring verlopen') {
+              keuringClass = 'bg-warning';
+              keuringText = 'Keuring verlopen';
+            } else if (keuringStatus === 'keuring gepland') {
+              keuringClass = '';
+              keuringText = 'Keuring gepland';
+            } else if (item.status === 'in gebruik') {
+              // Default to goedgekeurd when in gebruik and no inspection_status
+              keuringClass = 'bg-success';
+              keuringText = 'Goedgekeurd';
+            }
+            
+            // Create badge HTML for keuring status (white background with colored border and black text)
+            let keuringBadgeHtml = '';
+            let badgeStyle = '';
+            
+            if (keuringStatus === 'goedgekeurd') {
+              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+            } else if (keuringStatus === 'afgekeurd') {
+              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #dc3545;';
+            } else if (keuringStatus === 'keuring verlopen') {
+              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #ffc107;';
+            } else if (keuringStatus === 'keuring gepland') {
+              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
+            } else {
+              // Default to goedgekeurd style
+              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+            }
+            
+            if (item.keuring_gepland) {
+              keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
+            } else {
+              keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">${escapeHtml(keuringText)}</span>`;
+            }
             
             // Helper function to display value or "onbekend"
             const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
@@ -223,6 +399,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
                   </div>
                   <div class="col-md-6">
+                    <strong>Keuring:</strong><br>
+                    ${keuringBadgeHtml}
+                    ${item.laatste_keuring ? `
+                      <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
+                    ` : ''}
+                  </div>
+                  <div class="col-md-6">
                     <strong>Toegewezen aan:</strong><br>
                     ${displayValue(item.assigned_to)}
                   </div>
@@ -235,12 +418,43 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${displayValue(item.purchase_date)}
                   </div>
                   <div class="col-md-6">
-                    <strong>Opmerking:</strong><br>
-                    ${displayValue(item.note)}
+                    <strong>Nummer op Materieel:</strong><br>
+                    ${displayValue(item.nummer_op_materieel)}
                   </div>
                 </div>
+                <div class="mb-3">
+                  <strong>Opmerking:</strong><br>
+                  ${displayValue(item.note)}
+                </div>
+                ${item.documentation_path ? `
+                  <div class="mb-3">
+                    <strong>Documentatie:</strong><br>
+                    <a href="/static/${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                      📄 Bekijk documentatie
+                    </a>
+                    <a href="/static/${escapeHtml(item.documentation_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                      ⬇️ Download
+                    </a>
+                  </div>
+                ` : ''}
+                ${item.safety_sheet_path ? `
+                  <div class="mb-3">
+                    <strong>Veiligheidsfiche:</strong><br>
+                    <a href="/static/${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                      📄 Bekijk veiligheidsfiche
+                    </a>
+                    <a href="/static/${escapeHtml(item.safety_sheet_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                      ⬇️ Download
+                    </a>
+                  </div>
+                ` : ''}
                 <div class="d-flex gap-2 mt-4">
-                  <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-outline-secondary">Bewerken</a>
+                  <button type="button" 
+                          class="btn btn-outline-secondary edit-material-btn" 
+                          data-item-serial="${escapeHtml(item.serial || '')}"
+                          onclick="openEditModalFromSearchSerial('${escapeHtml(item.serial || '')}')">
+                    Bewerken
+                  </button>
                   <button type="button" 
                           class="btn btn-dark gebruik-btn" 
                           data-bs-toggle="modal" 
@@ -256,10 +470,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Multiple results - show list
             let html = '<div class="list-group" style="max-height: 500px; overflow-y: auto;">';
             data.items.forEach(item => {
-              const statusClass = item.status === 'goedgekeurd' ? 'bg-dark' : 
-                                 item.status === 'afgekeurd' ? 'bg-danger' : 'bg-secondary';
-              const statusText = item.status === 'goedgekeurd' ? 'Operationeel' : 
-                                item.status === 'afgekeurd' ? 'Keuring Vereist' : (item.status || 'Onbekend');
+              // Status: "in gebruik" or "niet in gebruik"
+              const isInUse = item.status === 'in gebruik';
+              const statusClass = isInUse ? 'bg-success' : 'bg-danger';
+              const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
               html += `
                 <div class="list-group-item list-group-item-action" 
                      style="cursor: pointer; transition: background-color 0.2s;" 
@@ -327,10 +541,62 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         if (data.items && data.items.length > 0) {
           const item = data.items[0];
-          const statusClass = item.status === 'goedgekeurd' ? 'bg-dark' : 
-                             item.status === 'afgekeurd' ? 'bg-danger' : 'bg-secondary';
-          const statusText = item.status === 'goedgekeurd' ? 'Operationeel' : 
-                            item.status === 'afgekeurd' ? 'Keuring Vereist' : (item.status || 'Onbekend');
+          // Status: "in gebruik" or "niet in gebruik"
+          const isInUse = item.status === 'in gebruik';
+          const statusClass = isInUse ? 'bg-success' : 'bg-danger';
+          const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
+          
+          // Keuring: based on original status (goedgekeurd/afgekeurd/keuring verlopen/keuring gepland)
+          // If status is "in gebruik", check inspection_status for the original keuring status
+          let keuringStatus = item.status;
+          if (item.status === 'in gebruik' && item.inspection_status) {
+            keuringStatus = item.inspection_status;
+          }
+          
+          // Determine badge class and text based on keuring status
+          let keuringClass = 'bg-secondary';
+          let keuringText = 'Onbekend';
+          
+          if (keuringStatus === 'goedgekeurd') {
+            keuringClass = 'bg-success';
+            keuringText = 'Goedgekeurd';
+          } else if (keuringStatus === 'afgekeurd') {
+            keuringClass = 'bg-danger';
+            keuringText = 'Afgekeurd';
+          } else if (keuringStatus === 'keuring verlopen') {
+            keuringClass = 'bg-warning';
+            keuringText = 'Keuring verlopen';
+          } else if (keuringStatus === 'keuring gepland') {
+            keuringClass = '';
+            keuringText = 'Keuring gepland';
+          } else if (item.status === 'in gebruik') {
+            // Default to goedgekeurd when in gebruik and no inspection_status
+            keuringClass = 'bg-success';
+            keuringText = 'Goedgekeurd';
+          }
+          
+          // Create badge HTML for keuring status (white background with colored border and black text)
+          let keuringBadgeHtml = '';
+          let badgeStyle = '';
+          
+          if (keuringStatus === 'goedgekeurd') {
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+          } else if (keuringStatus === 'afgekeurd') {
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #dc3545;';
+          } else if (keuringStatus === 'keuring verlopen') {
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #ffc107;';
+          } else if (keuringStatus === 'keuring gepland') {
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
+          } else {
+            // Default to goedgekeurd style
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+          }
+          
+          if (item.keuring_gepland) {
+            keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
+          } else {
+            keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">${escapeHtml(keuringText)}</span>`;
+          }
           
           // Helper function to display value or "onbekend"
           const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
@@ -351,6 +617,13 @@ document.addEventListener('DOMContentLoaded', function() {
                   <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
                 </div>
                 <div class="col-md-6">
+                  <strong>Keuring:</strong><br>
+                  ${keuringBadgeHtml}
+                  ${item.laatste_keuring ? `
+                    <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
+                  ` : ''}
+                </div>
+                <div class="col-md-6">
                   <strong>Toegewezen aan:</strong><br>
                   ${displayValue(item.assigned_to)}
                 </div>
@@ -363,12 +636,43 @@ document.addEventListener('DOMContentLoaded', function() {
                   ${displayValue(item.purchase_date)}
                 </div>
                 <div class="col-md-6">
-                  <strong>Opmerking:</strong><br>
-                  ${displayValue(item.note)}
+                  <strong>Nummer op Materieel:</strong><br>
+                  ${displayValue(item.nummer_op_materieel)}
                 </div>
               </div>
+              <div class="mb-3">
+                <strong>Opmerking:</strong><br>
+                ${displayValue(item.note)}
+              </div>
+              ${item.documentation_path ? `
+                <div class="mb-3">
+                  <strong>Documentatie:</strong><br>
+                  <a href="/static/${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                    📄 Bekijk documentatie
+                  </a>
+                  <a href="/static/${escapeHtml(item.documentation_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                    ⬇️ Download
+                  </a>
+                </div>
+              ` : ''}
+              ${item.safety_sheet_path ? `
+                <div class="mb-3">
+                  <strong>Veiligheidsfiche:</strong><br>
+                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                    📄 Bekijk veiligheidsfiche
+                  </a>
+                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                    ⬇️ Download
+                  </a>
+                </div>
+              ` : ''}
               <div class="d-flex gap-2 mt-4">
-                <a href="${escapeHtml('/materiaal?q=' + (item.serial || ''))}" class="btn btn-outline-secondary">Bewerken</a>
+                <button type="button" 
+                        class="btn btn-outline-secondary edit-material-btn" 
+                        data-item-serial="${escapeHtml(item.serial || '')}"
+                        onclick="openEditModalFromSearchSerial('${escapeHtml(item.serial || '')}')">
+                  Bewerken
+                </button>
                 <button type="button" 
                         class="btn btn-dark gebruik-btn" 
                         data-bs-toggle="modal" 
@@ -415,6 +719,71 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
+  
+  // Function to open edit modal and populate it with material data from search results
+  window.openEditModalFromSearchSerial = function(serial) {
+    if (!serial) {
+      alert('Serienummer niet gevonden.');
+      return;
+    }
+    
+    // Close search results modal if open
+    const searchModal = bootstrap.Modal.getInstance(document.getElementById('searchResultsModal'));
+    if (searchModal) {
+      searchModal.hide();
+    }
+    
+    // Fetch material data by serial
+    fetch(`/api/search?q=${encodeURIComponent(serial)}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        if (data.items && data.items.length > 0) {
+          const item = data.items[0];
+          
+          // Populate edit modal with the material data
+          const editModal = new bootstrap.Modal(document.getElementById('editMaterieelModal'));
+          document.getElementById('edit-original-serial').value = item.serial || '';
+          document.getElementById('edit-serial').value = item.serial || '';
+          document.getElementById('edit-name').value = item.name || '';
+          document.getElementById('edit-type').value = item.type || '';
+          document.getElementById('edit-purchase_date').value = item.purchase_date || '';
+          document.getElementById('edit-assigned_to').value = item.assigned_to || '';
+          document.getElementById('edit-site').value = item.site || '';
+          document.getElementById('edit-note').value = item.note || '';
+          
+          // For keuring status: if status is "in gebruik", use inspection_status if available, otherwise default to "goedgekeurd"
+          let keuringValue = 'goedgekeurd';
+          if (item.status === 'in gebruik') {
+            // Material is in use, check inspection_status for the original keuring
+            keuringValue = item.inspection_status || 'goedgekeurd';
+          } else {
+            // Material is not in use, status is the keuring status
+            keuringValue = item.status || 'goedgekeurd';
+          }
+          document.getElementById('edit-status').value = keuringValue;
+          
+          document.getElementById('edit-inspection_status').value = item.inspection_status || '';
+          document.getElementById('edit-nummer_op_materieel').value = item.nummer_op_materieel || '';
+          
+          // Show the edit modal
+          editModal.show();
+        } else {
+          alert('Materiaal niet gevonden.');
+        }
+      })
+      .catch(error => {
+        console.error('Error loading material for editing:', error);
+        alert('Er is een fout opgetreden bij het laden van de materiaalgegevens.');
+      });
+  };
 });
 </script>
 

@@ -207,6 +207,15 @@ def dashboard():
     # recente activiteit uit activity_log tabel
     recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
 
+    # Haal geplande keuringen op (volgende_controle in de toekomst)
+    geplande_keuringen = (
+        Keuringstatus.query
+        .filter(Keuringstatus.volgende_controle > today)
+        .order_by(Keuringstatus.volgende_controle.asc())
+        .limit(10)  # Toon maximaal 10 komende keuringen
+        .all()
+    )
+
     # Data voor "Materiaal in gebruik nemen" modal
     all_materials = Material.query.all()
     today = datetime.utcnow().date()
@@ -224,6 +233,7 @@ def dashboard():
         all_materials=all_materials,
         projects=projects,
         today=today,
+        geplande_keuringen=geplande_keuringen,
     )
 
 
@@ -710,13 +720,34 @@ def materiaal_verwijderen():
         flash("Item niet gevonden.", "danger")
         return redirect(url_for("materiaal"))
 
-    # Verwijder ook de gekoppelde keuringstatus als die bestaat
-    if item.keuring_id:
-        keuring = Keuringstatus.query.filter_by(id=item.keuring_id).first()
+    # Sla keuring_id op voor later controle
+    keuring_id_to_check = item.keuring_id
+    
+    # Controleer eerst of andere materialen dezelfde keuringstatus gebruiken
+    # (exclusief het huidige materiaal dat we gaan verwijderen)
+    should_delete_keuring = False
+    if keuring_id_to_check:
+        # Tel hoeveel materialen deze keuringstatus gebruiken, exclusief het huidige item
+        other_materials_with_keuring = (
+            Material.query
+            .filter_by(keuring_id=keuring_id_to_check)
+            .filter(Material.id != item.id)
+            .count()
+        )
+        should_delete_keuring = (other_materials_with_keuring == 0)
+    
+    # Verwijder de referentie naar keuringstatus van dit materiaal
+    item.keuring_id = None
+    
+    # Verwijder het materiaal
+    db.session.delete(item)
+    
+    # Verwijder de keuringstatus alleen als geen andere materialen het meer gebruiken
+    if should_delete_keuring and keuring_id_to_check:
+        keuring = Keuringstatus.query.filter_by(id=keuring_id_to_check).first()
         if keuring:
             db.session.delete(keuring)
 
-    db.session.delete(item)
     db.session.commit()
 
     log_activity_db("Verwijderd", item.name or "", serial)
