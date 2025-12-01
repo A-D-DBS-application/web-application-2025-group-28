@@ -96,13 +96,21 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <button type="button"
-                              class="btn btn-sm btn-outline-dark"
-                              data-bs-toggle="modal"
-                              data-bs-target="#materieelDetailsModal"
-                              onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
-                        Bekijk en bewerk
+                      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-dark"
+                                data-bs-toggle="modal"
+                                data-bs-target="#materieelDetailsModal"
+                                onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
+                          Bekijk en bewerk
                         </button>
+                        <form method="post" action="{{ url_for('materiaal_stop_gebruik') }}" class="d-inline" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+                          <input type="hidden" name="usage_id" value="{{ u.id }}">
+                          <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            Niet meer gebruiken
+                          </button>
+                        </form>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -464,7 +472,6 @@
           <input type="hidden" name="usage_id" id="stop-usage-id">
           <button type="submit" class="btn btn-outline-secondary" id="details-stop-btn">Niet meer gebruiken</button>
         </form>
-        <button type="button" class="btn btn-outline-primary" id="details-use-btn" style="display: none !important;">In gebruik nemen</button>
         <button type="button" class="btn btn-primary" id="details-edit-btn">Bewerken</button>
       </div>
     </div>
@@ -801,18 +808,24 @@ document.addEventListener('DOMContentLoaded', function () {
     const modalTitle = document.getElementById('details-material-name');
     const editBtn = document.getElementById('details-edit-btn');
     
-    // Initially hide both buttons, will be shown based on status from API
+    // Initially hide stop button, will be shown based on status from API
     const stopForm = document.getElementById('stop-gebruik-form');
-    const useBtn = document.getElementById('details-use-btn');
     if (stopForm) stopForm.style.display = 'none';
-    if (useBtn) useBtn.style.display = 'none';
     
     modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
     modal.show();
     
     fetch(`/api/search?q=${encodeURIComponent(serial)}`)
-      .then(response => response.json())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
       .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
         if (data.items && data.items.length > 0) {
           const item = data.items[0];
           // Status: "in gebruik" or "niet in gebruik"
@@ -917,46 +930,26 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
           `;
           
-          // Show/hide buttons based on status - ensure only one is visible
+          // Show/hide stop button based on status
           const stopForm = document.getElementById('stop-gebruik-form');
           const stopBtn = document.getElementById('details-stop-btn');
-          const useBtn = document.getElementById('details-use-btn');
           
-          // Always hide both first, then show the correct one
+          // Always hide first, then show if in use
           if (stopForm) {
             stopForm.style.setProperty('display', 'none', 'important');
           }
           if (stopBtn) {
             stopBtn.style.setProperty('display', 'none', 'important');
           }
-          if (useBtn) {
-            useBtn.style.setProperty('display', 'none', 'important');
-            // Remove any existing onclick handlers
-            useBtn.onclick = null;
-          }
           
           if (isInUse) {
-            // Material is in use - show "Niet meer gebruiken" button only
+            // Material is in use - show "Niet meer gebruiken" button
             if (stopForm) {
               stopForm.style.setProperty('display', 'inline-block', 'important');
             }
             // Set usage_id if available (from usageId parameter)
             if (usageId && document.getElementById('stop-usage-id')) {
               document.getElementById('stop-usage-id').value = usageId;
-            }
-          } else {
-            // Material is not in use - show "In gebruik nemen" button only
-            if (useBtn) {
-              useBtn.style.setProperty('display', 'inline-block', 'important');
-              // Set up the button to open usage modal and pre-fill data
-              useBtn.onclick = function() {
-                modal.hide();
-                // Open usage modal and pre-fill with material data
-                const usageModal = new bootstrap.Modal(document.getElementById('gebruikMaterieelModal'));
-                const nameInput = document.querySelector('#gebruikMaterieelModal input[name="name"]');
-                if (nameInput) nameInput.value = item.name || '';
-                usageModal.show();
-              };
             }
           }
           

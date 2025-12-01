@@ -330,8 +330,16 @@ window.showMaterialDetails = function(serial, usageId) {
   modal.show();
   
   fetch(`/api/search?q=${encodeURIComponent(serial)}`)
-    .then(response => response.json())
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
     .then(data => {
+      if (data.error) {
+        throw new Error(data.error);
+      }
       if (data.items && data.items.length > 0) {
         const item = data.items[0];
         const isInUse = item.status === 'in gebruik';

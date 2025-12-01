@@ -218,62 +218,89 @@ def dashboard():
 @login_required
 def api_search():
     """API endpoint for searching materials - returns JSON"""
-    q = (request.args.get("q") or "").strip().lower()
-    
-    if not q:
-        return {"items": []}, 200
-    
-    like = f"%{q}%"
-    items = (
-        Material.query.filter(
-        or_(Material.name.ilike(like), Material.serial.ilike(like))
+    try:
+        q = (request.args.get("q") or "").strip().lower()
+        
+        if not q:
+            return jsonify({"items": []}), 200
+        
+        like = f"%{q}%"
+        items = (
+            Material.query.filter(
+            or_(Material.name.ilike(like), Material.serial.ilike(like))
+            )
+            .limit(10)
+            .all()
         )
-        .limit(10)
-        .all()
-    )
-    
-    results = []
-    for item in items:
-        # Check if material has active usages
-        active_usages_count = MaterialUsage.query.filter_by(
-            material_id=item.id, 
-            is_active=True
-        ).count()
         
-        # Determine actual status: if has active usages, status is "in gebruik"
-        actual_status = "in gebruik" if active_usages_count > 0 else (item.status or "")
+        results = []
+        for item in items:
+            try:
+                # Check if material has active usages
+                active_usages_count = MaterialUsage.query.filter_by(
+                    material_id=item.id, 
+                    is_active=True
+                ).count()
+                
+                # Determine actual status: if has active usages, status is "in gebruik"
+                actual_status = "in gebruik" if active_usages_count > 0 else (item.status or "")
+                
+                # Haal keuring informatie op
+                keuring_info = None
+                if item.keuring_id:
+                    keuring_info = Keuringstatus.query.filter_by(id=item.keuring_id).first()
+                
+                # Als er geen keuring_id is, probeer via serienummer
+                if not keuring_info:
+                    keuring_info = Keuringstatus.query.filter_by(serienummer=item.serial).first()
+                
+                # Safe date formatting for keuring dates
+                keuring_gepland = None
+                laatste_keuring = None
+                if keuring_info:
+                    if hasattr(keuring_info, 'volgende_controle') and keuring_info.volgende_controle:
+                        try:
+                            keuring_gepland = keuring_info.volgende_controle.strftime("%Y-%m-%d")
+                        except (AttributeError, ValueError):
+                            keuring_gepland = None
+                    if hasattr(keuring_info, 'laatste_controle') and keuring_info.laatste_controle:
+                        try:
+                            laatste_keuring = keuring_info.laatste_controle.strftime("%Y-%m-%d")
+                        except (AttributeError, ValueError):
+                            laatste_keuring = None
+                
+                results.append(
+                    {
+                    "serial": item.serial or "",
+                    "name": item.name or "",
+                    "type": item.type or "",
+                    "status": actual_status,
+                    "assigned_to": item.assigned_to or "",
+                    "site": item.site or "",
+                    "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
+                        if item.purchase_date
+                        else "",
+                    "note": item.note or "",
+                    "nummer_op_materieel": item.nummer_op_materieel or "",
+                    "documentation_path": item.documentation_path or "",
+                    "safety_sheet_path": item.safety_sheet_path or "",
+                    "inspection_status": item.inspection_status or "",
+                    "keuring_gepland": keuring_gepland,
+                    "laatste_keuring": laatste_keuring,
+                    }
+                )
+            except Exception as e:
+                # Log error for this item but continue with other items
+                print(f"Error processing material {item.serial if item else 'unknown'}: {e}")
+                continue
         
-        # Haal keuring informatie op
-        keuring_info = None
-        if item.keuring_id:
-            keuring_info = Keuringstatus.query.filter_by(id=item.keuring_id).first()
-        
-        # Als er geen keuring_id is, probeer via serienummer
-        if not keuring_info:
-            keuring_info = Keuringstatus.query.filter_by(serienummer=item.serial).first()
-        
-        results.append(
-            {
-            "serial": item.serial,
-            "name": item.name,
-            "type": item.type or "",
-                "status": actual_status,
-            "assigned_to": item.assigned_to or "",
-            "site": item.site or "",
-                "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
-                if item.purchase_date
-                else "",
-            "note": item.note or "",
-            "nummer_op_materieel": item.nummer_op_materieel or "",
-            "documentation_path": item.documentation_path or "",
-            "safety_sheet_path": item.safety_sheet_path or "",
-                "inspection_status": item.inspection_status or "",
-                "keuring_gepland": keuring_info.volgende_controle.strftime("%Y-%m-%d") if keuring_info and keuring_info.volgende_controle else None,
-                "laatste_keuring": keuring_info.laatste_controle.strftime("%Y-%m-%d") if keuring_info and keuring_info.laatste_controle else None,
-            }
-        )
-    
-    return jsonify({"items": results}), 200
+        return jsonify({"items": results}), 200
+    except Exception as e:
+        # Log the error and return a proper error response
+        print(f"Error in api_search: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e), "items": []}), 500
 
 
 # -----------------------------------------------------

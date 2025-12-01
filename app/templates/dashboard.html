@@ -185,8 +185,16 @@ document.addEventListener('DOMContentLoaded', function() {
     searchModal.show();
     
     fetch(`/api/search?q=${encodeURIComponent(query)}`)
-      .then(response => response.json())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
       .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
         if (data.items && data.items.length > 0) {
           // If single result, show detailed view; otherwise show list
           if (data.items.length === 1) {
