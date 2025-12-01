@@ -99,8 +99,6 @@
                       <div style="display: flex; gap: 8px; justify-content: flex-end;">
                         <button type="button"
                                 class="btn btn-sm btn-outline-dark"
-                                data-bs-toggle="modal"
-                                data-bs-target="#materieelDetailsModal"
                                 onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
                           Bekijk en bewerk
                         </button>
@@ -154,8 +152,6 @@
                     <td class="text-end">
                       <button type="button"
                               class="btn btn-sm btn-outline-dark"
-                              data-bs-toggle="modal"
-                              data-bs-target="#materieelDetailsModal"
                               onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
                         Bekijk en bewerk
                         </button>
@@ -802,20 +798,67 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Function to show material details
+  // Store modal instance to prevent multiple instances
+  let materialDetailsModalInstance = null;
+  let currentFetchController = null;
+  
+  // Initialize modal and add cleanup on hide
+  const modalElement = document.getElementById('materieelDetailsModal');
+  if (modalElement && !materialDetailsModalInstance) {
+    materialDetailsModalInstance = new bootstrap.Modal(modalElement, {
+      backdrop: true,
+      keyboard: true,
+      focus: true
+    });
+    
+    // Cleanup when modal is hidden
+    modalElement.addEventListener('hidden.bs.modal', function() {
+      // Cancel any ongoing fetch requests
+      if (currentFetchController) {
+        currentFetchController.abort();
+        currentFetchController = null;
+      }
+      // Clear modal body
+      const modalBody = document.getElementById('materieelDetailsBody');
+      if (modalBody) {
+        modalBody.innerHTML = '';
+      }
+      // Reset edit button onclick
+      const editBtn = document.getElementById('details-edit-btn');
+      if (editBtn) {
+        editBtn.onclick = null;
+      }
+    });
+  }
+  
   window.showMaterialDetails = function(serial, usageId) {
-    const modal = new bootstrap.Modal(document.getElementById('materieelDetailsModal'));
     const modalBody = document.getElementById('materieelDetailsBody');
     const modalTitle = document.getElementById('details-material-name');
     const editBtn = document.getElementById('details-edit-btn');
+    
+    // Cancel any previous fetch request
+    if (currentFetchController) {
+      currentFetchController.abort();
+    }
+    
+    // Create new AbortController for this request
+    currentFetchController = new AbortController();
     
     // Initially hide stop button, will be shown based on status from API
     const stopForm = document.getElementById('stop-gebruik-form');
     if (stopForm) stopForm.style.display = 'none';
     
     modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
-    modal.show();
+    modalTitle.textContent = 'Materieel Details';
     
-    fetch(`/api/search?q=${encodeURIComponent(serial)}`)
+    // Show modal
+    if (materialDetailsModalInstance) {
+      materialDetailsModalInstance.show();
+    }
+    
+    fetch(`/api/search?q=${encodeURIComponent(serial)}`, {
+      signal: currentFetchController.signal
+    })
       .then(response => {
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -956,7 +999,9 @@ document.addEventListener('DOMContentLoaded', function () {
           // Set up edit button - populate edit modal with data from API
           if (editBtn) {
             editBtn.onclick = function() {
-              modal.hide();
+              if (materialDetailsModalInstance) {
+                materialDetailsModalInstance.hide();
+              }
               // Populate edit modal with the material data
               const editModal = new bootstrap.Modal(document.getElementById('editMaterieelModal'));
               document.getElementById('edit-original-serial').value = item.serial || '';
