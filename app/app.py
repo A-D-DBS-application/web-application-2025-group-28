@@ -35,7 +35,14 @@ db.init_app(app)
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
+        # Alleen doorgaan als er een ingelogde én bestaande gebruiker is
         if session.get("user_email") is None:
+            return redirect(url_for("login", next=request.path))
+
+        # `load_current_user` zet g.user; als die om welke reden dan ook None is,
+        # beschouwen we de sessie als ongeldig en sturen we terug naar login.
+        if getattr(g, "user", None) is None:
+            session.clear()
             return redirect(url_for("login", next=request.path))
         return view(*args, **kwargs)
 
@@ -710,7 +717,7 @@ def materiaal_bewerken():
 def materiaal_verwijderen():
     serial = (request.form.get("serial") or "").strip()
     admin_pw = (request.form.get("admin_password") or "").strip()
-
+    # Beheerwachtwoord controleren
     if admin_pw != "Sunset":
         flash("Onjuist wachtwoord voor het verwijderen van materiaal.", "danger")
         return redirect(url_for("materiaal"))
@@ -719,6 +726,14 @@ def materiaal_verwijderen():
     if not item:
         flash("Item niet gevonden.", "danger")
         return redirect(url_for("materiaal"))
+
+    # -------------------------------------------------
+    # 1) Alle gekoppelde gebruiksregistraties verwijderen
+    #    (material_usage heeft een NOT NULL constraint op material_id)
+    # -------------------------------------------------
+    usages = MaterialUsage.query.filter_by(material_id=item.id).all()
+    for usage in usages:
+        db.session.delete(usage)
 
     # Sla keuring_id op voor later controle
     keuring_id_to_check = item.keuring_id
@@ -866,7 +881,8 @@ def materiaal_gebruiken():
     item.status = "in gebruik"
 
     # Nieuwe gebruik-sessie
-    user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    # In de database is user_id NOT NULL, dus we gebruiken altijd de ingelogde gebruiker
+    user_id = g.user.gebruiker_id
     usage = MaterialUsage(
         material_id=item.id,
         user_id=user_id,
@@ -1157,7 +1173,8 @@ def werf_materiaal_gebruiken(project_id):
     # Set status to "in gebruik"
     item.status = "in gebruik"
 
-    user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    # In de database is user_id NOT NULL, dus we gebruiken altijd de ingelogde gebruiker
+    user_id = g.user.gebruiker_id
     usage = MaterialUsage(
         material_id=item.id,
         user_id=user_id,
