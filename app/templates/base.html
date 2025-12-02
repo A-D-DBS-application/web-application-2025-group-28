@@ -18,6 +18,30 @@
   >
 </head>
 <body>
+  <!-- Mobiele onderbalk navigatie (alleen zichtbaar op kleine schermen) -->
+  <nav class="mobile-nav d-md-none">
+    <a href="{{ url_for('dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard' %}active{% endif %}">
+      <span class="mobile-nav-icon">📊</span>
+      <span class="mobile-nav-label">Dashboard</span>
+    </a>
+    <a href="{{ url_for('materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal' %}active{% endif %}">
+      <span class="mobile-nav-icon">📦</span>
+      <span class="mobile-nav-label">Materiaal</span>
+    </a>
+    <a href="{{ url_for('werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven', 'werf_detail'] %}active{% endif %}">
+      <span class="mobile-nav-icon">🏗️</span>
+      <span class="mobile-nav-label">Werven</span>
+    </a>
+    <a href="{{ url_for('keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen' %}active{% endif %}">
+      <span class="mobile-nav-icon">✓</span>
+      <span class="mobile-nav-label">Keuringen</span>
+    </a>
+    <a href="{{ url_for('documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten' %}active{% endif %}">
+      <span class="mobile-nav-icon">📄</span>
+      <span class="mobile-nav-label">Docs</span>
+    </a>
+  </nav>
+
   <!-- Sidebar -->
   <aside class="sidebar">
     <div class="sidebar-top">
@@ -119,6 +143,12 @@
     <!-- Top bar -->
     <header class="topbar">
       <div class="app-title">Fleet 360</div>
+      <!-- Mobiel logo rechtsboven (zichtbaar op kleine schermen) -->
+      <img
+        src="{{ url_for('static', filename='img/logo.png.png') }}"
+        alt="VT-Invest Group"
+        class="topbar-logo-mobile d-md-none"
+      >
     </header>
 
     <!-- Flash messages -->

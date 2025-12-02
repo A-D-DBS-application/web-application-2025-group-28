@@ -8,27 +8,6 @@
   </div>
 </div>
 
-<!-- KPI's -->
-<div class="grid grid-top documenten-grid" style="margin-top:16px; grid-template-columns: 300px 300px;">
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 14px;">📄</span>
-      Totaal Documenten
-    </div>
-    <div class="kpi-value">{{ total_docs }}</div>
-    <div class="kpi-sub">Documenten in het systeem</div>
-  </div>
-
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 14px;">🛡️</span>
-      Veiligheidscertificaten
-    </div>
-    <div class="kpi-value">{{ safety_certs }}</div>
-    <div class="kpi-sub">Certificaten beschikbaar</div>
-  </div>
-</div>
-
 <!-- Search and Filter -->
 <div class="card panel" style="margin-top:24px;">
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -98,16 +77,16 @@
 
   <!-- Documents Table -->
   <div class="table-responsive">
-    <table class="table align-middle">
+    <table class="table align-middle documenten-table">
       <thead>
         <tr>
           <th>Type</th>
           <th>Naam</th>
           <th>Materieel</th>
-          <th>Datum</th>
-          <th>Grootte</th>
-          <th>Geüpload door</th>
-          <th>Status</th>
+          <th class="doc-col-sm-hide">Datum</th>
+          <th class="doc-col-sm-hide">Grootte</th>
+          <th class="doc-col-sm-hide">Geüpload door</th>
+          <th>Type</th>
           <th class="text-end">Acties</th>
         </tr>
       </thead>
@@ -125,11 +104,11 @@
               {{ doc.material }}<br>
               <small class="text-muted">{{ doc.material_serial }}</small>
             </td>
-            <td>{{ doc.date }}</td>
-            <td>{{ doc.size }}</td>
-            <td>{{ doc.uploaded_by }}</td>
+            <td class="doc-col-sm-hide">{{ doc.date }}</td>
+            <td class="doc-col-sm-hide">{{ doc.size }}</td>
+            <td class="doc-col-sm-hide">{{ doc.uploaded_by }}</td>
             <td>
-              <span class="badge bg-secondary">{{ doc.status }}</span>
+              <span class="badge bg-secondary">{{ doc.type }}</span>
             </td>
             <td class="text-end">
               {% if doc.path %}

@@ -15,45 +15,6 @@
   </button>
 </div>
 
-<!-- KPI's -->
-<div class="grid grid-top" style="margin-top:16px;">
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 14px;">📋</span>
-      Totaal Keuringen
-    </div>
-    <div class="kpi-value">{{ total_keuringen }}</div>
-    <div class="kpi-sub">Geregistreerd</div>
-  </div>
-
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 14px; color: #10b981;">✓</span>
-      Goedgekeurd
-    </div>
-    <div class="kpi-value" style="color: #10b981;">{{ goedgekeurd_count }}</div>
-    <div class="kpi-sub">Items voldoen</div>
-  </div>
-
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 14px; color: #dc2626;">✗</span>
-      Afgekeurd
-    </div>
-    <div class="kpi-value" style="color: #dc2626;">{{ afgekeurd_count }}</div>
-    <div class="kpi-sub">Actie vereist</div>
-  </div>
-
-  <div class="card kpi">
-    <div class="kpi-title">
-      <span style="font-size: 14px; color: #f59e0b;">📅</span>
-      Te Keuren
-    </div>
-    <div class="kpi-value" style="color: #f59e0b;">{{ te_keuren }}</div>
-    <div class="kpi-sub">Nog in te plannen</div>
-  </div>
-</div>
-
 <!-- Items die Keuring Vereisen -->
 <div class="card panel" style="margin-top:24px;">
   <div class="panel-title">Items die Keuring Vereisen</div>
@@ -66,7 +27,13 @@
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
               <div class="flex-grow-1">
-                <h6 class="mb-1 fw-bold">{{ item.name or 'Onbekend' }}</h6>
+                <!-- Naam klikbaar maken om details te tonen -->
+                <button type="button"
+                        class="btn btn-link p-0 fw-bold text-start"
+                        style="text-decoration: none; color: inherit;"
+                        onclick="showMaterialDetails('{{ item.serial }}', null)">
+                  {{ item.name or 'Onbekend' }}
+                </button>
                 <small class="text-muted">
                   {{ item.serial }}
                   {% if item.site %}
@@ -76,22 +43,13 @@
               </div>
               <div class="d-flex align-items-center gap-2">
                 <span class="badge bg-warning">Keuring verlopen</span>
-                <div class="btn-group">
-                  <button type="button"
-                          class="btn btn-sm btn-outline-secondary"
-                          data-bs-toggle="modal"
-                          data-bs-target="#materieelDetailsModal"
-                          onclick="showMaterialDetails('{{ item.serial }}', null)">
-                    Details bekijken
-                  </button>
-                  <button type="button"
-                          class="btn btn-sm btn-dark"
-                          data-bs-toggle="modal"
-                          data-bs-target="#nieuweKeuringModal"
-                          onclick="document.getElementById('keuring-serial').value = '{{ item.serial }}'">
-                    Plan Keuring
-                  </button>
-                </div>
+                <button type="button"
+                        class="btn btn-sm btn-dark"
+                        data-bs-toggle="modal"
+                        data-bs-target="#nieuweKeuringModal"
+                        onclick="document.getElementById('keuring-serial').value = '{{ item.serial }}'">
+                  Plan Keuring
+                </button>
               </div>
             </div>
           </div>
