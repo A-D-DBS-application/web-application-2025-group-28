@@ -251,29 +251,18 @@
               {% endif %}
             </td>
             <td>
-              {% if it.status == "goedgekeurd" %}
+              {# Always show inspection_status (keuring status) first, fall back to status if inspection_status is not available #}
+              {% set keuring_status = it.inspection_status if it.inspection_status else (it.status if it.status != "in gebruik" else None) %}
+              {% if keuring_status == "goedgekeurd" %}
                 <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Goedgekeurd</span>
-              {% elif it.status == "afgekeurd" %}
+              {% elif keuring_status == "afgekeurd" %}
                 <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Afgekeurd</span>
-              {% elif it.status == "keuring verlopen" %}
+              {% elif keuring_status == "keuring verlopen" %}
                 <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Keuring verlopen</span>
-              {% elif it.status == "keuring gepland" %}
+              {% elif keuring_status == "keuring gepland" %}
                 <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Keuring gepland</span>
-              {% elif it.status == "in gebruik" %}
-                {# When in gebruik, we need to check inspection_status for the original keuring status #}
-                {% if it.inspection_status == "goedgekeurd" %}
-                  <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Goedgekeurd</span>
-                {% elif it.inspection_status == "afgekeurd" %}
-                  <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Afgekeurd</span>
-                {% elif it.inspection_status == "keuring verlopen" %}
-                  <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Keuring verlopen</span>
-                {% elif it.inspection_status == "keuring gepland" %}
-                  <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Keuring gepland</span>
-                {% else %}
-                  <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Goedgekeurd</span>
-                {% endif %}
               {% else %}
-                <span class="badge bg-secondary">{{ it.status|title if it.status else "-" }}</span>
+                <span class="badge bg-secondary">{{ keuring_status|title if keuring_status else "-" }}</span>
               {% endif %}
             </td>
             <td class="text-end" onclick="event.stopPropagation();">

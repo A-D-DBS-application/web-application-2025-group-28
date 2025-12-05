@@ -191,25 +191,18 @@ def dashboard():
     total_items = Material.query.count()
 
     # Tel items die keuring vereisen (te keuren)
-    # Dit zijn alleen items met status "keuring verlopen" of "keuring gepland"
-    # Voor items "in gebruik": check inspection_status
+    # Dit zijn items met inspection_status "keuring verlopen" of "keuring gepland"
     today = datetime.utcnow().date()
     
-    # Items met status "keuring verlopen" (direct of via inspection_status)
-    keuring_verlopen_direct = Material.query.filter_by(status="keuring verlopen").count()
-    keuring_verlopen_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
+    keuring_verlopen_count = Material.query.filter(
         Material.inspection_status == "keuring verlopen"
     ).count()
     
-    # Items met status "keuring gepland" (direct of via inspection_status)
-    keuring_gepland_direct = Material.query.filter_by(status="keuring gepland").count()
-    keuring_gepland_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
+    keuring_gepland_count = Material.query.filter(
         Material.inspection_status == "keuring gepland"
     ).count()
     
-    to_inspect = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
+    to_inspect = keuring_verlopen_count + keuring_gepland_count
 
     # recente activiteit uit activity_log tabel
     recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
@@ -1450,37 +1443,22 @@ def keuringen():
     afgekeurd_count = afgekeurd_direct + afgekeurd_in_use
     
     # Tel items die keuring vereisen (te keuren)
-    # Dit zijn alleen items met status "keuring verlopen" of "keuring gepland"
-    # Voor items "in gebruik": check inspection_status
-    
-    # Items met status "keuring verlopen" (direct of via inspection_status)
-    keuring_verlopen_direct = Material.query.filter_by(status="keuring verlopen").count()
-    keuring_verlopen_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
+    # Dit zijn items met inspection_status "keuring verlopen" of "keuring gepland"
+    keuring_verlopen_count = Material.query.filter(
         Material.inspection_status == "keuring verlopen"
     ).count()
     
-    # Items met status "keuring gepland" (direct of via inspection_status)
-    keuring_gepland_direct = Material.query.filter_by(status="keuring gepland").count()
-    keuring_gepland_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
+    keuring_gepland_count = Material.query.filter(
         Material.inspection_status == "keuring gepland"
     ).count()
     
-    te_keuren = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
+    te_keuren = keuring_verlopen_count + keuring_gepland_count
     
-    # Haal items op met status "keuring verlopen" voor de "Items die Keuring Vereisen" box
-    # Dit zijn items met status "keuring verlopen" OF items "in gebruik" met inspection_status "keuring verlopen"
-    keuring_verlopen_items_direct = Material.query.filter_by(status="keuring verlopen").all()
-    keuring_verlopen_items_in_use = Material.query.filter(
-        Material.status == "in gebruik",
+    # Haal items op met inspection_status "keuring verlopen" voor de "Items die Keuring Vereisen" box
+    # Dit zijn alle items waar inspection_status == "keuring verlopen", ongeacht de status
+    afgekeurde_items = Material.query.filter(
         Material.inspection_status == "keuring verlopen"
-    ).all()
-    # Combineer beide lijsten en sorteer op naam
-    afgekeurde_items = sorted(
-        keuring_verlopen_items_direct + keuring_verlopen_items_in_use,
-        key=lambda x: (x.name or "").lower()
-    )
+    ).order_by(Material.name).all()
     
     return render_template(
         "keuringen.html",
