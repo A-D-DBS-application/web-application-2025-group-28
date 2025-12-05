@@ -192,25 +192,13 @@ def dashboard():
     total_items = Material.query.count()
 
     # Tel items die keuring vereisen (te keuren)
-    # Dit zijn alleen items met status "keuring verlopen" of "keuring gepland"
-    # Voor items "in gebruik": check inspection_status
+    # Dit zijn items met inspection_status "keuring verlopen" of "keuring gepland"
     today = datetime.utcnow().date()
     
-    # Items met status "keuring verlopen" (direct of via inspection_status)
-    keuring_verlopen_direct = Material.query.filter_by(status="keuring verlopen").count()
-    keuring_verlopen_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "keuring verlopen"
-    ).count()
+    keuring_verlopen_count = Material.query.filter_by(inspection_status="keuring verlopen").count()
+    keuring_gepland_count = Material.query.filter_by(inspection_status="keuring gepland").count()
     
-    # Items met status "keuring gepland" (direct of via inspection_status)
-    keuring_gepland_direct = Material.query.filter_by(status="keuring gepland").count()
-    keuring_gepland_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "keuring gepland"
-    ).count()
-    
-    to_inspect = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
+    to_inspect = keuring_verlopen_count + keuring_gepland_count
 
     # recente activiteit uit activity_log tabel
     recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
@@ -311,6 +299,7 @@ def api_search():
                     "name": item.name or "",
                     "type": item.type or "",
                     "status": actual_status,
+                    "is_in_use": active_usages_count > 0,
                     "assigned_to": item.assigned_to or "",
                     "site": item.site or "",
                     "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
@@ -464,6 +453,9 @@ def materiaal():
     current_user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
     current_user_name = g.user.Naam if getattr(g, "user", None) else None
 
+    # Usages zonder werf (project_id IS NULL)
+    usages_without_project = []
+
     for usage, mat in active_usages:
         active_material_ids.add(mat.id)
 
@@ -475,7 +467,12 @@ def materiaal():
             "site": usage.site or "",
             "used_by": usage.used_by or "",
             "start_time": usage.start_time,
+            "project_id": usage.project_id,
         }
+
+        # Check if usage has no project
+        if usage.project_id is None:
+            usages_without_project.append(row)
 
         # Check if the "used_by" name matches the logged-in user's name
         usage_name = (usage.used_by or "").strip()
@@ -526,6 +523,7 @@ def materiaal():
         projects=projects,
         today=today,
         types_list=types_list,
+        usages_without_project=usages_without_project,
     )
 
 
@@ -541,14 +539,12 @@ def materiaal_toevoegen():
     Nieuw materiaal AANMAKEN in Supabase (tabel 'materials').
     Dit is wat gebeurt via het plus-icoon.
     """
-    f = request.form
-
-    # Beheerwachtwoord controleren
-    admin_pw = (f.get("admin_password") or "").strip()
-    if admin_pw != "Sunset":
-        flash("Onjuist wachtwoord voor het toevoegen van nieuw materieel.", "danger")
+    # Admin check
+    if not getattr(g.user, 'is_admin', False):
+        flash("Geen toegang tot deze functie. Alleen admins kunnen materiaal toevoegen.", "danger")
         return redirect(url_for("materiaal"))
 
+    f = request.form
     name = (f.get("name") or "").strip()
     serial = (f.get("serial") or "").strip()
     nummer = (f.get("nummer_op_materieel") or "").strip()
@@ -666,32 +662,22 @@ def materiaal_bewerken():
     # Get keuring status from form (goedgekeurd, afgekeurd, keuring verlopen, or keuring gepland)
     keuring_status = (f.get("status") or "goedgekeurd").strip()
     
-    # Check if material has active usages - if so, keep status as "in gebruik"
+    # Check if material has active usages - determine status based on that
     active_usages_count = MaterialUsage.query.filter_by(
         material_id=item.id, 
         is_active=True
     ).count()
     
+    # Status kolom: alleen "in gebruik" of "niet in gebruik"
     if active_usages_count > 0:
-        # Material is in use, keep status as "in gebruik"
         item.status = "in gebruik"
-        # Store the keuring status in inspection_status so we can preserve it
-        if hasattr(item, "inspection_status"):
-            item.inspection_status = keuring_status
     else:
-        # No active usages, use keuring status from form as the main status
-        item.status = keuring_status
-        # Also store in inspection_status for consistency
-        if hasattr(item, "inspection_status"):
-            item.inspection_status = keuring_status
+        item.status = "niet in gebruik"
+    
+    # inspection_status kolom: de keuringstatus
+    item.inspection_status = keuring_status
     
     item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
-
-    # Handle "Volgende keuring" field (separate from keuring status)
-    next_inspection = (f.get("inspection_status") or "").strip()
-    # Only update if it's different from keuring status (to preserve "Volgende keuring" info)
-    # For now, we'll use inspection_status for keuring status, so we skip this
-    # If you need a separate "Volgende keuring" field, we'd need to add a new column
 
     documentation_file = request.files.get("documentation")
     safety_file = request.files.get("safety_sheet")
@@ -721,13 +707,12 @@ def materiaal_bewerken():
 @app.route("/materiaal/delete", methods=["POST"])
 @login_required
 def materiaal_verwijderen():
-    serial = (request.form.get("serial") or "").strip()
-    admin_pw = (request.form.get("admin_password") or "").strip()
-    # Beheerwachtwoord controleren
-    if admin_pw != "Sunset":
-        flash("Onjuist wachtwoord voor het verwijderen van materiaal.", "danger")
+    # Admin check
+    if not getattr(g.user, 'is_admin', False):
+        flash("Geen toegang tot deze functie. Alleen admins kunnen materiaal verwijderen.", "danger")
         return redirect(url_for("materiaal"))
 
+    serial = (request.form.get("serial") or "").strip()
     item = find_material_by_serial(serial)
     if not item:
         flash("Item niet gevonden.", "danger")
@@ -927,6 +912,17 @@ def materiaal_stop_gebruik():
         flash("Gebruiksregistratie niet gevonden.", "danger")
         return redirect(url_for("materiaal"))
 
+    # Check of de gebruiker dit materiaal zelf in gebruik heeft OF admin is
+    current_user_name = g.user.Naam if getattr(g, "user", None) else None
+    is_admin = getattr(g.user, 'is_admin', False) if getattr(g, "user", None) else False
+    usage_name = (usage.used_by or "").strip()
+    
+    is_own_usage = current_user_name and usage_name.lower() == current_user_name.lower()
+    
+    if not is_own_usage and not is_admin:
+        flash("Je kunt alleen je eigen materiaal stoppen. Neem contact op met een admin.", "danger")
+        return redirect(url_for("materiaal"))
+
     usage.is_active = False
     usage.end_time = datetime.utcnow()
 
@@ -943,14 +939,9 @@ def materiaal_stop_gebruik():
             is_active=True
         ).count()
         
-        # If no other active usages, revert status to original keuring status
+        # If no other active usages, set status to "niet in gebruik"
         if other_active_usages == 0:
-            # Restore original keuring status from inspection_status if available
-            if hasattr(mat, "inspection_status") and mat.inspection_status:
-                mat.status = mat.inspection_status
-            else:
-                # Default to goedgekeurd if no inspection_status is stored
-                mat.status = "goedgekeurd"
+            mat.status = "niet in gebruik"
 
     db.session.commit()
 
@@ -958,6 +949,53 @@ def materiaal_stop_gebruik():
         log_activity_db("Niet meer in gebruik", mat.name or "", mat.serial or "")
 
     flash("Materieel wordt niet langer als 'in gebruik' getoond.", "success")
+    return redirect(url_for("materiaal"))
+
+
+@app.route("/materiaal/assign_to_project", methods=["POST"])
+@login_required
+def materiaal_assign_to_project():
+    """
+    Koppel een actief materiaal gebruik aan een werf.
+    """
+    usage_id = (request.form.get("usage_id") or "").strip()
+    project_id = (request.form.get("project_id") or "").strip()
+
+    if not usage_id or not project_id:
+        flash("Selecteer een werf om het materiaal aan te koppelen.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # Haal usage op
+    usage = MaterialUsage.query.filter_by(id=usage_id, is_active=True).first()
+    if not usage:
+        flash("Gebruiksregistratie niet gevonden of niet actief.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # Controleer of werf bestaat
+    project = Project.query.filter_by(id=project_id, is_deleted=False).first()
+    if not project:
+        flash("Werf niet gevonden.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # Haal materiaal op
+    mat = Material.query.filter_by(id=usage.material_id).first()
+    if not mat:
+        flash("Materiaal niet gevonden.", "danger")
+        return redirect(url_for("materiaal"))
+
+    # Update usage en materiaal met project
+    usage.project_id = int(project_id)
+    usage.site = project.name
+    mat.project_id = int(project_id)
+    mat.site = project.name
+
+    db.session.commit()
+
+    log_activity_db(
+        f"Gekoppeld aan werf {project.name}", mat.name or "", mat.serial or ""
+    )
+
+    flash(f"Materiaal is gekoppeld aan werf '{project.name}'.", "success")
     return redirect(url_for("materiaal"))
 
 
@@ -1035,13 +1073,12 @@ def werf_toevoegen():
 @app.route("/werven/delete", methods=["POST"])
 @login_required
 def werf_verwijderen():
-    project_id = (request.form.get("project_id") or "").strip()
-    admin_pw = (request.form.get("admin_password") or "").strip()
-
-    if admin_pw != "Sunset":
-        flash("Onjuist wachtwoord voor het verwijderen van een werf.", "danger")
+    # Admin check
+    if not getattr(g.user, 'is_admin', False):
+        flash("Geen toegang tot deze functie. Alleen admins kunnen werven verwijderen.", "danger")
         return redirect(url_for("werven"))
 
+    project_id = (request.form.get("project_id") or "").strip()
     if not project_id:
         flash("Geen werf geselecteerd.", "danger")
         return redirect(url_for("werven"))
@@ -1082,6 +1119,12 @@ def werf_detail(project_id):
     # alle materialen die aan deze werf gekoppeld zijn
     materials = Material.query.filter(Material.project_id == project_id).all()
 
+    # alle andere werven voor de "wissel naar werf" dropdown
+    other_projects = Project.query.filter(
+        Project.is_deleted.is_(False),
+        Project.id != project_id
+    ).order_by(Project.name).all()
+
     return render_template(
         "werf_detail.html",
         project=project,
@@ -1089,6 +1132,7 @@ def werf_detail(project_id):
         all_materials=all_materials,
         active_usages=active_usages,
         materials=materials,
+        other_projects=other_projects,
     )
 
 
@@ -1217,6 +1261,17 @@ def werf_stop_gebruik(project_id):
         flash("Gebruiksregistratie niet gevonden.", "danger")
         return redirect(url_for("werf_detail", project_id=project_id))
 
+    # Check of de gebruiker dit materiaal zelf in gebruik heeft OF admin is
+    current_user_name = g.user.Naam if getattr(g, "user", None) else None
+    is_admin = getattr(g.user, 'is_admin', False) if getattr(g, "user", None) else False
+    usage_name = (usage.used_by or "").strip()
+    
+    is_own_usage = current_user_name and usage_name.lower() == current_user_name.lower()
+    
+    if not is_own_usage and not is_admin:
+        flash("Je kunt alleen je eigen materiaal stoppen. Neem contact op met een admin.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
     usage.is_active = False
     usage.end_time = datetime.utcnow()
 
@@ -1232,14 +1287,9 @@ def werf_stop_gebruik(project_id):
             is_active=True
         ).count()
         
-        # If no other active usages, revert status to original keuring status
+        # If no other active usages, set status to "niet in gebruik"
         if other_active_usages == 0:
-            # Restore original keuring status from inspection_status if available
-            if hasattr(mat, "inspection_status") and mat.inspection_status:
-                mat.status = mat.inspection_status
-            else:
-                # Default to goedgekeurd if no inspection_status is stored
-                mat.status = "goedgekeurd"
+            mat.status = "niet in gebruik"
 
     db.session.commit()
 
@@ -1250,6 +1300,109 @@ def werf_stop_gebruik(project_id):
 
     flash("Materiaal is niet langer in gebruik op deze werf.", "success")
     return redirect(url_for("werf_detail", project_id=project_id))
+
+
+@app.route("/werven/<int:project_id>/switch_material", methods=["POST"])
+@login_required
+def werf_switch_material(project_id):
+    """
+    Wissel materiaal van huidige werf naar een andere werf.
+    """
+    usage_id = (request.form.get("usage_id") or "").strip()
+    new_project_id = (request.form.get("new_project_id") or "").strip()
+
+    if not usage_id or not new_project_id:
+        flash("Selecteer een werf om het materiaal naar te verplaatsen.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    # Haal huidige usage op
+    usage = MaterialUsage.query.filter_by(id=usage_id, project_id=project_id, is_active=True).first()
+    if not usage:
+        flash("Gebruiksregistratie niet gevonden of niet actief.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    # Controleer of nieuwe werf bestaat
+    new_project = Project.query.filter_by(id=new_project_id, is_deleted=False).first()
+    if not new_project:
+        flash("Doelwerf niet gevonden.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    # Haal materiaal op
+    mat = Material.query.filter_by(id=usage.material_id).first()
+    if not mat:
+        flash("Materiaal niet gevonden.", "danger")
+        return redirect(url_for("werf_detail", project_id=project_id))
+
+    # Update usage en materiaal naar nieuwe werf
+    usage.project_id = int(new_project_id)
+    usage.site = new_project.name
+    mat.project_id = int(new_project_id)
+    mat.site = new_project.name
+
+    db.session.commit()
+
+    log_activity_db(
+        f"Verplaatst naar werf {new_project.name}", mat.name or "", mat.serial or ""
+    )
+
+    flash(f"Materiaal is verplaatst naar werf '{new_project.name}'.", "success")
+    return redirect(url_for("werf_detail", project_id=project_id))
+
+
+@app.route("/werven/<int:project_id>/export")
+@login_required
+def werf_export_materiaal(project_id):
+    """Export materiaal in gebruik op deze werf naar CSV"""
+    import csv
+    from io import StringIO
+
+    project = Project.query.filter_by(id=project_id, is_deleted=False).first_or_404()
+
+    # Haal actieve usages op voor deze werf
+    active_usages = (
+        db.session.query(MaterialUsage, Material)
+        .join(Material, MaterialUsage.material_id == Material.id)
+        .filter(
+            MaterialUsage.is_active.is_(True),
+            MaterialUsage.project_id == project_id,
+        )
+        .order_by(MaterialUsage.start_time.desc())
+        .all()
+    )
+
+    # Maak CSV
+    output = StringIO()
+    writer = csv.writer(output)
+
+    # Headers
+    writer.writerow([
+        'Werf', 'Materieel', 'Serienummer', 'Nummer op materieel',
+        'Gebruikt door', 'In gebruik sinds', 'Status'
+    ])
+
+    # Data
+    for usage, mat in active_usages:
+        writer.writerow([
+            project.name or f'Werf {project.id}',
+            mat.name or '',
+            mat.serial or '',
+            mat.nummer_op_materieel or '',
+            usage.used_by or '',
+            usage.start_time.strftime('%Y-%m-%d %H:%M') if usage.start_time else '',
+            mat.status or '',
+        ])
+
+    # Maak response
+    output.seek(0)
+    filename = f"werf_{project.name or project.id}_materiaal_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+    # Vervang ongeldige karakters in bestandsnaam
+    filename = "".join(c if c.isalnum() or c in '._-' else '_' for c in filename)
+    
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
 
 
 # -----------------------------------------------------
@@ -1311,23 +1464,9 @@ def keuring_toevoegen():
     # Koppel keuring aan materiaal
     material.keuring_id = nieuwe_keuring.id
     
-    # Update status logica:
-    # - Als materiaal "in gebruik" is → update inspection_status
-    # - Als status "keuring verlopen" is → zet op "keuring gepland"
-    # - Als geen status of lege status → zet op "keuring gepland"
-    # - Anders: behoud huidige status (bijv. "goedgekeurd" blijft "goedgekeurd")
-    
-    if material.status == "in gebruik":
-        # Materiaal is in gebruik, update inspection_status
-        if material.inspection_status in ["keuring verlopen", None, ""]:
-            material.inspection_status = "keuring gepland"
-        # Als inspection_status al "keuring gepland" is, blijft het zo
-    else:
-        # Materiaal is niet in gebruik
-        if material.status in ["keuring verlopen", None, ""]:
-            material.status = "keuring gepland"
-        # Als status al "keuring gepland" is, blijft het zo
-        # Als status "goedgekeurd" of "afgekeurd" is, blijft het zo (wordt later geüpdatet bij resultaat)
+    # Update inspection_status naar "keuring gepland"
+    # Status kolom blijft "in gebruik" of "niet in gebruik"
+    material.inspection_status = "keuring gepland"
     
     db.session.commit()
     
@@ -1472,19 +1611,10 @@ def keuring_resultaat():
     if hasattr(keuring, 'opmerkingen'):
         keuring.opmerkingen = opmerking if opmerking else None
     
-    # Update materiaal status op basis van resultaat
-    if resultaat == "goedgekeurd":
-        # Als materiaal in gebruik is, update inspection_status
-        if material.status == "in gebruik":
-            material.inspection_status = "goedgekeurd"
-        else:
-            material.status = "goedgekeurd"
-    elif resultaat == "afgekeurd":
-        # Als materiaal in gebruik is, update inspection_status
-        if material.status == "in gebruik":
-            material.inspection_status = "afgekeurd"
-        else:
-            material.status = "afgekeurd"
+    # Update materiaal inspection_status op basis van resultaat
+    # Status kolom blijft "in gebruik" of "niet in gebruik"
+    # inspection_status kolom bevat de keuringstatus
+    material.inspection_status = resultaat
     
     db.session.commit()
     
@@ -1525,10 +1655,8 @@ def keuring_verwijderen():
     # Verwijder de referentie naar keuringstatus van het materiaal
     if material and material.keuring_id == keuring_id:
         material.keuring_id = None
-        # Als status "keuring gepland" was, zet terug naar "keuring verlopen" of laat zoals het is
-        if material.status == "keuring gepland":
-            material.status = "keuring verlopen"
-        elif material.status == "in gebruik" and material.inspection_status == "keuring gepland":
+        # Als inspection_status "keuring gepland" was, zet terug naar "keuring verlopen"
+        if material.inspection_status == "keuring gepland":
             material.inspection_status = "keuring verlopen"
     
     # Verwijder de keuring
@@ -1575,10 +1703,8 @@ def keuring_dupliceer(historiek_id):
     
     # Koppel aan materiaal
     material.keuring_id = nieuwe_keuring.id
-    if material.status == "in gebruik":
-        material.inspection_status = "keuring gepland"
-    else:
-        material.status = "keuring gepland"
+    # Update inspection_status naar "keuring gepland"
+    material.inspection_status = "keuring gepland"
     
     db.session.commit()
     
@@ -1717,15 +1843,10 @@ def keuringen():
         if not material:
             continue
         
-        # Update status naar "keuring verlopen" als het nog niet zo is
-        if material.status == "in gebruik":
-            # Materiaal is in gebruik, update inspection_status
-            if material.inspection_status not in ["keuring verlopen", "keuring gepland"]:
-                material.inspection_status = "keuring verlopen"
-        elif material.status not in ["keuring verlopen", "keuring gepland"]:
-            # Materiaal is niet in gebruik, update status
-            # Alleen updaten als het niet al "keuring verlopen" of "keuring gepland" is
-            material.status = "keuring verlopen"
+        # Update inspection_status naar "keuring verlopen" als het nog niet zo is
+        # Status kolom blijft "in gebruik" of "niet in gebruik"
+        if material.inspection_status not in ["keuring verlopen", "keuring gepland"]:
+            material.inspection_status = "keuring verlopen"
     
     # Commit de status updates
     if keuringen_met_verlopen_datum:
@@ -1802,61 +1923,24 @@ def keuringen():
     # Dit is het aantal materialen met een keuring_id
     total_keuringen = Material.query.filter(Material.keuring_id.isnot(None)).count()
     
-    # Tel goedgekeurde items
-    # Items met status "goedgekeurd" OF items "in gebruik" met inspection_status "goedgekeurd"
-    goedgekeurd_direct = Material.query.filter_by(status="goedgekeurd").count()
-    goedgekeurd_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "goedgekeurd"
-    ).count()
-    goedgekeurd_count = goedgekeurd_direct + goedgekeurd_in_use
+    # Tel goedgekeurde items (gebaseerd op inspection_status)
+    goedgekeurd_count = Material.query.filter_by(inspection_status="goedgekeurd").count()
     
-    # Tel afgekeurde items
-    # Items met status "afgekeurd" OF items "in gebruik" met inspection_status "afgekeurd"
-    afgekeurd_direct = Material.query.filter_by(status="afgekeurd").count()
-    afgekeurd_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "afgekeurd"
-    ).count()
-    afgekeurd_count = afgekeurd_direct + afgekeurd_in_use
+    # Tel afgekeurde items (gebaseerd op inspection_status)
+    afgekeurd_count = Material.query.filter_by(inspection_status="afgekeurd").count()
     
     # Tel items die keuring vereisen (te keuren)
-    # Dit zijn alleen items met status "keuring verlopen" of "keuring gepland"
-    # Voor items "in gebruik": check inspection_status
-    
-    # Items met status "keuring verlopen" (direct of via inspection_status)
-    keuring_verlopen_direct = Material.query.filter_by(status="keuring verlopen").count()
-    keuring_verlopen_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "keuring verlopen"
-    ).count()
-    
-    # Items met status "keuring gepland" (direct of via inspection_status)
-    keuring_gepland_direct = Material.query.filter_by(status="keuring gepland").count()
-    keuring_gepland_in_use = db.session.query(Material).filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "keuring gepland"
-    ).count()
-    
-    te_keuren = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
+    # Dit zijn items met inspection_status "keuring verlopen" of "keuring gepland"
+    keuring_verlopen_count = Material.query.filter_by(inspection_status="keuring verlopen").count()
+    keuring_gepland_count = Material.query.filter_by(inspection_status="keuring gepland").count()
+    te_keuren = keuring_verlopen_count + keuring_gepland_count
     
     # Haal items op die keuring vereisen voor de "Items die Keuring Vereisen" box
-    # Dit zijn items met status "keuring verlopen" OF "keuring gepland"
-    # OF items "in gebruik" met inspection_status "keuring verlopen" of "keuring gepland"
-    keuring_verlopen_items_direct = Material.query.filter_by(status="keuring verlopen").all()
-    keuring_gepland_items_direct = Material.query.filter_by(status="keuring gepland").all()
-    keuring_verlopen_items_in_use = Material.query.filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "keuring verlopen"
-    ).all()
-    keuring_gepland_items_in_use = Material.query.filter(
-        Material.status == "in gebruik",
-        Material.inspection_status == "keuring gepland"
-    ).all()
+    keuring_verlopen_items = Material.query.filter_by(inspection_status="keuring verlopen").all()
+    keuring_gepland_items = Material.query.filter_by(inspection_status="keuring gepland").all()
     # Combineer alle lijsten en sorteer op naam
     afgekeurde_items = sorted(
-        keuring_verlopen_items_direct + keuring_gepland_items_direct + 
-        keuring_verlopen_items_in_use + keuring_gepland_items_in_use,
+        keuring_verlopen_items + keuring_gepland_items,
         key=lambda x: (x.name or "").lower()
     )
     

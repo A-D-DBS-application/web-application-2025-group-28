@@ -19,6 +19,9 @@ class Gebruiker(db.Model):
 
     telefoon_nummer = db.Column(db.Numeric, nullable=True)
     password_hash = db.Column(db.String, nullable=True)
+    
+    # Admin status voor beheerfuncties
+    is_admin = db.Column(db.Boolean, default=False)
 
 
 class Project(db.Model):
