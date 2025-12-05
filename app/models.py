@@ -165,3 +165,38 @@ class Keuringstatus(db.Model):
     opmerkingen = db.Column("opmerkingen", db.Text, nullable=True)
     
     # Relatie naar Material via serienummer (niet via foreign key, maar via serienummer match)
+
+
+class KeuringHistoriek(db.Model):
+    """
+    Map naar Supabase tabel 'keuring_historiek'
+    
+    Deze tabel slaat alle uitgevoerde keuringen op voor historiek.
+    Elke keer dat een keuring wordt uitgevoerd, wordt hier een record aangemaakt.
+    
+    Kolommen in Supabase:
+    id, created_at, material_id, serienummer, keuring_datum, resultaat,
+    uitgevoerd_door, opmerkingen, volgende_keuring_datum, certificaat_path
+    """
+    __tablename__ = "keuring_historiek"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    
+    material_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("materials.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    serienummer = db.Column(db.String, nullable=False)
+    
+    keuring_datum = db.Column("keuring_datum", db.Date, nullable=False)
+    resultaat = db.Column(db.String, nullable=False)  # 'goedgekeurd', 'afgekeurd', 'voorwaardelijk'
+    uitgevoerd_door = db.Column("uitgevoerd_door", db.String, nullable=False)
+    opmerkingen = db.Column("opmerkingen", db.Text, nullable=True)
+    
+    volgende_keuring_datum = db.Column("volgende_keuring_datum", db.Date, nullable=True)
+    certificaat_path = db.Column("certificaat_path", db.Text, nullable=True)
+    
+    # Relatie naar Material
+    material = db.relationship("Material", backref="keuring_historiek")

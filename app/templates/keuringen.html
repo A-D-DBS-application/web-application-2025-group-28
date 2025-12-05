@@ -15,10 +15,26 @@
   </button>
 </div>
 
+<!-- Notificaties: Aankomende keuringen binnen 30 dagen -->
+{% if binnenkort_verlopen and binnenkort_verlopen|length > 0 %}
+<div class="alert alert-warning mt-3" role="alert">
+  <strong>⚠️ Aankomende keuringen:</strong> 
+  {{ binnenkort_verlopen|length }} item(s) hebben binnen 30 dagen een keuring nodig.
+  <ul class="mb-0 mt-2">
+    {% for item in binnenkort_verlopen[:5] %}
+      <li>
+        <strong>{{ item.material.name or 'Onbekend' }}</strong> ({{ item.material.serial }}) 
+        - over {{ item.dagen_tot }} dag{% if item.dagen_tot != 1 %}en{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <!-- Items die Keuring Vereisen -->
 <div class="card panel" style="margin-top:24px;">
   <div class="panel-title">Items die Keuring Vereisen</div>
-  <div class="panel-sub">Materieel met status "keuring verlopen"</div>
+  <div class="panel-sub">Materieel met status "keuring verlopen" of "keuring gepland"</div>
 
   <div class="mt-3">
     {% if afgekeurde_items %}
@@ -42,7 +58,11 @@
                 </small>
               </div>
               <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-warning">Keuring verlopen</span>
+                {% if item.status == "keuring gepland" or (item.status == "in gebruik" and item.inspection_status == "keuring gepland") %}
+                  <span class="badge" style="background-color: #a855f7; color: white;">Keuring gepland</span>
+                {% else %}
+                  <span class="badge bg-warning">Keuring verlopen</span>
+                {% endif %}
                 <button type="button"
                         class="btn btn-sm btn-dark"
                         data-bs-toggle="modal"
@@ -57,7 +77,7 @@
       {% endfor %}
     {% else %}
       <div class="text-center text-muted py-4">
-        Geen items met keuring verlopen gevonden
+        Geen items gevonden die keuring vereisen
       </div>
     {% endif %}
   </div>
@@ -104,18 +124,33 @@
               <td>{{ keuring.uitgevoerd_door or '-' }}</td>
               <td>{{ keuring.opmerkingen or '-' }}</td>
               <td class="text-end">
-                <button type="button" 
-                        class="btn btn-sm btn-outline-secondary"
-                        data-bs-toggle="modal"
-                        data-bs-target="#bewerkKeuringModal"
-                        data-keuring-id="{{ keuring.id }}"
-                        data-serial="{{ keuring.serienummer or '' }}"
-                        data-volgende-datum="{{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '' }}"
-                        data-uitgevoerd-door="{{ keuring.uitgevoerd_door or '' }}"
-                        data-opmerking="{{ keuring.opmerkingen or '' }}"
-                        onclick="openEditKeuringModal(this)">
-                  Bewerken
-                </button>
+                <div class="btn-group">
+                  <button type="button" 
+                          class="btn btn-sm btn-outline-secondary"
+                          data-bs-toggle="modal"
+                          data-bs-target="#bewerkKeuringModal"
+                          data-keuring-id="{{ keuring.id }}"
+                          data-serial="{{ keuring.serienummer or '' }}"
+                          data-volgende-datum="{{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '' }}"
+                          data-uitgevoerd-door="{{ keuring.uitgevoerd_door or '' }}"
+                          data-opmerking="{{ keuring.opmerkingen or '' }}"
+                          onclick="openEditKeuringModal(this)">
+                    Bewerken
+                  </button>
+                  <button type="button" 
+                          class="btn btn-sm btn-primary"
+                          data-bs-toggle="modal"
+                          data-bs-target="#keuringResultaatModal"
+                          data-keuring-id="{{ keuring.id }}"
+                          onclick="openResultaatModal({{ keuring.id }})">
+                    Resultaat invoeren
+                  </button>
+                  <button type="button" 
+                          class="btn btn-sm btn-outline-danger"
+                          onclick="verwijderKeuring({{ keuring.id }})">
+                    Verwijderen
+                  </button>
+                </div>
               </td>
             </tr>
           {% endfor %}
@@ -131,32 +166,98 @@
   </div>
 </div>
 
+<!-- Statistieken Sectie -->
+<div class="card panel" style="margin-top:24px;">
+  <div class="panel-title">Statistieken & Rapporten</div>
+  <div class="panel-sub">Overzicht van keuring activiteit</div>
+  
+  <div class="row g-3 mt-3">
+    <div class="col-md-3">
+      <div class="card kpi">
+        <div class="kpi-title">Totaal Keuringen</div>
+        <div class="kpi-value">{{ total_historiek or 0 }}</div>
+        <div class="kpi-sub">Alle uitgevoerde keuringen</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi">
+        <div class="kpi-title">Goedgekeurd</div>
+        <div class="kpi-value" style="color: #198754;">{{ goedgekeurd_historiek or 0 }}</div>
+        <div class="kpi-sub">{{ ((goedgekeurd_historiek / total_historiek * 100) if total_historiek > 0 else 0)|round(1) }}% van totaal</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi">
+        <div class="kpi-title">Afgekeurd</div>
+        <div class="kpi-value" style="color: #dc3545;">{{ afgekeurd_historiek or 0 }}</div>
+        <div class="kpi-sub">{{ ((afgekeurd_historiek / total_historiek * 100) if total_historiek > 0 else 0)|round(1) }}% van totaal</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card kpi">
+        <div class="kpi-title">Deze Maand</div>
+        <div class="kpi-value">{{ keuringen_deze_maand or 0 }}</div>
+        <div class="kpi-sub">Keuringen uitgevoerd</div>
+      </div>
+    </div>
+  </div>
+  
+  {% if avg_days_between %}
+  <div class="mt-3">
+    <small class="text-muted">
+      Gemiddelde tijd tussen keuringen: {{ avg_days_between|round(0)|int }} dagen
+    </small>
+  </div>
+  {% endif %}
+</div>
+
 <!-- Keuringsoverzicht -->
 <div class="card panel" style="margin-top:24px;">
-  <div class="panel-title">Keuringsoverzicht</div>
-  <div class="panel-sub">Alle uitgevoerde keuringen en inspecties</div>
+  <div class="panel-title">
+    Keuringsoverzicht
+    {% if filter_serial and filtered_material %}
+      <span class="badge bg-info ms-2">Gefilterd: {{ filtered_material.name or filter_serial }}</span>
+      <a href="{{ url_for('keuringen') }}" class="btn btn-sm btn-outline-secondary ms-2">Filter wissen</a>
+    {% endif %}
+  </div>
+  <div class="d-flex justify-content-between align-items-center">
+    <div class="panel-sub">
+      {% if filter_serial %}
+        Keuring historiek voor {{ filtered_material.name if filtered_material else filter_serial }}
+      {% else %}
+        Alle uitgevoerde keuringen en inspecties
+      {% endif %}
+    </div>
+    <a href="{{ url_for('keuringen_export') }}" class="btn btn-sm btn-outline-primary">
+      📥 Export CSV
+    </a>
+  </div>
 
   <!-- Search and Filter -->
   <div class="row g-2 align-items-center mt-3 mb-3">
     <div class="col-12 col-md-8">
       <div class="input-group">
         <span class="input-group-text">🔍</span>
-        <input type="text" class="form-control" placeholder="Zoek op materieel of keurder...">
+        <input type="text" 
+               id="keuringSearchInput" 
+               class="form-control" 
+               placeholder="Zoek op materieel of keurder..."
+               onkeyup="filterKeuringen()">
       </div>
     </div>
     <div class="col-12 col-md-4">
-      <select class="form-select">
-        <option>Alle Resultaten</option>
-        <option>Goedgekeurd</option>
-        <option>Afgekeurd</option>
-        <option>Te Keuren</option>
+      <select id="keuringFilterSelect" class="form-select" onchange="filterKeuringen()">
+        <option value="">Alle Resultaten</option>
+        <option value="goedgekeurd">Goedgekeurd</option>
+        <option value="afgekeurd">Afgekeurd</option>
+        <option value="voorwaardelijk">Voorwaardelijk</option>
       </select>
     </div>
   </div>
 
   <!-- Table -->
   <div class="table-responsive">
-    <table class="table align-middle">
+    <table class="table align-middle" id="keuringHistoriekTable">
       <thead>
         <tr>
           <th>Materieel</th>
@@ -167,27 +268,70 @@
           <th class="text-end">Acties</th>
         </tr>
       </thead>
-      <tbody>
-        <tr>
-          <td>
-            <strong>Boormachine Bosch GBH 2-28</strong><br>
-            <small class="text-muted">BH-2024-001</small>
-          </td>
-          <td>2024-09-15</td>
-          <td>Keuringsinstantie VINÇOTTE</td>
-          <td>
-            <span class="badge bg-dark" style="display: inline-flex; align-items: center; gap: 4px;">
-              <span style="color: #10b981;">✓</span> Goedgekeurd
-            </span>
-          </td>
-          <td>2025-03-15</td>
-          <td class="text-end">
-            <div class="btn-group">
-              <a href="#" class="btn btn-sm btn-outline-secondary">Details bekijken</a>
-              <a href="#" class="btn btn-sm btn-outline-secondary">Certificaat</a>
-            </div>
-          </td>
-        </tr>
+      <tbody id="keuringHistoriekTbody">
+        {% if keuring_historiek and keuring_historiek|length > 0 %}
+          {% for hist in keuring_historiek %}
+            {% set material = hist.material_obj %}
+            <tr class="keuring-row" 
+                data-material-name="{{ (material.name if material else '')|lower }}" 
+                data-serial="{{ hist.serienummer|lower }}"
+                data-uitgevoerd-door="{{ (hist.uitgevoerd_door or '')|lower }}"
+                data-resultaat="{{ hist.resultaat|lower }}">
+              <td>
+                {% if material %}
+                  <strong>{{ material.name or 'Onbekend' }}</strong><br>
+                  <small class="text-muted">{{ hist.serienummer }}</small>
+                {% else %}
+                  <strong>Onbekend materiaal</strong><br>
+                  <small class="text-muted">{{ hist.serienummer }}</small>
+                {% endif %}
+              </td>
+              <td>{{ hist.keuring_datum.strftime('%Y-%m-%d') if hist.keuring_datum else '-' }}</td>
+              <td>{{ hist.uitgevoerd_door or '-' }}</td>
+              <td>
+                {% if hist.resultaat == 'goedgekeurd' %}
+                  <span class="badge bg-success" style="display: inline-flex; align-items: center; gap: 4px;">
+                    <span>✓</span> Goedgekeurd
+                  </span>
+                {% elif hist.resultaat == 'afgekeurd' %}
+                  <span class="badge bg-danger" style="display: inline-flex; align-items: center; gap: 4px;">
+                    <span>✗</span> Afgekeurd
+                  </span>
+                {% elif hist.resultaat == 'voorwaardelijk' %}
+                  <span class="badge bg-warning" style="display: inline-flex; align-items: center; gap: 4px;">
+                    <span>⚠</span> Voorwaardelijk
+                  </span>
+                {% else %}
+                  <span class="badge bg-secondary">{{ hist.resultaat or '-' }}</span>
+                {% endif %}
+              </td>
+              <td>{{ hist.volgende_keuring_datum.strftime('%Y-%m-%d') if hist.volgende_keuring_datum else '-' }}</td>
+              <td class="text-end">
+                <div class="btn-group">
+                  <button type="button" 
+                          class="btn btn-sm btn-outline-secondary"
+                          data-bs-toggle="modal"
+                          data-bs-target="#keuringDetailsModal"
+                          data-keuring-id="{{ hist.id }}"
+                          onclick="showKeuringDetails({{ hist.id }})">
+                    Details
+                  </button>
+                  <a href="{{ url_for('keuring_dupliceer', historiek_id=hist.id) }}" 
+                     class="btn btn-sm btn-outline-primary"
+                     onclick="return confirm('Weet je zeker dat je deze keuring wilt dupliceren?');">
+                    Dupliceer
+                  </a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-4">
+              Nog geen keuringen uitgevoerd. Historiek wordt automatisch aangemaakt wanneer een keuring wordt uitgevoerd.
+            </td>
+          </tr>
+        {% endif %}
       </tbody>
     </table>
   </div>
@@ -323,6 +467,112 @@
   </div>
 </div>
 
+<!-- Modal: Keuring Details -->
+<div class="modal fade" id="keuringDetailsModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Keuring Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+      <div class="modal-body" id="keuringDetailsBody">
+        <div class="text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Laden...</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Keuring Resultaat Invoeren -->
+<div class="modal fade" id="keuringResultaatModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Keuring Resultaat Invoeren</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('keuring_resultaat') }}" enctype="multipart/form-data">
+        <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-12">
+              <label class="form-label">Resultaat*</label>
+              <select name="resultaat" id="resultaat-select" class="form-select" required>
+                <option value="">Selecteer resultaat</option>
+                <option value="goedgekeurd">Goedgekeurd</option>
+                <option value="afgekeurd">Afgekeurd</option>
+                <option value="voorwaardelijk">Voorwaardelijk</option>
+              </select>
+              <small class="text-muted">Wat is het resultaat van de keuring?</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Keuring Datum*</label>
+              <input type="date"
+                     name="keuring_datum"
+                     id="resultaat-keuring-datum"
+                     class="form-control"
+                     required>
+              <small class="text-muted">Wanneer is de keuring uitgevoerd?</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Uitgevoerd door*</label>
+              <input name="uitgevoerd_door"
+                     id="resultaat-uitgevoerd-door"
+                     class="form-control"
+                     placeholder="Bv. Keuringsinstantie VINÇOTTE"
+                     value="{{ current_user.Naam if current_user else '' }}"
+                     required>
+              <small class="text-muted">Wie heeft de keuring uitgevoerd?</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Volgende Keuring Datum (optioneel)</label>
+              <input type="date"
+                     name="volgende_keuring_datum"
+                     id="resultaat-volgende-keuring-datum"
+                     class="form-control">
+              <small class="text-muted">Wanneer moet de volgende keuring plaatsvinden? (Laat leeg voor standaard 6 maanden)</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Certificaat (optioneel)</label>
+              <input type="file"
+                     name="certificaat"
+                     id="resultaat-certificaat"
+                     class="form-control"
+                     accept=".pdf,.jpg,.jpeg,.png">
+              <small class="text-muted">Upload het keuringscertificaat (PDF of afbeelding)</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Opmerking (optioneel)</label>
+              <textarea name="opmerking"
+                        id="resultaat-opmerking"
+                        class="form-control"
+                        rows="3"
+                        placeholder="Extra informatie over de keuring..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button class="btn btn-primary" type="submit">Resultaat Opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Materieel Details -->
 <div class="modal fade" id="materieelDetailsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -347,6 +597,28 @@
 </div>
 
 <script>
+// Algemene cleanup functie voor modals - voorkomt achtergebleven backdrops
+function cleanupModals() {
+  const backdrops = document.querySelectorAll('.modal-backdrop');
+  backdrops.forEach(backdrop => backdrop.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+}
+
+// Voer cleanup uit bij page load
+document.addEventListener('DOMContentLoaded', function() {
+  cleanupModals();
+  
+  // Voeg event listeners toe aan alle modals voor cleanup
+  const allModals = document.querySelectorAll('.modal');
+  allModals.forEach(modal => {
+    modal.addEventListener('hidden.bs.modal', function() {
+      cleanupModals();
+    });
+  });
+});
+
 // Function to show material details
 window.showMaterialDetails = function(serial, usageId) {
   const modal = new bootstrap.Modal(document.getElementById('materieelDetailsModal'));
@@ -512,6 +784,157 @@ window.showMaterialDetails = function(serial, usageId) {
   };
   return text.replace(/[&<>"']/g, m => map[m]);
 }
+
+  // Function to open resultaat modal
+  window.openResultaatModal = function(keuringId) {
+    document.getElementById('resultaat-keuring-id').value = keuringId || '';
+    // Set today's date as default voor keuring datum
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('resultaat-keuring-datum').value = today;
+    
+    // Set default volgende keuring (6 maanden later)
+    const sixMonthsLater = new Date();
+    sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
+    const nextDate = sixMonthsLater.toISOString().split('T')[0];
+    document.getElementById('resultaat-volgende-keuring-datum').value = nextDate;
+  };
+
+  // Function to show keuring details
+  window.showKeuringDetails = function(historiekId) {
+    const modalElement = document.getElementById('keuringDetailsModal');
+    const modalBody = document.getElementById('keuringDetailsBody');
+    
+    // Verwijder eventuele achtergebleven backdrops eerst
+    cleanupModals();
+    
+    // Maak nieuwe modal instance of gebruik bestaande
+    let modal = bootstrap.Modal.getInstance(modalElement);
+    if (!modal) {
+      modal = new bootstrap.Modal(modalElement);
+    }
+    
+    modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
+    modal.show();
+    
+    // Fetch keuring details via API
+    fetch(`/api/keuring/${historiekId}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        
+        const displayValue = (value) => value && value !== '-' ? escapeHtml(value) : '<span class="text-muted">-</span>';
+        
+        modalBody.innerHTML = `
+          <div class="keuring-detail">
+            <div class="mb-3">
+              <strong>Materieel:</strong><br>
+              ${displayValue(data.material_name)}<br>
+              <small class="text-muted">Serienummer: ${displayValue(data.serial)}</small>
+            </div>
+            <div class="row g-3 mb-3">
+              <div class="col-md-6">
+                <strong>Keuringsdatum:</strong><br>
+                ${displayValue(data.keuring_datum)}
+              </div>
+              <div class="col-md-6">
+                <strong>Resultaat:</strong><br>
+                ${data.resultaat_badge}
+              </div>
+              <div class="col-md-6">
+                <strong>Uitgevoerd door:</strong><br>
+                ${displayValue(data.uitgevoerd_door)}
+              </div>
+              <div class="col-md-6">
+                <strong>Volgende Keuring:</strong><br>
+                ${displayValue(data.volgende_keuring_datum)}
+              </div>
+            </div>
+            <div class="mb-3">
+              <strong>Opmerkingen:</strong><br>
+              ${displayValue(data.opmerkingen)}
+            </div>
+            ${data.certificaat_path ? `
+              <div class="mb-3">
+                <strong>Certificaat:</strong><br>
+                <a href="/static/${escapeHtml(data.certificaat_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  📄 Bekijk certificaat
+                </a>
+                <a href="/static/${escapeHtml(data.certificaat_path)}" download class="btn btn-sm btn-outline-secondary">
+                  ⬇️ Download
+                </a>
+              </div>
+            ` : ''}
+            <div class="text-muted small">
+              <strong>Geregistreerd op:</strong> ${displayValue(data.created_at)}
+            </div>
+          </div>
+        `;
+      })
+      .catch(error => {
+        console.error('Error loading keuring detail:', error);
+        modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de keuring details.</div>';
+      });
+  };
+
+  // Function to verwijder keuring
+  window.verwijderKeuring = function(keuringId) {
+    if (!confirm('Weet je zeker dat je deze keuring wilt verwijderen?')) {
+      return;
+    }
+    
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '{{ url_for("keuring_verwijderen") }}';
+    
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'keuring_id';
+    input.value = keuringId;
+    form.appendChild(input);
+    
+    document.body.appendChild(form);
+    form.submit();
+  };
+
+  // Function to filter keuringen
+  window.filterKeuringen = function() {
+    const searchInput = document.getElementById('keuringSearchInput');
+    const filterSelect = document.getElementById('keuringFilterSelect');
+    const rows = document.querySelectorAll('.keuring-row');
+    
+    const searchTerm = (searchInput.value || '').toLowerCase();
+    const filterValue = (filterSelect.value || '').toLowerCase();
+    
+    rows.forEach(row => {
+      const materialName = row.getAttribute('data-material-name') || '';
+      const serial = row.getAttribute('data-serial') || '';
+      const uitgevoerdDoor = row.getAttribute('data-uitgevoerd-door') || '';
+      const resultaat = row.getAttribute('data-resultaat') || '';
+      
+      // Check search term
+      const matchesSearch = !searchTerm || 
+        materialName.includes(searchTerm) || 
+        serial.includes(searchTerm) || 
+        uitgevoerdDoor.includes(searchTerm);
+      
+      // Check filter
+      const matchesFilter = !filterValue || resultaat === filterValue;
+      
+      // Show/hide row
+      if (matchesSearch && matchesFilter) {
+        row.style.display = '';
+      } else {
+        row.style.display = 'none';
+      }
+    });
+  };
 </script>
 
 {% endblock %}

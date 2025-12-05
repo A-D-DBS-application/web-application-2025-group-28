@@ -8,6 +8,7 @@ from flask import (
     session,
     g,
     jsonify,
+    Response,
 )
 from datetime import datetime
 from functools import wraps
@@ -15,7 +16,7 @@ import os
 from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek
 from sqlalchemy import or_, func
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -346,14 +347,17 @@ BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
 DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
 SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
 PROJECT_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "projects")
+CERTIFICATE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "certificates")
 
 os.makedirs(DOC_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROJECT_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CERTIFICATE_UPLOAD_FOLDER, exist_ok=True)
 
 app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER
 app.config["SAFETY_UPLOAD_FOLDER"] = SAFETY_UPLOAD_FOLDER
 app.config["PROJECT_UPLOAD_FOLDER"] = PROJECT_UPLOAD_FOLDER
+app.config["CERTIFICATE_UPLOAD_FOLDER"] = CERTIFICATE_UPLOAD_FOLDER
 
 
 def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
@@ -377,6 +381,8 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
         relative_folder = "uploads/docs"
     elif upload_folder == app.config["SAFETY_UPLOAD_FOLDER"]:
         relative_folder = "uploads/safety"
+    elif upload_folder == app.config["CERTIFICATE_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/certificates"
     else:
         relative_folder = "uploads"
 
@@ -1281,13 +1287,16 @@ def keuring_toevoegen():
         return redirect(url_for("keuringen"))
     
     # Bereken volgende keuring (standaard 6 maanden later)
-    volgende_keuring = keuring_datum + relativedelta(months=6)
+    # Bij nieuwe keuring planning: volgende_controle = keuring_datum (wanneer de keuring gepland is)
+    volgende_keuring = keuring_datum
     
     # Maak nieuwe keuring aan
+    # laatste_controle = None omdat de keuring nog niet is uitgevoerd
+    # volgende_controle = keuring_datum (wanneer de keuring gepland is)
     nieuwe_keuring = Keuringstatus(
         serienummer=serial,
-        laatste_controle=keuring_datum,
-        volgende_controle=volgende_keuring,
+        laatste_controle=None,  # Nog niet uitgevoerd
+        volgende_controle=volgende_keuring,  # Geplande datum
     )
     # Voeg uitgevoerd_door toe als de kolom bestaat
     if hasattr(Keuringstatus, 'uitgevoerd_door'):
@@ -1301,7 +1310,24 @@ def keuring_toevoegen():
     
     # Koppel keuring aan materiaal
     material.keuring_id = nieuwe_keuring.id
-    material.status = "goedgekeurd"  # Update status naar goedgekeurd
+    
+    # Update status logica:
+    # - Als materiaal "in gebruik" is → update inspection_status
+    # - Als status "keuring verlopen" is → zet op "keuring gepland"
+    # - Als geen status of lege status → zet op "keuring gepland"
+    # - Anders: behoud huidige status (bijv. "goedgekeurd" blijft "goedgekeurd")
+    
+    if material.status == "in gebruik":
+        # Materiaal is in gebruik, update inspection_status
+        if material.inspection_status in ["keuring verlopen", None, ""]:
+            material.inspection_status = "keuring gepland"
+        # Als inspection_status al "keuring gepland" is, blijft het zo
+    else:
+        # Materiaal is niet in gebruik
+        if material.status in ["keuring verlopen", None, ""]:
+            material.status = "keuring gepland"
+        # Als status al "keuring gepland" is, blijft het zo
+        # Als status "goedgekeurd" of "afgekeurd" is, blijft het zo (wordt later geüpdatet bij resultaat)
     
     db.session.commit()
     
@@ -1358,6 +1384,290 @@ def keuring_bewerken():
     return redirect(url_for("keuringen"))
 
 
+@app.route("/keuringen/resultaat", methods=["POST"])
+@login_required
+def keuring_resultaat():
+    """
+    Voer het resultaat van een keuring in en maak historiek record aan.
+    Dit wordt gebruikt wanneer een geplande keuring is uitgevoerd.
+    """
+    f = request.form
+    
+    keuring_id_str = (f.get("keuring_id") or "").strip()
+    resultaat = (f.get("resultaat") or "").strip()  # 'goedgekeurd', 'afgekeurd', 'voorwaardelijk'
+    keuring_datum_str = (f.get("keuring_datum") or "").strip()
+    volgende_keuring_str = (f.get("volgende_keuring_datum") or "").strip()
+    uitgevoerd_door = (f.get("uitgevoerd_door") or "").strip()
+    opmerking = (f.get("opmerking") or "").strip()
+    
+    # Handle certificaat upload
+    certificaat_file = request.files.get("certificaat")
+    
+    if not keuring_id_str or not resultaat or not keuring_datum_str or not uitgevoerd_door:
+        flash("Alle velden zijn verplicht.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    try:
+        keuring_id = int(keuring_id_str)
+    except ValueError:
+        flash("Ongeldig keuring ID.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Zoek keuring op
+    keuring = Keuringstatus.query.filter_by(id=keuring_id).first()
+    if not keuring:
+        flash("Keuring niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Zoek materiaal op serienummer
+    material = find_material_by_serial(keuring.serienummer)
+    if not material:
+        flash("Materiaal niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Parse datum
+    try:
+        keuring_datum = datetime.strptime(keuring_datum_str, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Ongeldige datum formaat.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Bereken volgende keuring: gebruik opgegeven datum of standaard 6 maanden later
+    if volgende_keuring_str:
+        try:
+            volgende_keuring = datetime.strptime(volgende_keuring_str, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Ongeldige datum formaat voor volgende keuring. Gebruik standaard 6 maanden.", "warning")
+            volgende_keuring = keuring_datum + relativedelta(months=6)
+    else:
+        # Geen datum opgegeven, gebruik standaard 6 maanden later
+        volgende_keuring = keuring_datum + relativedelta(months=6)
+    
+    # Upload certificaat als aanwezig
+    certificaat_path = None
+    if certificaat_file and certificaat_file.filename:
+        prefix = f"{keuring.serienummer or material.serial}_cert_{datetime.utcnow().strftime('%Y%m%d')}"
+        certificaat_path = save_upload(
+            certificaat_file, app.config["CERTIFICATE_UPLOAD_FOLDER"], prefix
+        )
+    
+    # Maak historiek record aan
+    historiek_record = KeuringHistoriek(
+        material_id=material.id,
+        serienummer=keuring.serienummer or material.serial,
+        keuring_datum=keuring_datum,
+        resultaat=resultaat,
+        uitgevoerd_door=uitgevoerd_door,
+        opmerkingen=opmerking if opmerking else None,
+        volgende_keuring_datum=volgende_keuring,
+        certificaat_path=certificaat_path,
+    )
+    db.session.add(historiek_record)
+    
+    # Update Keuringstatus met laatste controle en volgende controle
+    keuring.laatste_controle = keuring_datum
+    keuring.volgende_controle = volgende_keuring
+    if hasattr(keuring, 'uitgevoerd_door'):
+        keuring.uitgevoerd_door = uitgevoerd_door
+    if hasattr(keuring, 'opmerkingen'):
+        keuring.opmerkingen = opmerking if opmerking else None
+    
+    # Update materiaal status op basis van resultaat
+    if resultaat == "goedgekeurd":
+        # Als materiaal in gebruik is, update inspection_status
+        if material.status == "in gebruik":
+            material.inspection_status = "goedgekeurd"
+        else:
+            material.status = "goedgekeurd"
+    elif resultaat == "afgekeurd":
+        # Als materiaal in gebruik is, update inspection_status
+        if material.status == "in gebruik":
+            material.inspection_status = "afgekeurd"
+        else:
+            material.status = "afgekeurd"
+    
+    db.session.commit()
+    
+    log_activity_db(f"Keuring uitgevoerd: {resultaat}", material.name or "", material.serial or "")
+    flash(f"Keuring resultaat succesvol opgeslagen: {resultaat}.", "success")
+    return redirect(url_for("keuringen"))
+
+
+@app.route("/keuringen/delete", methods=["POST"])
+@login_required
+def keuring_verwijderen():
+    """Verwijder een geplande keuring"""
+    f = request.form
+    
+    keuring_id_str = (f.get("keuring_id") or "").strip()
+    
+    if not keuring_id_str:
+        flash("Keuring ID is verplicht.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    try:
+        keuring_id = int(keuring_id_str)
+    except ValueError:
+        flash("Ongeldig keuring ID.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Zoek keuring op
+    keuring = Keuringstatus.query.filter_by(id=keuring_id).first()
+    if not keuring:
+        flash("Keuring niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    serial = keuring.serienummer or ""
+    
+    # Zoek materiaal dat deze keuring gebruikt
+    material = find_material_by_serial(serial)
+    
+    # Verwijder de referentie naar keuringstatus van het materiaal
+    if material and material.keuring_id == keuring_id:
+        material.keuring_id = None
+        # Als status "keuring gepland" was, zet terug naar "keuring verlopen" of laat zoals het is
+        if material.status == "keuring gepland":
+            material.status = "keuring verlopen"
+        elif material.status == "in gebruik" and material.inspection_status == "keuring gepland":
+            material.inspection_status = "keuring verlopen"
+    
+    # Verwijder de keuring
+    db.session.delete(keuring)
+    db.session.commit()
+    
+    log_activity_db("Keuring verwijderd", serial, serial)
+    flash("Keuring succesvol verwijderd.", "success")
+    return redirect(url_for("keuringen"))
+
+
+@app.route("/keuringen/dupliceer/<int:historiek_id>")
+@login_required
+def keuring_dupliceer(historiek_id):
+    """Dupliceer een bestaande keuring"""
+    historiek = KeuringHistoriek.query.filter_by(id=historiek_id).first()
+    
+    if not historiek:
+        flash("Keuring niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Zoek materiaal
+    material = Material.query.filter_by(id=historiek.material_id).first() if historiek.material_id else None
+    if not material:
+        flash("Materiaal niet gevonden.", "danger")
+        return redirect(url_for("keuringen"))
+    
+    # Maak nieuwe keuring op basis van oude
+    # Gebruik volgende_keuring_datum uit historiek, of 6 maanden vanaf vandaag als die niet bestaat
+    volgende_keuring_datum = historiek.volgende_keuring_datum
+    if not volgende_keuring_datum:
+        volgende_keuring_datum = datetime.utcnow().date() + relativedelta(months=6)
+    
+    nieuwe_keuring = Keuringstatus(
+        serienummer=historiek.serienummer,
+        laatste_controle=None,  # Nieuwe keuring, nog niet uitgevoerd
+        volgende_controle=volgende_keuring_datum,
+        uitgevoerd_door=historiek.uitgevoerd_door,
+        opmerkingen=f"Gedupliceerd van keuring {historiek.id}",
+    )
+    
+    db.session.add(nieuwe_keuring)
+    db.session.flush()
+    
+    # Koppel aan materiaal
+    material.keuring_id = nieuwe_keuring.id
+    if material.status == "in gebruik":
+        material.inspection_status = "keuring gepland"
+    else:
+        material.status = "keuring gepland"
+    
+    db.session.commit()
+    
+    log_activity_db("Keuring gedupliceerd", material.name or "", material.serial or "")
+    flash("Keuring succesvol gedupliceerd.", "success")
+    return redirect(url_for("keuringen"))
+
+
+@app.route("/keuringen/export")
+@login_required
+def keuringen_export():
+    """Export keuringen naar CSV"""
+    import csv
+    from io import StringIO
+    
+    # Haal alle keuring historiek op
+    historiek = KeuringHistoriek.query.order_by(KeuringHistoriek.keuring_datum.desc()).all()
+    
+    # Maak CSV
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Headers
+    writer.writerow([
+        'Materieel', 'Serienummer', 'Keuringsdatum', 'Resultaat', 
+        'Uitgevoerd door', 'Opmerkingen', 'Volgende Keuring', 'Geregistreerd op'
+    ])
+    
+    # Data
+    for hist in historiek:
+        material = Material.query.filter_by(id=hist.material_id).first() if hist.material_id else None
+        writer.writerow([
+            material.name if material else 'Onbekend',
+            hist.serienummer or '',
+            hist.keuring_datum.strftime('%Y-%m-%d') if hist.keuring_datum else '',
+            hist.resultaat or '',
+            hist.uitgevoerd_door or '',
+            hist.opmerkingen or '',
+            hist.volgende_keuring_datum.strftime('%Y-%m-%d') if hist.volgende_keuring_datum else '',
+            hist.created_at.strftime('%Y-%m-%d %H:%M') if hist.created_at else '',
+        ])
+    
+    # Maak response
+    output.seek(0)
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename=keuringen_export_{datetime.utcnow().strftime("%Y%m%d")}.csv'}
+    )
+
+
+@app.route("/api/keuring/<int:historiek_id>")
+@login_required
+def api_keuring_details(historiek_id):
+    """API endpoint om keuring details op te halen"""
+    historiek = KeuringHistoriek.query.filter_by(id=historiek_id).first()
+    
+    if not historiek:
+        return jsonify({"error": "Keuring niet gevonden"}), 404
+    
+    # Haal materiaal op
+    material = Material.query.filter_by(id=historiek.material_id).first()
+    
+    # Bepaal resultaat badge styling
+    resultaat_badge = ""
+    if historiek.resultaat == "goedgekeurd":
+        resultaat_badge = '<span class="badge bg-success">✓ Goedgekeurd</span>'
+    elif historiek.resultaat == "afgekeurd":
+        resultaat_badge = '<span class="badge bg-danger">✗ Afgekeurd</span>'
+    elif historiek.resultaat == "voorwaardelijk":
+        resultaat_badge = '<span class="badge bg-warning">⚠ Voorwaardelijk</span>'
+    else:
+        resultaat_badge = f'<span class="badge bg-secondary">{historiek.resultaat}</span>'
+    
+    return jsonify({
+        "id": historiek.id,
+        "material_name": material.name if material else "Onbekend",
+        "serial": historiek.serienummer,
+        "keuring_datum": historiek.keuring_datum.strftime("%Y-%m-%d") if historiek.keuring_datum else "-",
+        "resultaat": historiek.resultaat,
+        "resultaat_badge": resultaat_badge,
+        "uitgevoerd_door": historiek.uitgevoerd_door or "-",
+        "opmerkingen": historiek.opmerkingen or "-",
+        "volgende_keuring_datum": historiek.volgende_keuring_datum.strftime("%Y-%m-%d") if historiek.volgende_keuring_datum else "-",
+        "certificaat_path": historiek.certificaat_path or None,
+        "created_at": historiek.created_at.strftime("%Y-%m-%d %H:%M") if historiek.created_at else "-",
+    })
+
+
 # KEURINGEN EN DOCUMENTEN
 # -----------------------------------------------------
 
@@ -1368,12 +1678,69 @@ def keuringen():
     """Keuringen overzicht pagina"""
     today = datetime.utcnow().date()
     
+    # Check voor filter op materiaal (serienummer)
+    filter_serial = (request.args.get("serial") or "").strip()
+    
+    # NOTIFICATIES: Tel items die binnenkort keuring nodig hebben (binnen 30 dagen)
+    binnenkort_verlopen = []
+    keuringen_binnenkort = Keuringstatus.query.filter(
+        Keuringstatus.volgende_controle.isnot(None),
+        Keuringstatus.volgende_controle > today,
+        Keuringstatus.volgende_controle <= (today + relativedelta(days=30))
+    ).all()
+    
+    for keuring in keuringen_binnenkort:
+        if keuring.serienummer:
+            material = find_material_by_serial(keuring.serienummer)
+            if material:
+                dagen_tot = (keuring.volgende_controle - today).days
+                binnenkort_verlopen.append({
+                    'material': material,
+                    'keuring': keuring,
+                    'dagen_tot': dagen_tot
+                })
+    
+    # AUTOMATISCH ALGORITME: Check of items automatisch op "keuring verlopen" moeten
+    # Dit gebeurt wanneer volgende_controle verstreken is EN keuring nog niet uitgevoerd is
+    keuringen_met_verlopen_datum = Keuringstatus.query.filter(
+        Keuringstatus.volgende_controle.isnot(None),
+        Keuringstatus.volgende_controle < today,
+        Keuringstatus.laatste_controle.is_(None)  # Alleen voor nog niet uitgevoerde keuringen
+    ).all()
+    
+    for keuring in keuringen_met_verlopen_datum:
+        if not keuring.serienummer:
+            continue
+        
+        # Zoek materiaal op serienummer
+        material = find_material_by_serial(keuring.serienummer)
+        if not material:
+            continue
+        
+        # Update status naar "keuring verlopen" als het nog niet zo is
+        if material.status == "in gebruik":
+            # Materiaal is in gebruik, update inspection_status
+            if material.inspection_status not in ["keuring verlopen", "keuring gepland"]:
+                material.inspection_status = "keuring verlopen"
+        elif material.status not in ["keuring verlopen", "keuring gepland"]:
+            # Materiaal is niet in gebruik, update status
+            # Alleen updaten als het niet al "keuring verlopen" of "keuring gepland" is
+            material.status = "keuring verlopen"
+    
+    # Commit de status updates
+    if keuringen_met_verlopen_datum:
+        db.session.commit()
+    
     # Haal uitgevoerde keuringen op (met laatste_controle in het verleden of vandaag)
     # Gebruik try/except om te werken met of zonder uitgevoerd_door kolom
     try:
+        # Haal uitgevoerde keuringen op (met laatste_controle in het verleden of vandaag EN niet NULL)
         uitgevoerde_keuringen_raw = (
             Keuringstatus.query
-            .filter(Keuringstatus.laatste_controle <= today)
+            .filter(
+                Keuringstatus.laatste_controle.isnot(None),
+                Keuringstatus.laatste_controle <= today
+            )
             .order_by(Keuringstatus.laatste_controle.desc())
             .all()
         )
@@ -1384,10 +1751,14 @@ def keuringen():
             # opmerkingen kolom bestaat nu in de database
             uitgevoerde_keuringen.append(keuring)
         
-        # Haal geplande keuringen op (volgende_controle in de toekomst)
+        # Haal geplande keuringen op (volgende_controle in de toekomst EN nog niet uitgevoerd)
+        # Een keuring is "gepland" als laatste_controle None is (nog niet uitgevoerd)
         geplande_keuringen_raw = (
             Keuringstatus.query
-            .filter(Keuringstatus.volgende_controle > today)
+            .filter(
+                Keuringstatus.volgende_controle > today,
+                Keuringstatus.laatste_controle.is_(None)  # Nog niet uitgevoerd
+            )
             .order_by(Keuringstatus.volgende_controle.asc())
             .all()
         )
@@ -1403,13 +1774,13 @@ def keuringen():
         all_keuringen = Keuringstatus.query.all()
         uitgevoerde_keuringen_raw = [
             k for k in all_keuringen 
-            if k.laatste_controle and k.laatste_controle <= today
+            if k.laatste_controle is not None and k.laatste_controle <= today
         ]
         uitgevoerde_keuringen_raw.sort(key=lambda x: x.laatste_controle or datetime.min.date(), reverse=True)
         
         geplande_keuringen_raw = [
             k for k in all_keuringen 
-            if k.volgende_controle and k.volgende_controle > today
+            if k.volgende_controle and k.volgende_controle > today and k.laatste_controle is None
         ]
         geplande_keuringen_raw.sort(key=lambda x: x.volgende_controle or datetime.max.date())
         
@@ -1469,18 +1840,73 @@ def keuringen():
     
     te_keuren = keuring_verlopen_direct + keuring_verlopen_in_use + keuring_gepland_direct + keuring_gepland_in_use
     
-    # Haal items op met status "keuring verlopen" voor de "Items die Keuring Vereisen" box
-    # Dit zijn items met status "keuring verlopen" OF items "in gebruik" met inspection_status "keuring verlopen"
+    # Haal items op die keuring vereisen voor de "Items die Keuring Vereisen" box
+    # Dit zijn items met status "keuring verlopen" OF "keuring gepland"
+    # OF items "in gebruik" met inspection_status "keuring verlopen" of "keuring gepland"
     keuring_verlopen_items_direct = Material.query.filter_by(status="keuring verlopen").all()
+    keuring_gepland_items_direct = Material.query.filter_by(status="keuring gepland").all()
     keuring_verlopen_items_in_use = Material.query.filter(
         Material.status == "in gebruik",
         Material.inspection_status == "keuring verlopen"
     ).all()
-    # Combineer beide lijsten en sorteer op naam
+    keuring_gepland_items_in_use = Material.query.filter(
+        Material.status == "in gebruik",
+        Material.inspection_status == "keuring gepland"
+    ).all()
+    # Combineer alle lijsten en sorteer op naam
     afgekeurde_items = sorted(
-        keuring_verlopen_items_direct + keuring_verlopen_items_in_use,
+        keuring_verlopen_items_direct + keuring_gepland_items_direct + 
+        keuring_verlopen_items_in_use + keuring_gepland_items_in_use,
         key=lambda x: (x.name or "").lower()
     )
+    
+    # Haal keuring historiek op voor het overzicht (alle uitgevoerde keuringen)
+    # Filter op serienummer als opgegeven
+    historiek_query = KeuringHistoriek.query
+    if filter_serial:
+        historiek_query = historiek_query.filter(KeuringHistoriek.serienummer == filter_serial)
+    
+    keuring_historiek = (
+        historiek_query
+        .order_by(KeuringHistoriek.keuring_datum.desc())
+        .limit(100)  # Limiteer tot laatste 100 keuringen voor performance
+        .all()
+    )
+    
+    # Voeg materiaal informatie toe aan elke historiek record
+    for hist in keuring_historiek:
+        if hist.material_id:
+            hist.material_obj = Material.query.filter_by(id=hist.material_id).first()
+        else:
+            hist.material_obj = None
+    
+    # Als gefilterd op serienummer, haal materiaal op voor display
+    filtered_material = None
+    if filter_serial:
+        filtered_material = find_material_by_serial(filter_serial)
+    
+    # STATISTIEKEN: Bereken verschillende statistieken
+    total_historiek = KeuringHistoriek.query.count()
+    goedgekeurd_historiek = KeuringHistoriek.query.filter_by(resultaat="goedgekeurd").count()
+    afgekeurd_historiek = KeuringHistoriek.query.filter_by(resultaat="afgekeurd").count()
+    
+    # Gemiddelde tijd tussen keuringen (in dagen)
+    avg_days_between = None
+    if total_historiek > 1:
+        # Haal eerste en laatste keuring datum op
+        first_keuring = KeuringHistoriek.query.order_by(KeuringHistoriek.keuring_datum.asc()).first()
+        last_keuring = KeuringHistoriek.query.order_by(KeuringHistoriek.keuring_datum.desc()).first()
+        if first_keuring and last_keuring and first_keuring.keuring_datum and last_keuring.keuring_datum:
+            days_diff = (last_keuring.keuring_datum - first_keuring.keuring_datum).days
+            if days_diff > 0:
+                avg_days_between = days_diff / total_historiek
+    
+    # Keuringen deze maand
+    from datetime import date
+    first_day_month = date.today().replace(day=1)
+    keuringen_deze_maand = KeuringHistoriek.query.filter(
+        KeuringHistoriek.keuring_datum >= first_day_month
+    ).count()
     
     return render_template(
         "keuringen.html",
@@ -1493,6 +1919,15 @@ def keuringen():
         te_keuren=te_keuren,
         today=today,
         afgekeurde_items=afgekeurde_items,
+        keuring_historiek=keuring_historiek,
+        filter_serial=filter_serial,
+        filtered_material=filtered_material,
+        binnenkort_verlopen=binnenkort_verlopen,
+        total_historiek=total_historiek,
+        goedgekeurd_historiek=goedgekeurd_historiek,
+        afgekeurd_historiek=afgekeurd_historiek,
+        avg_days_between=avg_days_between,
+        keuringen_deze_maand=keuringen_deze_maand,
     )
 
 
