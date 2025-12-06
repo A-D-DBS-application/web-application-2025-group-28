@@ -98,6 +98,43 @@ def find_material_by_name_or_number(name: str, nummer: str | None):
     return item
 
 
+def update_verlopen_keuringen():
+    """
+    AUTOMATISCH ALGORITME: Check of items automatisch op "keuring verlopen" moeten
+    Dit gebeurt wanneer volgende_controle verstreken is EN keuring nog niet uitgevoerd is
+    Deze functie kan overal worden aangeroepen om de status up-to-date te houden
+    """
+    today = datetime.utcnow().date()
+    
+    keuringen_met_verlopen_datum = Keuringstatus.query.filter(
+        Keuringstatus.volgende_controle.isnot(None),
+        Keuringstatus.volgende_controle < today,
+        Keuringstatus.laatste_controle.is_(None)  # Alleen voor nog niet uitgevoerde keuringen
+    ).all()
+    
+    updated_count = 0
+    for keuring in keuringen_met_verlopen_datum:
+        if not keuring.serienummer:
+            continue
+        
+        # Zoek materiaal op serienummer
+        material = find_material_by_serial(keuring.serienummer)
+        if not material:
+            continue
+        
+        # Update inspection_status naar "keuring verlopen" als het nog niet zo is
+        # Status kolom blijft "in gebruik" of "niet in gebruik"
+        if material.inspection_status not in ["keuring verlopen", "keuring gepland"]:
+            material.inspection_status = "keuring verlopen"
+            updated_count += 1
+    
+    # Commit de status updates als er updates zijn
+    if updated_count > 0:
+        db.session.commit()
+    
+    return updated_count
+
+
 # -----------------------------------------------------
 # AUTH – met wachtwoord-hash in Gebruiker.password_hash
 # -----------------------------------------------------
@@ -189,6 +226,9 @@ def root_redirect():
 @app.route("/dashboard")
 @login_required
 def dashboard():
+    # Update automatisch verlopen keuringen
+    update_verlopen_keuringen()
+    
     total_items = Material.query.count()
 
     # Tel items die keuring vereisen (te keuren)
@@ -587,6 +627,9 @@ def save_project_image(file_storage, prefix: str) -> str | None:
 @app.route("/materiaal", methods=["GET"])
 @login_required
 def materiaal():
+    # Update automatisch verlopen keuringen
+    update_verlopen_keuringen()
+    
     q = (request.args.get("q") or "").strip().lower()
     type_filter = (request.args.get("type") or "").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
@@ -1913,12 +1956,103 @@ def keuring_dupliceer(historiek_id):
 @app.route("/keuringen/export")
 @login_required
 def keuringen_export():
-    """Export keuringen naar CSV"""
+    """Export keuringen naar CSV - respecteert dezelfde filters als de pagina"""
     import csv
     from io import StringIO
     
-    # Haal alle keuring historiek op
-    historiek = KeuringHistoriek.query.order_by(KeuringHistoriek.keuring_datum.desc()).all()
+    today = datetime.utcnow().date()
+    
+    # Apply same filters as main page
+    search_q = (request.args.get("q") or "").strip()
+    status_filter = (request.args.get("status") or "").strip()
+    werf_filter = (request.args.get("werf") or "").strip()
+    type_filter = (request.args.get("type") or "").strip()
+    performer_filter = (request.args.get("performer") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    priority_filter = (request.args.get("priority") or "").strip()
+    
+    # Build query same as main page
+    query = db.session.query(Keuringstatus, Material).join(
+        Material, Material.keuring_id == Keuringstatus.id
+    )
+    
+    # Apply filters (same logic as main route)
+    if priority_filter == "te_laat":
+        query = query.filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle < today,
+            Keuringstatus.laatste_controle.is_(None)
+        )
+    elif priority_filter == "vandaag":
+        query = query.filter(
+            Keuringstatus.volgende_controle == today,
+            Keuringstatus.laatste_controle.is_(None)
+        )
+    elif priority_filter == "binnen_30":
+        query = query.filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle > today,
+            Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
+            Keuringstatus.laatste_controle.is_(None)
+        )
+    
+    if search_q:
+        like = f"%{search_q}%"
+        query = query.filter(
+            or_(
+                Material.name.ilike(like),
+                Material.serial.ilike(like)
+            )
+        )
+    
+    if status_filter:
+        if status_filter == "te_laat":
+            query = query.filter(
+                Keuringstatus.volgende_controle.isnot(None),
+                Keuringstatus.volgende_controle < today,
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        elif status_filter == "gepland":
+            query = query.filter(
+                Keuringstatus.volgende_controle.isnot(None),
+                Keuringstatus.volgende_controle > today,
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        elif status_filter == "goedgekeurd":
+            query = query.filter(Material.inspection_status == "goedgekeurd")
+        elif status_filter == "afgekeurd":
+            query = query.filter(Material.inspection_status == "afgekeurd")
+    
+    if werf_filter:
+        query = query.filter(
+            or_(
+                Material.site.ilike(f"%{werf_filter}%"),
+                Material.project_id == int(werf_filter) if werf_filter.isdigit() else None
+            )
+        )
+    
+    if type_filter:
+        query = query.filter(Material.type.ilike(f"%{type_filter}%"))
+    
+    if performer_filter:
+        query = query.filter(Keuringstatus.uitgevoerd_door.ilike(f"%{performer_filter}%"))
+    
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").date()
+            query = query.filter(Keuringstatus.volgende_controle >= date_from_obj)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").date()
+            query = query.filter(Keuringstatus.volgende_controle <= date_to_obj)
+        except ValueError:
+            pass
+    
+    # Get all results (no pagination for export)
+    inspection_items = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last()).all()
     
     # Maak CSV
     output = StringIO()
@@ -1926,30 +2060,35 @@ def keuringen_export():
     
     # Headers
     writer.writerow([
-        'Materieel', 'Serienummer', 'Keuringsdatum', 'Resultaat', 
-        'Uitgevoerd door', 'Opmerkingen', 'Volgende Keuring', 'Geregistreerd op'
+        'Materieel', 'Serienummer', 'Werf/Locatie', 'Laatste Keuring', 
+        'Volgende Keuring', 'Resultaat', 'Uitgevoerd door', 'Opmerkingen'
     ])
     
     # Data
-    for hist in historiek:
-        material = Material.query.filter_by(id=hist.material_id).first() if hist.material_id else None
+    for keuring, material in inspection_items:
+        # Get latest history for this material
+        latest_history = KeuringHistoriek.query.filter_by(
+            material_id=material.id
+        ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
+        
         writer.writerow([
-            material.name if material else 'Onbekend',
-            hist.serienummer or '',
-            hist.keuring_datum.strftime('%Y-%m-%d') if hist.keuring_datum else '',
-            hist.resultaat or '',
-            hist.uitgevoerd_door or '',
-            hist.opmerkingen or '',
-            hist.volgende_keuring_datum.strftime('%Y-%m-%d') if hist.volgende_keuring_datum else '',
-            hist.created_at.strftime('%Y-%m-%d %H:%M') if hist.created_at else '',
+            material.name or 'Onbekend',
+            material.serial or '',
+            material.site or (material.project.name if material.project else ''),
+            keuring.laatste_controle.strftime('%Y-%m-%d') if keuring.laatste_controle else 'Nog niet uitgevoerd',
+            keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '',
+            material.inspection_status or 'Gepland',
+            keuring.uitgevoerd_door or '',
+            keuring.opmerkingen or (latest_history.opmerkingen if latest_history else ''),
         ])
     
     # Maak response
     output.seek(0)
+    filename = f"keuringen_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
     return Response(
         output.getvalue(),
         mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename=keuringen_export_{datetime.utcnow().strftime("%Y%m%d")}.csv'}
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
     )
 
 
@@ -1991,6 +2130,56 @@ def api_keuring_details(historiek_id):
     })
 
 
+@app.route("/api/keuring/historiek/<int:material_id>")
+@login_required
+def api_keuring_historiek(material_id):
+    """API endpoint om alle keuring historiek voor een materiaal op te halen"""
+    from datetime import date
+    today = date.today()
+    
+    material = Material.query.filter_by(id=material_id).first()
+    
+    if not material:
+        return jsonify({"error": "Materiaal niet gevonden"}), 404
+    
+    # Haal huidige keuringstatus op
+    keuring_status = None
+    volgende_keuring_datum = None
+    dagen_verschil = None
+    if material.keuring_id:
+        keuring = Keuringstatus.query.filter_by(id=material.keuring_id).first()
+        if keuring:
+            volgende_keuring_datum = keuring.volgende_controle.strftime("%Y-%m-%d") if keuring.volgende_controle else None
+            if keuring.volgende_controle:
+                dagen_verschil = (keuring.volgende_controle - today).days
+    
+    historiek = KeuringHistoriek.query.filter_by(material_id=material_id).order_by(
+        KeuringHistoriek.keuring_datum.desc()
+    ).all()
+    
+    historiek_list = []
+    for hist in historiek:
+        historiek_list.append({
+            "id": hist.id,
+            "keuring_datum": hist.keuring_datum.strftime("%Y-%m-%d") if hist.keuring_datum else "-",
+            "resultaat": hist.resultaat or "-",
+            "uitgevoerd_door": hist.uitgevoerd_door or "-",
+            "opmerkingen": hist.opmerkingen or None,
+            "volgende_keuring_datum": hist.volgende_keuring_datum.strftime("%Y-%m-%d") if hist.volgende_keuring_datum else None,
+            "certificaat_path": hist.certificaat_path or None,
+        })
+    
+    return jsonify({
+        "material_id": material_id,
+        "material_name": material.name or "Onbekend",
+        "serial": material.serial or "-",
+        "inspection_status": material.inspection_status or "Onbekend",
+        "volgende_keuring_datum": volgende_keuring_datum,
+        "dagen_verschil": dagen_verschil,
+        "historiek": historiek_list
+    })
+
+
 # KEURINGEN EN DOCUMENTEN
 # -----------------------------------------------------
 
@@ -1998,56 +2187,295 @@ def api_keuring_details(historiek_id):
 @app.route("/keuringen")
 @login_required
 def keuringen():
-    """Keuringen overzicht pagina"""
+    """Keuringen overzicht pagina - verbeterd met filters, paginatie en prioriteit"""
     today = datetime.utcnow().date()
     
-    # Check voor filter op materiaal (serienummer)
-    filter_serial = (request.args.get("serial") or "").strip()
+    # AUTOMATISCH ALGORITME: Update verlopen keuringen
+    update_verlopen_keuringen()
     
-    # NOTIFICATIES: Tel items die binnenkort keuring nodig hebben (binnen 30 dagen)
-    binnenkort_verlopen = []
-    keuringen_binnenkort = Keuringstatus.query.filter(
-        Keuringstatus.volgende_controle.isnot(None),
-        Keuringstatus.volgende_controle > today,
-        Keuringstatus.volgende_controle <= (today + relativedelta(days=30))
-    ).all()
-    
-    for keuring in keuringen_binnenkort:
-        if keuring.serienummer:
-            material = find_material_by_serial(keuring.serienummer)
-            if material:
-                dagen_tot = (keuring.volgende_controle - today).days
-                binnenkort_verlopen.append({
-                    'material': material,
-                    'keuring': keuring,
-                    'dagen_tot': dagen_tot
-                })
-    
-    # AUTOMATISCH ALGORITME: Check of items automatisch op "keuring verlopen" moeten
-    # Dit gebeurt wanneer volgende_controle verstreken is EN keuring nog niet uitgevoerd is
-    keuringen_met_verlopen_datum = Keuringstatus.query.filter(
+    # ============================================
+    # A. PRIORITEIT CARDS: Te laat, Vandaag, Binnen 30 dagen
+    # ============================================
+    # Te laat: volgende_controle < today EN laatste_controle IS NULL (nog niet uitgevoerd)
+    te_laat_count = db.session.query(Keuringstatus, Material).join(
+        Material, Material.keuring_id == Keuringstatus.id
+    ).filter(
         Keuringstatus.volgende_controle.isnot(None),
         Keuringstatus.volgende_controle < today,
-        Keuringstatus.laatste_controle.is_(None)  # Alleen voor nog niet uitgevoerde keuringen
-    ).all()
+        Keuringstatus.laatste_controle.is_(None)
+    ).count()
     
-    for keuring in keuringen_met_verlopen_datum:
-        if not keuring.serienummer:
-            continue
-        
-        # Zoek materiaal op serienummer
-        material = find_material_by_serial(keuring.serienummer)
-        if not material:
-            continue
-        
-        # Update inspection_status naar "keuring verlopen" als het nog niet zo is
-        # Status kolom blijft "in gebruik" of "niet in gebruik"
-        if material.inspection_status not in ["keuring verlopen", "keuring gepland"]:
-            material.inspection_status = "keuring verlopen"
+    # Te keuren vandaag: volgende_controle == today EN laatste_controle IS NULL
+    vandaag_count = db.session.query(Keuringstatus, Material).join(
+        Material, Material.keuring_id == Keuringstatus.id
+    ).filter(
+        Keuringstatus.volgende_controle == today,
+        Keuringstatus.laatste_controle.is_(None)
+    ).count()
     
-    # Commit de status updates
-    if keuringen_met_verlopen_datum:
-        db.session.commit()
+    # Binnen 30 dagen: volgende_controle > today AND <= today + 30 EN laatste_controle IS NULL
+    binnen_30_dagen_count = db.session.query(Keuringstatus, Material).join(
+        Material, Material.keuring_id == Keuringstatus.id
+    ).filter(
+        Keuringstatus.volgende_controle.isnot(None),
+        Keuringstatus.volgende_controle > today,
+        Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
+        Keuringstatus.laatste_controle.is_(None)
+    ).count()
+    
+    # ============================================
+    # B. FILTERS (query parameters)
+    # ============================================
+    search_q = (request.args.get("q") or "").strip()
+    status_filter = (request.args.get("status") or "").strip()
+    werf_filter = (request.args.get("werf") or "").strip()
+    type_filter = (request.args.get("type") or "").strip()
+    performer_filter = (request.args.get("performer") or "").strip()
+    date_from = (request.args.get("date_from") or "").strip()
+    date_to = (request.args.get("date_to") or "").strip()
+    priority_filter = (request.args.get("priority") or "").strip()  # "te_laat", "vandaag", "binnen_30"
+    
+    # Paginatie
+    page = request.args.get("page", 1, type=int)
+    per_page = 25
+    
+    # Sortering
+    sort_by = request.args.get("sort", "volgende_controle")  # default: sort by next inspection
+    sort_order = request.args.get("order", "asc")
+    
+    # ============================================
+    # C. BUILD QUERY: Combine Keuringstatus + Material
+    # ============================================
+    # Start met join van Keuringstatus en Material
+    query = db.session.query(Keuringstatus, Material).join(
+        Material, Material.keuring_id == Keuringstatus.id
+    )
+    
+    # Apply priority filter (from cards)
+    if priority_filter == "te_laat":
+        query = query.filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle < today,
+            Keuringstatus.laatste_controle.is_(None)
+        )
+    elif priority_filter == "vandaag":
+        query = query.filter(
+            Keuringstatus.volgende_controle == today,
+            Keuringstatus.laatste_controle.is_(None)
+        )
+    elif priority_filter == "binnen_30":
+        query = query.filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle > today,
+            Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
+            Keuringstatus.laatste_controle.is_(None)
+        )
+    
+    # Text search (material name or serial)
+    if search_q:
+        like = f"%{search_q}%"
+        query = query.filter(
+            or_(
+                Material.name.ilike(like),
+                Material.serial.ilike(like)
+            )
+        )
+    
+    # Status filter (based on inspection_status or result)
+    if status_filter:
+        if status_filter == "te_laat":
+            # Overdue: volgende_controle < today AND laatste_controle IS NULL
+            query = query.filter(
+                Keuringstatus.volgende_controle.isnot(None),
+                Keuringstatus.volgende_controle < today,
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        elif status_filter == "gepland":
+            # Planned: volgende_controle > today AND laatste_controle IS NULL
+            query = query.filter(
+                Keuringstatus.volgende_controle.isnot(None),
+                Keuringstatus.volgende_controle > today,
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        elif status_filter == "goedgekeurd":
+            # Approved: check latest history or inspection_status
+            query = query.filter(Material.inspection_status == "goedgekeurd")
+        elif status_filter == "afgekeurd":
+            # Rejected: check latest history or inspection_status
+            query = query.filter(Material.inspection_status == "afgekeurd")
+    
+    # Werf/Location filter
+    if werf_filter:
+        query = query.filter(
+            or_(
+                Material.site.ilike(f"%{werf_filter}%"),
+                Material.project_id == int(werf_filter) if werf_filter.isdigit() else None
+            )
+        )
+    
+    # Type filter
+    if type_filter:
+        query = query.filter(Material.type.ilike(f"%{type_filter}%"))
+    
+    # Performer filter
+    if performer_filter:
+        query = query.filter(Keuringstatus.uitgevoerd_door.ilike(f"%{performer_filter}%"))
+    
+    # Date range filter (on volgende_controle)
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").date()
+            query = query.filter(Keuringstatus.volgende_controle >= date_from_obj)
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").date()
+            query = query.filter(Keuringstatus.volgende_controle <= date_to_obj)
+        except ValueError:
+            pass
+    
+    # ============================================
+    # D. SORTING
+    # ============================================
+    if sort_by == "materieel":
+        if sort_order == "desc":
+            query = query.order_by(Material.name.desc())
+        else:
+            query = query.order_by(Material.name.asc())
+    elif sort_by == "laatste_keuring":
+        if sort_order == "desc":
+            query = query.order_by(Keuringstatus.laatste_controle.desc().nulls_last())
+        else:
+            query = query.order_by(Keuringstatus.laatste_controle.asc().nulls_last())
+    elif sort_by == "volgende_keuring":
+        if sort_order == "desc":
+            query = query.order_by(Keuringstatus.volgende_controle.desc().nulls_last())
+        else:
+            query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+    elif sort_by == "resultaat":
+        if sort_order == "desc":
+            query = query.order_by(Material.inspection_status.desc().nulls_last())
+        else:
+            query = query.order_by(Material.inspection_status.asc().nulls_last())
+    else:
+        # Default: sort by volgende_controle (ascending - most urgent first)
+        query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+    
+    # ============================================
+    # E. PAGINATION
+    # ============================================
+    total_items = query.count()
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    inspection_items = pagination.items
+    
+    # ============================================
+    # F. PREPARE DATA FOR TEMPLATE
+    # ============================================
+    # Build list of inspection items with computed status
+    inspection_list = []
+    for keuring, material in inspection_items:
+        # Compute status badge
+        status_badge = "gepland"
+        status_class = "secondary"
+        dagen_verschil = None
+        
+        if keuring.laatste_controle:
+            # Already inspected - check result
+            if material.inspection_status == "goedgekeurd":
+                status_badge = "goedgekeurd"
+                status_class = "success"
+            elif material.inspection_status == "afgekeurd":
+                status_badge = "afgekeurd"
+                status_class = "danger"
+            else:
+                status_badge = "gepland"
+                status_class = "secondary"
+        else:
+            # Not yet inspected - check if overdue
+            if keuring.volgende_controle:
+                if keuring.volgende_controle < today:
+                    status_badge = "te laat"
+                    status_class = "danger"
+                    dagen_verschil = (today - keuring.volgende_controle).days
+                elif keuring.volgende_controle == today:
+                    status_badge = "vandaag"
+                    status_class = "warning"
+                    dagen_verschil = 0
+                elif keuring.volgende_controle <= (today + relativedelta(days=30)):
+                    status_badge = "binnenkort"
+                    status_class = "warning"
+                    dagen_verschil = (keuring.volgende_controle - today).days
+                else:
+                    status_badge = "gepland"
+                    status_class = "secondary"
+                    dagen_verschil = (keuring.volgende_controle - today).days
+        
+        # Check if certificate exists (from latest history)
+        has_certificate = False
+        latest_history = KeuringHistoriek.query.filter_by(
+            material_id=material.id
+        ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
+        if latest_history and latest_history.certificaat_path:
+            has_certificate = True
+        
+        inspection_list.append({
+            'keuring': keuring,
+            'material': material,
+            'status_badge': status_badge,
+            'status_class': status_class,
+            'dagen_verschil': dagen_verschil,
+            'has_certificate': has_certificate,
+        })
+    
+    # ============================================
+    # G. FILTER OPTIONS FOR DROPDOWNS
+    # ============================================
+    # Get unique values for filters
+    all_projects = Project.query.filter_by(is_deleted=False).order_by(Project.name).all()
+    unique_types = db.session.query(Material.type).filter(
+        Material.type.isnot(None),
+        Material.type != ""
+    ).distinct().order_by(Material.type).all()
+    types_list = [t[0] for t in unique_types if t[0]]
+    
+    unique_performers = db.session.query(Keuringstatus.uitgevoerd_door).filter(
+        Keuringstatus.uitgevoerd_door.isnot(None),
+        Keuringstatus.uitgevoerd_door != ""
+    ).distinct().order_by(Keuringstatus.uitgevoerd_door).all()
+    performers_list = [p[0] for p in unique_performers if p[0]]
+    
+    # All materials for dropdowns
+    all_materials = Material.query.order_by(Material.name).all()
+    
+    return render_template(
+        "keuringen.html",
+        # Priority cards
+        te_laat_count=te_laat_count,
+        vandaag_count=vandaag_count,
+        binnen_30_dagen_count=binnen_30_dagen_count,
+        today=today,
+        # Inspection list
+        inspection_list=inspection_list,
+        pagination=pagination,
+        total_items=total_items,
+        # Filters
+        search_q=search_q,
+        status_filter=status_filter,
+        werf_filter=werf_filter,
+        type_filter=type_filter,
+        performer_filter=performer_filter,
+        date_from=date_from,
+        date_to=date_to,
+        priority_filter=priority_filter,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        # Filter options
+        all_projects=all_projects,
+        types_list=types_list,
+        performers_list=performers_list,
+        all_materials=all_materials,
+    )
     
     # Haal uitgevoerde keuringen op (met laatste_controle in het verleden of vandaag)
     # Gebruik try/except om te werken met of zonder uitgevoerd_door kolom
