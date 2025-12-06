@@ -41,3 +41,4 @@ CREATE INDEX IF NOT EXISTS idx_keuring_historiek_material_id
 CREATE INDEX IF NOT EXISTS idx_keuring_historiek_keuring_datum 
   ON public.keuring_historiek(keuring_datum DESC);
 
+
