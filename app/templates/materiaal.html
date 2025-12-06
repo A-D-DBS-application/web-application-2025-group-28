@@ -344,14 +344,16 @@
               {% endif %}
             </td>
             <td class="text-end" onclick="event.stopPropagation();">
+              {% if current_user and current_user.is_admin %}
               <button type="button"
                       class="btn btn-sm btn-outline-danger"
-                  data-bs-toggle="modal"
+                      data-bs-toggle="modal"
                       data-bs-target="#deleteMaterieelModal"
-                  data-serial="{{ it.serial }}"
+                      data-serial="{{ it.serial }}"
                       data-name="{{ it.name }}">
                 Verwijderen
-                </button>
+              </button>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -1099,6 +1101,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
 });
+
 </script>
 
 <!-- Modal: Koppel aan werf -->

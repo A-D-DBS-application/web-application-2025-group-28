@@ -102,7 +102,7 @@
             {% if naam_delen|length >= 2 %}
               {{ (naam_delen[0][0] + naam_delen[-1][0]) | upper }}
             {% else %}
-              {{ current_user.Naam[:2] | upper }}
+            {{ current_user.Naam[:2] | upper }}
             {% endif %}
           {% else %}
             VT

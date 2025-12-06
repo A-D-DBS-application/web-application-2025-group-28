@@ -55,8 +55,15 @@
 <!-- Panelen -->
 <div class="grid grid-bottom">
   <div class="card panel">
-    <div class="panel-title">Recente Activiteit</div>
-    <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="panel-title">Recente Activiteit</div>
+        <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+      </div>
+      <a href="{{ url_for('geschiedenis') }}" class="btn btn-sm btn-outline-primary">
+        📜 Geschiedenis
+      </a>
+    </div>
 
     {% if recent_activity and recent_activity|length > 0 %}
       <ul class="list-group list-group-flush">

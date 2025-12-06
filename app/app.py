@@ -17,7 +17,7 @@ from dateutil.relativedelta import relativedelta
 
 from config import Config
 from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, and_
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -230,6 +230,190 @@ def dashboard():
         projects=projects,
         today=today,
         geplande_keuringen=geplande_keuringen,
+    )
+
+
+# -----------------------------------------------------
+# GESCHIEDENIS
+# -----------------------------------------------------
+
+
+@app.route("/geschiedenis")
+@login_required
+def geschiedenis():
+    """Geschiedenis overzicht met categorieën en filters"""
+    from datetime import timedelta
+    
+    # Haal filter parameters op
+    filter_type = request.args.get("type", "all")
+    filter_user = request.args.get("user", "")
+    filter_period = request.args.get("period", "all")
+    search_q = request.args.get("q", "").strip().lower()
+    
+    # Base query
+    query = Activity.query
+    
+    # Filter op periode
+    today = datetime.utcnow().date()
+    if filter_period == "today":
+        start_date = datetime.combine(today, datetime.min.time())
+        query = query.filter(Activity.created_at >= start_date)
+    elif filter_period == "week":
+        start_date = datetime.combine(today - timedelta(days=7), datetime.min.time())
+        query = query.filter(Activity.created_at >= start_date)
+    elif filter_period == "month":
+        start_date = datetime.combine(today - timedelta(days=30), datetime.min.time())
+        query = query.filter(Activity.created_at >= start_date)
+    
+    # Filter op gebruiker
+    if filter_user:
+        query = query.filter(Activity.user_name.ilike(f"%{filter_user}%"))
+    
+    # Filter op zoekterm
+    if search_q:
+        query = query.filter(
+            or_(
+                Activity.name.ilike(f"%{search_q}%"),
+                Activity.serial.ilike(f"%{search_q}%"),
+                Activity.action.ilike(f"%{search_q}%"),
+            )
+        )
+    
+    # Haal activiteiten op
+    all_activities = query.order_by(Activity.created_at.desc()).limit(500).all()
+    
+    # Categoriseer activiteiten op basis van action
+    materiaal_acties = []
+    gebruik_acties = []
+    keuring_acties = []
+    
+    for act in all_activities:
+        action_lower = (act.action or "").lower()
+        
+        if action_lower in ["toegevoegd", "bewerkt", "verwijderd"] or "verwijderd" in action_lower:
+            materiaal_acties.append(act)
+        if "in gebruik" in action_lower or "verplaatst" in action_lower or "gekoppeld" in action_lower:
+            gebruik_acties.append(act)
+        if "keuring" in action_lower:
+            keuring_acties.append(act)
+    
+    # Filter op type als geselecteerd
+    if filter_type == "materiaal":
+        display_activities = materiaal_acties
+    elif filter_type == "gebruik":
+        display_activities = gebruik_acties
+    elif filter_type == "keuring":
+        display_activities = keuring_acties
+    else:
+        display_activities = all_activities
+    
+    # Haal unieke gebruikers op voor filter dropdown
+    unique_users = db.session.query(Activity.user_name).filter(
+        Activity.user_name.isnot(None),
+        Activity.user_name != ""
+    ).distinct().all()
+    users_list = sorted([u[0] for u in unique_users if u[0]])
+    
+    return render_template(
+        "geschiedenis.html",
+        activities=display_activities,
+        all_count=len(all_activities),
+        materiaal_count=len(materiaal_acties),
+        gebruik_count=len(gebruik_acties),
+        keuring_count=len(keuring_acties),
+        filter_type=filter_type,
+        filter_user=filter_user,
+        filter_period=filter_period,
+        search_q=search_q,
+        users_list=users_list,
+    )
+
+
+@app.route("/geschiedenis/export")
+@login_required
+def geschiedenis_export():
+    """Export geschiedenis naar CSV"""
+    import csv
+    from io import StringIO
+    from datetime import timedelta
+    
+    # Haal filter parameters op (zelfde als geschiedenis route)
+    filter_type = request.args.get("type", "all")
+    filter_user = request.args.get("user", "")
+    filter_period = request.args.get("period", "all")
+    search_q = request.args.get("q", "").strip().lower()
+    
+    # Base query
+    query = Activity.query
+    
+    # Filter op periode
+    today = datetime.utcnow().date()
+    if filter_period == "today":
+        start_date = datetime.combine(today, datetime.min.time())
+        query = query.filter(Activity.created_at >= start_date)
+    elif filter_period == "week":
+        start_date = datetime.combine(today - timedelta(days=7), datetime.min.time())
+        query = query.filter(Activity.created_at >= start_date)
+    elif filter_period == "month":
+        start_date = datetime.combine(today - timedelta(days=30), datetime.min.time())
+        query = query.filter(Activity.created_at >= start_date)
+    
+    # Filter op gebruiker
+    if filter_user:
+        query = query.filter(Activity.user_name.ilike(f"%{filter_user}%"))
+    
+    # Filter op zoekterm
+    if search_q:
+        query = query.filter(
+            or_(
+                Activity.name.ilike(f"%{search_q}%"),
+                Activity.serial.ilike(f"%{search_q}%"),
+                Activity.action.ilike(f"%{search_q}%"),
+            )
+        )
+    
+    # Haal activiteiten op
+    activities = query.order_by(Activity.created_at.desc()).all()
+    
+    # Filter op type
+    if filter_type != "all":
+        filtered = []
+        for act in activities:
+            action_lower = (act.action or "").lower()
+            if filter_type == "materiaal" and (action_lower in ["toegevoegd", "bewerkt", "verwijderd"] or "verwijderd" in action_lower):
+                filtered.append(act)
+            elif filter_type == "gebruik" and ("in gebruik" in action_lower or "verplaatst" in action_lower or "gekoppeld" in action_lower):
+                filtered.append(act)
+            elif filter_type == "keuring" and "keuring" in action_lower:
+                filtered.append(act)
+        activities = filtered
+    
+    # Maak CSV
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Headers
+    writer.writerow(['Datum', 'Tijd', 'Actie', 'Materiaal', 'Serienummer', 'Gebruiker'])
+    
+    # Data
+    for act in activities:
+        writer.writerow([
+            act.created_at.strftime('%Y-%m-%d') if act.created_at else '',
+            act.created_at.strftime('%H:%M:%S') if act.created_at else '',
+            act.action or '',
+            act.name or '',
+            act.serial or '',
+            act.user_name or '',
+        ])
+    
+    # Maak response
+    output.seek(0)
+    filename = f"geschiedenis_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
     )
 
 
@@ -1008,12 +1192,25 @@ def materiaal_assign_to_project():
 @login_required
 def werven():
     today = datetime.utcnow().date()
-    projects = (
-        Project.query.filter_by(is_deleted=False)
-        .order_by(Project.start_date.asc())
-        .all()
-    )
-    return render_template("werven.html", projects=projects, today=today)
+    search_q = (request.args.get("q") or "").strip().lower()
+    
+    # Alle werven voor autocomplete suggesties
+    all_projects = Project.query.filter_by(is_deleted=False).order_by(Project.name).all()
+    
+    query = Project.query.filter_by(is_deleted=False)
+    
+    # Filter op zoekterm
+    if search_q:
+        query = query.filter(
+            or_(
+                Project.name.ilike(f"%{search_q}%"),
+                Project.address.ilike(f"%{search_q}%"),
+                Project.type.ilike(f"%{search_q}%"),
+            )
+        )
+    
+    projects = query.order_by(Project.start_date.asc()).all()
+    return render_template("werven.html", projects=projects, all_projects=all_projects, today=today, search_q=search_q)
 
 
 @app.route("/werven/new", methods=["POST"])

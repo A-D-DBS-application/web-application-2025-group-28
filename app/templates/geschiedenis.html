@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+  <div>
+    <h2 class="h-title">Geschiedenis</h2>
+    <div class="h-sub">Overzicht van alle activiteiten in het systeem</div>
+  </div>
+
+  <a href="{{ url_for('geschiedenis_export', type=filter_type, user=filter_user, period=filter_period, q=search_q) }}" 
+     class="btn btn-outline-primary">
+    📥 Export CSV
+  </a>
+</div>
+
+<!-- Filters -->
+<div class="card panel" style="margin-top:16px;">
+  <form method="get" action="{{ url_for('geschiedenis') }}" class="row g-3 align-items-end">
+    <!-- Zoeken -->
+    <div class="col-12 col-md-4">
+      <label class="form-label">Zoeken</label>
+      <div class="input-group">
+        <span class="input-group-text">🔍</span>
+        <input type="text" name="q" class="form-control" 
+               placeholder="Zoek op naam, serienummer of actie..."
+               value="{{ search_q }}">
+      </div>
+    </div>
+
+    <!-- Periode -->
+    <div class="col-6 col-md-2">
+      <label class="form-label">Periode</label>
+      <select name="period" class="form-select">
+        <option value="all" {% if filter_period == 'all' %}selected{% endif %}>Alle tijd</option>
+        <option value="today" {% if filter_period == 'today' %}selected{% endif %}>Vandaag</option>
+        <option value="week" {% if filter_period == 'week' %}selected{% endif %}>Afgelopen week</option>
+        <option value="month" {% if filter_period == 'month' %}selected{% endif %}>Afgelopen maand</option>
+      </select>
+    </div>
+
+    <!-- Gebruiker -->
+    <div class="col-6 col-md-3">
+      <label class="form-label">Gebruiker</label>
+      <select name="user" class="form-select">
+        <option value="">Alle gebruikers</option>
+        {% for user in users_list %}
+          <option value="{{ user }}" {% if filter_user == user %}selected{% endif %}>{{ user }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Knoppen -->
+    <div class="col-12 col-md-3">
+      <button type="submit" class="btn btn-primary">Filteren</button>
+      <a href="{{ url_for('geschiedenis') }}" class="btn btn-outline-secondary">Reset</a>
+    </div>
+  </form>
+</div>
+
+<!-- Statistieken -->
+<div class="row g-3 mt-2">
+  <div class="col-6 col-md-3">
+    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='all', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title">📊 Totaal</div>
+      <div class="kpi-value">{{ all_count }}</div>
+      <div class="kpi-sub">Alle activiteiten</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='materiaal', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title">📦 Materiaal</div>
+      <div class="kpi-value">{{ materiaal_count }}</div>
+      <div class="kpi-sub">Toegevoegd/bewerkt/verwijderd</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='gebruik', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title">🔧 Gebruik</div>
+      <div class="kpi-value">{{ gebruik_count }}</div>
+      <div class="kpi-sub">In/uit gebruik</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='keuring', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title">✅ Keuringen</div>
+      <div class="kpi-value">{{ keuring_count }}</div>
+      <div class="kpi-sub">Keuring activiteiten</div>
+    </div>
+  </div>
+</div>
+
+<!-- Categorie tabs -->
+<div class="card panel" style="margin-top:16px;">
+  <ul class="nav nav-tabs" role="tablist">
+    <li class="nav-item">
+      <a class="nav-link {% if filter_type == 'all' %}active{% endif %}" 
+         href="{{ url_for('geschiedenis', type='all', user=filter_user, period=filter_period, q=search_q) }}">
+        Alle ({{ all_count }})
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if filter_type == 'materiaal' %}active{% endif %}"
+         href="{{ url_for('geschiedenis', type='materiaal', user=filter_user, period=filter_period, q=search_q) }}">
+        Materiaal ({{ materiaal_count }})
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if filter_type == 'gebruik' %}active{% endif %}"
+         href="{{ url_for('geschiedenis', type='gebruik', user=filter_user, period=filter_period, q=search_q) }}">
+        Gebruik ({{ gebruik_count }})
+      </a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link {% if filter_type == 'keuring' %}active{% endif %}"
+         href="{{ url_for('geschiedenis', type='keuring', user=filter_user, period=filter_period, q=search_q) }}">
+        Keuringen ({{ keuring_count }})
+      </a>
+    </li>
+  </ul>
+
+  <!-- Activiteiten tabel -->
+  <div class="table-responsive mt-3">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th style="width:160px;">Datum & Tijd</th>
+          <th>Actie</th>
+          <th>Materiaal</th>
+          <th>Serienummer</th>
+          <th>Gebruiker</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if activities %}
+          {% for act in activities %}
+            <tr>
+              <td>
+                {% if act.created_at %}
+                  <div>{{ act.created_at.strftime("%Y-%m-%d") }}</div>
+                  <small class="text-muted">{{ act.created_at.strftime("%H:%M:%S") }}</small>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>
+                {% set action_lower = act.action|lower if act.action else '' %}
+                {% if 'toegevoegd' in action_lower %}
+                  <span class="badge bg-success">{{ act.action }}</span>
+                {% elif 'verwijderd' in action_lower %}
+                  <span class="badge bg-danger">{{ act.action }}</span>
+                {% elif 'bewerkt' in action_lower %}
+                  <span class="badge bg-info">{{ act.action }}</span>
+                {% elif 'in gebruik' in action_lower and 'niet' not in action_lower %}
+                  <span class="badge bg-primary">{{ act.action }}</span>
+                {% elif 'niet meer in gebruik' in action_lower %}
+                  <span class="badge bg-secondary">{{ act.action }}</span>
+                {% elif 'keuring' in action_lower %}
+                  <span class="badge bg-warning text-dark">{{ act.action }}</span>
+                {% elif 'verplaatst' in action_lower or 'gekoppeld' in action_lower %}
+                  <span class="badge bg-info">{{ act.action }}</span>
+                {% else %}
+                  <span class="badge bg-secondary">{{ act.action or '-' }}</span>
+                {% endif %}
+              </td>
+              <td>{{ act.name or '-' }}</td>
+              <td>
+                {% if act.serial %}
+                  <code>{{ act.serial }}</code>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+              <td>{{ act.user_name or '-' }}</td>
+            </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="5" class="text-muted text-center py-4">
+              Geen activiteiten gevonden voor de geselecteerde filters.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if activities|length >= 500 %}
+    <div class="alert alert-info mt-3">
+      <strong>Let op:</strong> Er worden maximaal 500 resultaten getoond. Gebruik de filters om specifiekere resultaten te krijgen.
+    </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
