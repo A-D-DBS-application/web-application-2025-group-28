@@ -146,11 +146,24 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <button type="button"
-                              class="btn btn-sm btn-outline-dark"
-                              onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
-                        Bekijk en bewerk
+                      <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-dark"
+                                onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
+                          Bekijk en bewerk
                         </button>
+                        {% if current_user and current_user.is_admin %}
+                        <form method="post"
+                              action="{{ url_for('materiaal_stop_gebruik') }}"
+                              class="d-inline"
+                              onsubmit="return confirm('Materiaal van {{ u.used_by }} niet meer in gebruik zetten?');">
+                          <input type="hidden" name="usage_id" value="{{ u.id }}">
+                          <button class="btn btn-sm btn-outline-danger">
+                            Stop gebruik
+                          </button>
+                        </form>
+                        {% endif %}
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -164,6 +177,69 @@
     </div>
   </div>
 </div>
+
+<!-- Materiaal in gebruik zonder werf -->
+{% if usages_without_project %}
+<div class="card panel" style="margin-top:16px; border-left: 4px solid #ffc107;">
+  <div class="panel-title d-flex align-items-center">
+    <span style="color: #ffc107; margin-right: 8px;">⚠️</span>
+    Materiaal in gebruik zonder werf
+  </div>
+  <div class="panel-sub">Dit materiaal is in gebruik maar niet gekoppeld aan een werf</div>
+
+  <div class="table-responsive mt-3">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Serienummer</th>
+          <th>Naam</th>
+          <th>Gebruikt door</th>
+          <th>In gebruik sinds</th>
+          <th class="text-end">Acties</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in usages_without_project %}
+          <tr>
+            <td>{{ u.serial }}</td>
+            <td>{{ u.name }}</td>
+            <td>{{ u.used_by or '-' }}</td>
+            <td>
+              {% if u.start_time %}
+                {{ u.start_time.strftime("%Y-%m-%d %H:%M") }}
+              {% else %}
+                -
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <div class="btn-group" role="group">
+                <button type="button"
+                        class="btn btn-sm btn-outline-primary"
+                        data-bs-toggle="modal"
+                        data-bs-target="#assignToProjectModal"
+                        data-usage-id="{{ u.id }}"
+                        data-mat-name="{{ u.name }}"
+                        data-mat-serial="{{ u.serial }}">
+                  Koppel aan werf
+                </button>
+                <form method="post"
+                      action="{{ url_for('materiaal_stop_gebruik') }}"
+                      class="d-inline"
+                      onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+                  <input type="hidden" name="usage_id" value="{{ u.id }}">
+                  <button class="btn btn-sm btn-outline-secondary">
+                    Stop gebruik
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <!-- Flash messages (worden meestal al door base.html getoond, maar kan geen kwaad) -->
 <div class="container px-0 mt-3">
@@ -251,29 +327,33 @@
               {% endif %}
             </td>
             <td>
-              {# Always show inspection_status (keuring status) first, fall back to status if inspection_status is not available #}
-              {% set keuring_status = it.inspection_status if it.inspection_status else (it.status if it.status != "in gebruik" else None) %}
+              {# Keuring status: altijd gebaseerd op inspection_status, of status als fallback (maar alleen geldige keuringswaardes) #}
+              {% set keuring_status = it.inspection_status if it.inspection_status else it.status %}
               {% if keuring_status == "goedgekeurd" %}
-                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Goedgekeurd</span>
+                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #198754;">Goedgekeurd</span>
               {% elif keuring_status == "afgekeurd" %}
-                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Afgekeurd</span>
+                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #dc3545;">Afgekeurd</span>
               {% elif keuring_status == "keuring verlopen" %}
-                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Keuring verlopen</span>
+                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #ffc107;">Keuring verlopen</span>
               {% elif keuring_status == "keuring gepland" %}
-                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #212529;">Keuring gepland</span>
+                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #a855f7;">Keuring gepland</span>
+              {% elif keuring_status in ["in gebruik", "niet in gebruik"] or not keuring_status %}
+                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #6c757d;">Geen keuring</span>
               {% else %}
-                <span class="badge bg-secondary">{{ keuring_status|title if keuring_status else "-" }}</span>
+                <span class="badge" style="background-color: white; color: #212529; border: 1px solid #6c757d;">{{ keuring_status|title }}</span>
               {% endif %}
             </td>
             <td class="text-end" onclick="event.stopPropagation();">
+              {% if current_user and current_user.is_admin %}
               <button type="button"
                       class="btn btn-sm btn-outline-danger"
-                  data-bs-toggle="modal"
+                      data-bs-toggle="modal"
                       data-bs-target="#deleteMaterieelModal"
-                  data-serial="{{ it.serial }}"
+                      data-serial="{{ it.serial }}"
                       data-name="{{ it.name }}">
                 Verwijderen
-                </button>
+              </button>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -385,37 +465,25 @@
   </div>
             </div>
 
-<!-- Modal: Beheerwachtwoord -->
-<div class="modal fade" id="passwordModal" tabindex="-1" aria-hidden="true">
+<!-- Modal: Geen toegang (voor niet-admins) -->
+<div class="modal fade" id="accessDeniedModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Beheerwachtwoord vereist</h5>
+        <h5 class="modal-title">Geen toegang</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
       <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label">Voer beheerwachtwoord in*</label>
-              <input
-                type="password"
-            id="admin-password-input"
-            class="form-control"
-            placeholder="Beheerwachtwoord"
-            autofocus>
-          <div id="password-error" class="text-danger small mt-2" style="display: none;">
-            Onjuist wachtwoord. Probeer opnieuw.
-          </div>
-        </div>
+        <p>Je hebt geen toegang tot deze functie. Alleen admins kunnen materiaal toevoegen of verwijderen.</p>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
-        <button type="button" class="btn btn-primary" id="verifyPasswordBtn">Verifiëren</button>
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Modal: Materieel verwijderen (met wachtwoord) -->
+<!-- Modal: Materieel verwijderen -->
 <div class="modal fade" id="deleteMaterieelModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -431,13 +499,6 @@
             <strong id="delete-material-name"></strong>
             wilt verwijderen?
           </p>
-          <div class="mb-3">
-            <label class="form-label">Beheerwachtwoord*</label>
-            <input type="password"
-                name="admin_password"
-                class="form-control"
-                required>
-          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
@@ -715,65 +776,22 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Password modal for "Nieuw Materieel Toevoegen"
+  // Admin check voor nieuw materieel toevoegen
   const submitBtn = document.getElementById('submitMaterieelBtn');
   const nieuwMaterieelForm = document.getElementById('nieuwMaterieelForm');
-  const passwordModal = new bootstrap.Modal(document.getElementById('passwordModal'));
-  const passwordInput = document.getElementById('admin-password-input');
-  const passwordError = document.getElementById('password-error');
-  const verifyPasswordBtn = document.getElementById('verifyPasswordBtn');
-  const correctPassword = 'Sunset'; // Should match backend
+  const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
+  const accessDeniedModal = new bootstrap.Modal(document.getElementById('accessDeniedModal'));
 
   if (submitBtn && nieuwMaterieelForm) {
     submitBtn.addEventListener('click', function(e) {
       e.preventDefault();
-      // Clear previous error and password
-      passwordError.style.display = 'none';
-      passwordInput.value = '';
-      // Show password modal
-      passwordModal.show();
-    });
-  }
-
-  // Handle password verification
-  if (verifyPasswordBtn) {
-    verifyPasswordBtn.addEventListener('click', function() {
-      const enteredPassword = passwordInput.value.trim();
-      
-      if (enteredPassword === correctPassword) {
-        // Password is correct - add hidden input and submit form
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = 'admin_password';
-        hiddenInput.value = enteredPassword;
-        nieuwMaterieelForm.appendChild(hiddenInput);
-        
-        // Close password modal and submit form
-        passwordModal.hide();
+      if (isAdmin) {
+        // Admin: direct formulier versturen
         nieuwMaterieelForm.submit();
       } else {
-        // Password is incorrect - show error
-        passwordError.style.display = 'block';
-        passwordInput.value = '';
-        passwordInput.focus();
+        // Geen admin: toon melding
+        accessDeniedModal.show();
       }
-    });
-  }
-
-  // Allow Enter key to submit password
-  if (passwordInput) {
-    passwordInput.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
-        verifyPasswordBtn.click();
-      }
-    });
-  }
-
-  // Clear error when modal is shown
-  const passwordModalElement = document.getElementById('passwordModal');
-  if (passwordModalElement) {
-    passwordModalElement.addEventListener('show.bs.modal', function() {
-      passwordError.style.display = 'none';
-      passwordInput.value = '';
     });
   }
 
@@ -869,38 +887,31 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (data.items && data.items.length > 0) {
           const item = data.items[0];
-          // Status: "in gebruik" or "niet in gebruik"
-          const isInUse = item.status === 'in gebruik';
+          // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
+          const isInUse = item.is_in_use === true;
           const statusClass = isInUse ? 'bg-success' : 'bg-danger';
           const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
           
-          // Keuring: based on original status (goedgekeurd/afgekeurd/keuring verlopen/keuring gepland)
-          // If status is "in gebruik", check inspection_status for the original keuring status
-          let keuringStatus = item.status;
-          if (item.status === 'in gebruik' && item.inspection_status) {
-            keuringStatus = item.inspection_status;
+          // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
+          let keuringStatus = item.inspection_status || item.status;
+          const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
+          
+          // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
+          if (!validKeuringStatuses.includes(keuringStatus)) {
+            keuringStatus = null;
           }
           
-          // Determine badge class and text based on keuring status
-          let keuringClass = 'bg-secondary';
-          let keuringText = 'Onbekend';
+          // Determine badge text based on keuring status
+          let keuringText = 'Geen keuring';
           
           if (keuringStatus === 'goedgekeurd') {
-            keuringClass = 'bg-success';
             keuringText = 'Goedgekeurd';
           } else if (keuringStatus === 'afgekeurd') {
-            keuringClass = 'bg-danger';
             keuringText = 'Afgekeurd';
           } else if (keuringStatus === 'keuring verlopen') {
-            keuringClass = 'bg-warning';
             keuringText = 'Keuring verlopen';
           } else if (keuringStatus === 'keuring gepland') {
-            keuringClass = '';
             keuringText = 'Keuring gepland';
-          } else if (item.status === 'in gebruik') {
-            // Default to goedgekeurd when in gebruik and no inspection_status
-            keuringClass = 'bg-success';
-            keuringText = 'Goedgekeurd';
           }
           
           // Create badge HTML for keuring status (white background with colored border and black text)
@@ -916,8 +927,8 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (keuringStatus === 'keuring gepland') {
             badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
           } else {
-            // Default to goedgekeurd style
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+            // Geen keuring - grijs
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #6c757d;';
           }
           
           if (item.keuring_gepland) {
@@ -1089,6 +1100,62 @@ document.addEventListener('DOMContentLoaded', function () {
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
+});
+
+</script>
+
+<!-- Modal: Koppel aan werf -->
+<div class="modal fade" id="assignToProjectModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('materiaal_assign_to_project') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Materiaal koppelen aan werf</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="usage_id" id="assign-usage-id">
+          <p>
+            Koppel <strong id="assign-mat-name"></strong> 
+            <span class="text-muted">(<span id="assign-mat-serial"></span>)</span>
+            aan een werf:
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Selecteer werf*</label>
+            <select name="project_id" class="form-select" required>
+              <option value="">-- Kies een werf --</option>
+              {% for p in projects %}
+                <option value="{{ p.id }}">{{ p.name or ('Werf ' ~ p.id) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary">Koppelen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const assignModal = document.getElementById('assignToProjectModal');
+  if (assignModal) {
+    assignModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      if (!button) return;
+
+      const usageId = button.getAttribute('data-usage-id');
+      const matName = button.getAttribute('data-mat-name') || 'dit materiaal';
+      const matSerial = button.getAttribute('data-mat-serial') || '';
+
+      document.getElementById('assign-usage-id').value = usageId;
+      document.getElementById('assign-mat-name').textContent = matName;
+      document.getElementById('assign-mat-serial').textContent = matSerial;
+    });
+  }
 });
 </script>
 

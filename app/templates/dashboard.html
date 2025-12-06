@@ -55,8 +55,15 @@
 <!-- Panelen -->
 <div class="grid grid-bottom">
   <div class="card panel">
-    <div class="panel-title">Recente Activiteit</div>
-    <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+    <div class="d-flex justify-content-between align-items-start">
+      <div>
+        <div class="panel-title">Recente Activiteit</div>
+        <div class="panel-sub">Laatste wijzigingen in het systeem</div>
+      </div>
+      <a href="{{ url_for('geschiedenis') }}" class="btn btn-sm btn-outline-primary">
+        📜 Geschiedenis
+      </a>
+    </div>
 
     {% if recent_activity and recent_activity|length > 0 %}
       <ul class="list-group list-group-flush">
@@ -323,38 +330,31 @@ document.addEventListener('DOMContentLoaded', function() {
           // If single result, show detailed view; otherwise show list
           if (data.items.length === 1) {
             const item = data.items[0];
-            // Status: "in gebruik" or "niet in gebruik"
-            const isInUse = item.status === 'in gebruik';
+            // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
+            const isInUse = item.is_in_use === true;
             const statusClass = isInUse ? 'bg-success' : 'bg-danger';
             const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
             
-            // Keuring: based on original status (goedgekeurd/afgekeurd/keuring verlopen/keuring gepland)
-            // If status is "in gebruik", check inspection_status for the original keuring status
-            let keuringStatus = item.status;
-            if (item.status === 'in gebruik' && item.inspection_status) {
-              keuringStatus = item.inspection_status;
+            // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
+            let keuringStatus = item.inspection_status || item.status;
+            const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
+            
+            // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
+            if (!validKeuringStatuses.includes(keuringStatus)) {
+              keuringStatus = null;
             }
             
-            // Determine badge class and text based on keuring status
-            let keuringClass = 'bg-secondary';
-            let keuringText = 'Onbekend';
+            // Determine badge text based on keuring status
+            let keuringText = 'Geen keuring';
             
             if (keuringStatus === 'goedgekeurd') {
-              keuringClass = 'bg-success';
               keuringText = 'Goedgekeurd';
             } else if (keuringStatus === 'afgekeurd') {
-              keuringClass = 'bg-danger';
               keuringText = 'Afgekeurd';
             } else if (keuringStatus === 'keuring verlopen') {
-              keuringClass = 'bg-warning';
               keuringText = 'Keuring verlopen';
             } else if (keuringStatus === 'keuring gepland') {
-              keuringClass = '';
               keuringText = 'Keuring gepland';
-            } else if (item.status === 'in gebruik') {
-              // Default to goedgekeurd when in gebruik and no inspection_status
-              keuringClass = 'bg-success';
-              keuringText = 'Goedgekeurd';
             }
             
             // Create badge HTML for keuring status (white background with colored border and black text)
@@ -370,8 +370,8 @@ document.addEventListener('DOMContentLoaded', function() {
             } else if (keuringStatus === 'keuring gepland') {
               badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
             } else {
-              // Default to goedgekeurd style
-              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+              // Geen keuring - grijs
+              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #6c757d;';
             }
             
             if (item.keuring_gepland) {
@@ -541,38 +541,31 @@ document.addEventListener('DOMContentLoaded', function() {
       .then(data => {
         if (data.items && data.items.length > 0) {
           const item = data.items[0];
-          // Status: "in gebruik" or "niet in gebruik"
-          const isInUse = item.status === 'in gebruik';
+          // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
+          const isInUse = item.is_in_use === true;
           const statusClass = isInUse ? 'bg-success' : 'bg-danger';
           const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
           
-          // Keuring: based on original status (goedgekeurd/afgekeurd/keuring verlopen/keuring gepland)
-          // If status is "in gebruik", check inspection_status for the original keuring status
-          let keuringStatus = item.status;
-          if (item.status === 'in gebruik' && item.inspection_status) {
-            keuringStatus = item.inspection_status;
+          // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
+          let keuringStatus = item.inspection_status || item.status;
+          const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
+          
+          // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
+          if (!validKeuringStatuses.includes(keuringStatus)) {
+            keuringStatus = null;
           }
           
-          // Determine badge class and text based on keuring status
-          let keuringClass = 'bg-secondary';
-          let keuringText = 'Onbekend';
+          // Determine badge text based on keuring status
+          let keuringText = 'Geen keuring';
           
           if (keuringStatus === 'goedgekeurd') {
-            keuringClass = 'bg-success';
             keuringText = 'Goedgekeurd';
           } else if (keuringStatus === 'afgekeurd') {
-            keuringClass = 'bg-danger';
             keuringText = 'Afgekeurd';
           } else if (keuringStatus === 'keuring verlopen') {
-            keuringClass = 'bg-warning';
             keuringText = 'Keuring verlopen';
           } else if (keuringStatus === 'keuring gepland') {
-            keuringClass = '';
             keuringText = 'Keuring gepland';
-          } else if (item.status === 'in gebruik') {
-            // Default to goedgekeurd when in gebruik and no inspection_status
-            keuringClass = 'bg-success';
-            keuringText = 'Goedgekeurd';
           }
           
           // Create badge HTML for keuring status (white background with colored border and black text)
@@ -588,8 +581,8 @@ document.addEventListener('DOMContentLoaded', function() {
           } else if (keuringStatus === 'keuring gepland') {
             badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
           } else {
-            // Default to goedgekeurd style
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+            // Geen keuring - grijs
+            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #6c757d;';
           }
           
           if (item.keuring_gepland) {

@@ -94,8 +94,17 @@
   <div class="col-12 col-lg-7">
     <!-- Actief materiaal -->
     <div class="card panel mb-3">
-      <div class="panel-title">Materiaal in gebruik op deze werf</div>
-      <div class="panel-sub">Actieve sessies gelinkt aan dit project</div>
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="panel-title">Materiaal in gebruik op deze werf</div>
+          <div class="panel-sub">Actieve sessies gelinkt aan dit project</div>
+        </div>
+        {% if active_usages %}
+        <a href="{{ url_for('werf_export_materiaal', project_id=project.id) }}" class="btn btn-sm btn-outline-primary">
+          📥 Export CSV
+        </a>
+        {% endif %}
+      </div>
 
       {% if active_usages %}
         <div class="table-responsive mt-2">
@@ -123,15 +132,31 @@
                     {% endif %}
                   </td>
                   <td class="text-end">
-                    <form method="post"
-                          action="{{ url_for('werf_stop_gebruik', project_id=project.id) }}"
-                          class="d-inline"
-                          onsubmit="return confirm('Materiaal niet meer in gebruik zetten op deze werf?');">
-                      <input type="hidden" name="usage_id" value="{{ usage.id }}">
-                      <button class="btn btn-sm btn-outline-secondary">
-                        Niet meer gebruiken
+                    <div class="btn-group" role="group">
+                      {% if other_projects %}
+                      <button type="button"
+                              class="btn btn-sm btn-outline-primary"
+                              data-bs-toggle="modal"
+                              data-bs-target="#switchWerfModal"
+                              data-usage-id="{{ usage.id }}"
+                              data-mat-name="{{ mat.name }}"
+                              data-mat-serial="{{ mat.serial }}">
+                        Wissel van werf
                       </button>
-                    </form>
+                      {% endif %}
+                      {% set is_own = current_user and current_user.Naam and usage.used_by and usage.used_by.lower() == current_user.Naam.lower() %}
+                      {% if is_own or (current_user and current_user.is_admin) %}
+                      <form method="post"
+                            action="{{ url_for('werf_stop_gebruik', project_id=project.id) }}"
+                            class="d-inline"
+                            onsubmit="return confirm('Materiaal niet meer in gebruik zetten op deze werf?');">
+                        <input type="hidden" name="usage_id" value="{{ usage.id }}">
+                        <button class="btn btn-sm btn-outline-secondary">
+                          Niet meer gebruiken
+                        </button>
+                      </form>
+                      {% endif %}
+                    </div>
                   </td>
                 </tr>
               {% endfor %}
@@ -185,5 +210,60 @@
 
   </div>
 </div>
+
+<!-- Modal: Materiaal wisselen naar andere werf -->
+<div class="modal fade" id="switchWerfModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('werf_switch_material', project_id=project.id) }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Materiaal verplaatsen naar andere werf</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="usage_id" id="switch-usage-id">
+          <p>
+            Verplaats <strong id="switch-mat-name"></strong> 
+            <span class="text-muted">(<span id="switch-mat-serial"></span>)</span>
+            naar een andere werf:
+          </p>
+          <div class="mb-3">
+            <label class="form-label">Selecteer doelwerf*</label>
+            <select name="new_project_id" class="form-select" required>
+              <option value="">-- Kies een werf --</option>
+              {% for p in other_projects %}
+                <option value="{{ p.id }}">{{ p.name or ('Werf ' ~ p.id) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary">Verplaatsen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const switchModal = document.getElementById('switchWerfModal');
+  if (switchModal) {
+    switchModal.addEventListener('show.bs.modal', function(event) {
+      const button = event.relatedTarget;
+      if (!button) return;
+
+      const usageId = button.getAttribute('data-usage-id');
+      const matName = button.getAttribute('data-mat-name') || 'dit materiaal';
+      const matSerial = button.getAttribute('data-mat-serial') || '';
+
+      document.getElementById('switch-usage-id').value = usageId;
+      document.getElementById('switch-mat-name').textContent = matName;
+      document.getElementById('switch-mat-serial').textContent = matSerial;
+    });
+  }
+});
+</script>
 
 {% endblock %}

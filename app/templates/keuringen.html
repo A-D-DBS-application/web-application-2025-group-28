@@ -4,209 +4,388 @@
 <div class="section-header">
   <div>
     <h2 class="h-title">Keuringen & Inspecties</h2>
-    <div class="h-sub">Registratie en opvolging van materieelkeuringen</div>
+    <div class="h-sub">Wat moet ik nu keuren?</div>
   </div>
   <button class="btn btn-dark" 
           style="display: flex; align-items: center; gap: 8px;"
           data-bs-toggle="modal"
           data-bs-target="#nieuweKeuringModal">
     <span style="font-size: 18px; line-height: 1;">+</span>
-    <span>Nieuwe Keuring</span>
+    <span>Keuring Plannen</span>
   </button>
 </div>
 
-<!-- Items die Keuring Vereisen -->
-<div class="card panel" style="margin-top:24px;">
-  <div class="panel-title">Items die Keuring Vereisen</div>
-  <div class="panel-sub">Materieel met status "keuring verlopen"</div>
-
-  <div class="mt-3">
-    {% if afgekeurde_items %}
-      {% for item in afgekeurde_items %}
-        <div class="card mb-3" style="border: 1px solid #e5e7eb; border-radius: 8px;">
-          <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start">
-              <div class="flex-grow-1">
-                <!-- Naam klikbaar maken om details te tonen -->
-                <button type="button"
-                        class="btn btn-link p-0 fw-bold text-start"
-                        style="text-decoration: none; color: inherit;"
-                        onclick="showMaterialDetails('{{ item.serial }}', null)">
-                  {{ item.name or 'Onbekend' }}
-                </button>
-                <small class="text-muted">
-                  {{ item.serial }}
-                  {% if item.site %}
-                    • {{ item.site }}
-                  {% endif %}
-                </small>
-              </div>
-              <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-warning">Keuring verlopen</span>
-                <button type="button"
-                        class="btn btn-sm btn-dark"
-                        data-bs-toggle="modal"
-                        data-bs-target="#nieuweKeuringModal"
-                        onclick="document.getElementById('keuring-serial').value = '{{ item.serial }}'">
-                  Plan Keuring
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      {% endfor %}
-    {% else %}
-      <div class="text-center text-muted py-4">
-        Geen items met keuring verlopen gevonden
+<!-- A. PRIORITEIT CARDS -->
+<div class="row g-3 mt-3">
+  <div class="col-md-4">
+    <a href="{{ url_for('keuringen', priority='te_laat', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
+       class="text-decoration-none">
+      <div class="card kpi" style="cursor: pointer; transition: transform 0.2s;" 
+           onmouseover="this.style.transform='scale(1.02)'" 
+           onmouseout="this.style.transform='scale(1)'">
+        <div class="kpi-title">Te laat</div>
+        <div class="kpi-value" style="color: #dc3545;">{{ te_laat_count or 0 }}</div>
+        <div class="kpi-sub">Keuringen die verlopen zijn</div>
       </div>
-    {% endif %}
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="{{ url_for('keuringen', priority='vandaag', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
+       class="text-decoration-none">
+      <div class="card kpi" style="cursor: pointer; transition: transform 0.2s;" 
+           onmouseover="this.style.transform='scale(1.02)'" 
+           onmouseout="this.style.transform='scale(1)'">
+        <div class="kpi-title">Te keuren vandaag</div>
+        <div class="kpi-value" style="color: #ffc107;">{{ vandaag_count or 0 }}</div>
+        <div class="kpi-sub">Moeten vandaag gekeurd worden</div>
+      </div>
+    </a>
+  </div>
+  <div class="col-md-4">
+    <a href="{{ url_for('keuringen', priority='binnen_30', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
+       class="text-decoration-none">
+      <div class="card kpi" style="cursor: pointer; transition: transform 0.2s;" 
+           onmouseover="this.style.transform='scale(1.02)'" 
+           onmouseout="this.style.transform='scale(1)'">
+        <div class="kpi-title">Binnen 30 dagen</div>
+        <div class="kpi-value" style="color: #fd7e14;">{{ binnen_30_dagen_count or 0 }}</div>
+        <div class="kpi-sub">Keuringen binnenkort</div>
+      </div>
+    </a>
   </div>
 </div>
 
-<!-- Geplande Keuringen -->
+<!-- B. FILTER BAR -->
 <div class="card panel" style="margin-top:24px;">
-  <div class="panel-title">Geplande Keuringen</div>
-  <div class="panel-sub">Toekomstige keuringen die gepland zijn</div>
+  <div class="panel-title">Keuringen Overzicht</div>
+  <div class="panel-sub">{{ total_items }} keuring(en) gevonden</div>
 
-  <!-- Table -->
+  <form method="get" action="{{ url_for('keuringen') }}" id="filterForm">
+    <!-- Preserve priority filter if set -->
+    {% if priority_filter %}
+    <input type="hidden" name="priority" value="{{ priority_filter }}">
+                  {% endif %}
+    
+    <div class="row g-2 mt-3">
+      <!-- Text Search -->
+      <div class="col-12 col-md-6 col-lg-3">
+        <div class="input-group">
+          <span class="input-group-text">🔍</span>
+          <input type="text" 
+                 name="q" 
+                 value="{{ search_q }}" 
+                 class="form-control" 
+                 placeholder="Zoek op naam of serienummer...">
+              </div>
+            </div>
+
+      <!-- Status Filter -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <select name="status" class="form-select">
+          <option value="">Alle statussen</option>
+          <option value="te_laat" {% if status_filter == 'te_laat' %}selected{% endif %}>Te laat</option>
+          <option value="gepland" {% if status_filter == 'gepland' %}selected{% endif %}>Gepland</option>
+          <option value="goedgekeurd" {% if status_filter == 'goedgekeurd' %}selected{% endif %}>Goedgekeurd</option>
+          <option value="afgekeurd" {% if status_filter == 'afgekeurd' %}selected{% endif %}>Afgekeurd</option>
+        </select>
+      </div>
+
+      <!-- Werf/Location Filter -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <select name="werf" class="form-select">
+          <option value="">Alle werven</option>
+          {% for project in all_projects %}
+          <option value="{{ project.id }}" {% if werf_filter == project.id|string %}selected{% endif %}>
+            {{ project.name }}
+          </option>
+          {% endfor %}
+        </select>
+          </div>
+
+      <!-- Type Filter -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <select name="type" class="form-select">
+          <option value="">Alle types</option>
+          {% for t in types_list %}
+          <option value="{{ t }}" {% if type_filter == t %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+        </div>
+
+      <!-- Performer Filter -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <select name="performer" class="form-select">
+          <option value="">Alle keurders</option>
+          {% for p in performers_list %}
+          <option value="{{ p }}" {% if performer_filter == p %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+        </select>
+      </div>
+
+      <!-- Date Range -->
+      <div class="col-12 col-md-6 col-lg-2">
+        <input type="date" 
+               name="date_from" 
+               value="{{ date_from }}" 
+               class="form-control" 
+               placeholder="Van datum">
+      </div>
+      <div class="col-12 col-md-6 col-lg-2">
+        <input type="date" 
+               name="date_to" 
+               value="{{ date_to }}" 
+               class="form-control" 
+               placeholder="Tot datum">
+      </div>
+
+      <!-- Buttons -->
+      <div class="col-12 col-md-6 col-lg-4">
+        <button type="submit" class="btn btn-primary">Filteren</button>
+        <a href="{{ url_for('keuringen') }}" class="btn btn-outline-secondary">Reset</a>
+        <a href="{{ url_for('keuringen_export', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
+           class="btn btn-outline-primary">
+          📥 Export CSV
+        </a>
+      </div>
+  </div>
+  </form>
+</div>
+
+<!-- C. MAIN TABLE -->
+<div class="card panel" style="margin-top:24px;">
+  <div class="panel-title">Keuringen Lijst</div>
+
   <div class="table-responsive mt-3">
-    <table class="table align-middle">
+    <table class="table align-middle table-hover">
       <thead>
         <tr>
-          <th>Materieel</th>
-          <th>Geplande Datum</th>
-          <th>Uitgevoerd door</th>
-          <th>Opmerking</th>
+          <th>
+            <a href="{{ url_for('keuringen', sort='materieel', order='asc' if sort_by != 'materieel' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
+               class="text-decoration-none text-dark">
+              Materieel
+              {% if sort_by == 'materieel' %}
+                {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>Werf / Locatie</th>
+          <th>
+            <a href="{{ url_for('keuringen', sort='laatste_keuring', order='asc' if sort_by != 'laatste_keuring' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
+               class="text-decoration-none text-dark">
+              Laatste Keuring
+              {% if sort_by == 'laatste_keuring' %}
+                {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="{{ url_for('keuringen', sort='volgende_keuring', order='asc' if sort_by != 'volgende_keuring' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
+               class="text-decoration-none text-dark">
+              Volgende Keuring
+              {% if sort_by == 'volgende_keuring' %}
+                {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>
+            <a href="{{ url_for('keuringen', sort='resultaat', order='asc' if sort_by != 'resultaat' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
+               class="text-decoration-none text-dark">
+              Resultaat
+              {% if sort_by == 'resultaat' %}
+                {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
+              {% endif %}
+            </a>
+          </th>
+          <th>Certificaat</th>
           <th class="text-end">Acties</th>
         </tr>
       </thead>
       <tbody>
-        {% if geplande_keuringen %}
-          {% for keuring in geplande_keuringen %}
-            {% set material = all_materials|selectattr("serial", "equalto", keuring.serienummer)|first %}
-            {% set days_until = (keuring.volgende_controle - today).days if keuring.volgende_controle and today else 0 %}
+        {% if inspection_list and inspection_list|length > 0 %}
+          {% for item in inspection_list %}
+            {% set keuring = item.keuring %}
+            {% set material = item.material %}
             <tr>
               <td>
-                {% if material %}
+                <button type="button"
+                        class="btn btn-link p-0 fw-bold text-start"
+                        style="text-decoration: none; color: inherit;"
+                        onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
                   <strong>{{ material.name or 'Onbekend' }}</strong><br>
-                  <small class="text-muted">{{ keuring.serienummer }}</small>
+                  <small class="text-muted">{{ material.serial }}</small>
+                </button>
+              </td>
+              <td>
+                {% if material.site %}
+                  {{ material.site }}
+                {% elif material.project_id and all_projects %}
+                  {% set matching_project = all_projects|selectattr('id', 'equalto', material.project_id)|first %}
+                  {% if matching_project %}
+                    {{ matching_project.name }}
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
                 {% else %}
-                  <strong>Onbekend materiaal</strong><br>
-                  <small class="text-muted">{{ keuring.serienummer }}</small>
+                  <span class="text-muted">-</span>
                 {% endif %}
               </td>
               <td>
-                {{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '-' }}
-                {% if days_until > 0 %}
-                  <br><small class="text-muted">(over {{ days_until }} dag{% if days_until != 1 %}en{% endif %})</small>
+                {% if keuring.laatste_controle %}
+                  {{ keuring.laatste_controle.strftime('%Y-%m-%d') }}
+                {% else %}
+                  <span class="text-muted">Nog niet uitgevoerd</span>
                 {% endif %}
               </td>
-              <td>{{ keuring.uitgevoerd_door or '-' }}</td>
-              <td>{{ keuring.opmerkingen or '-' }}</td>
+              <td>
+                {% if keuring.volgende_controle %}
+                  {{ keuring.volgende_controle.strftime('%Y-%m-%d') }}
+                  {% if item.dagen_verschil is not none %}
+                    <br>
+                    {% if item.dagen_verschil < 0 %}
+                      <small class="text-danger">({{ -item.dagen_verschil }} dag{% if -item.dagen_verschil != 1 %}en{% endif %} te laat)</small>
+                    {% elif item.dagen_verschil == 0 %}
+                      <small class="text-warning">(Vandaag!)</small>
+                    {% else %}
+                      <small class="text-muted">(over {{ item.dagen_verschil }} dag{% if item.dagen_verschil != 1 %}en{% endif %})</small>
+                    {% endif %}
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if item.status_badge == 'te laat' %}
+                  <span class="badge bg-danger">Te laat</span>
+                {% elif item.status_badge == 'vandaag' %}
+                  <span class="badge bg-warning">Vandaag</span>
+                {% elif item.status_badge == 'binnenkort' %}
+                  <span class="badge" style="background-color: #fd7e14;">Binnenkort</span>
+                {% elif item.status_badge == 'goedgekeurd' %}
+                  <span class="badge bg-success">✓ Goedgekeurd</span>
+                {% elif item.status_badge == 'afgekeurd' %}
+                  <span class="badge bg-danger">✗ Afgekeurd</span>
+                {% else %}
+                  <span class="badge bg-secondary">Gepland</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if item.has_certificate %}
+                  <span class="badge bg-info" title="Certificaat beschikbaar">📄</span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
               <td class="text-end">
+                <div class="btn-group">
+                  {% if not keuring.laatste_controle %}
+                    <!-- Not yet inspected - show "Resultaat registreren" -->
+                    <button type="button" 
+                            class="btn btn-sm btn-primary"
+                            data-bs-toggle="modal"
+                            data-bs-target="#keuringResultaatModal"
+                            onclick="openResultaatModal({{ keuring.id }})">
+                      Resultaat registreren
+                    </button>
                 <button type="button" 
                         class="btn btn-sm btn-outline-secondary"
                         data-bs-toggle="modal"
                         data-bs-target="#bewerkKeuringModal"
                         data-keuring-id="{{ keuring.id }}"
-                        data-serial="{{ keuring.serienummer or '' }}"
+                        data-serial="{{ material.serial }}"
                         data-volgende-datum="{{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '' }}"
-                        data-uitgevoerd-door="{{ keuring.uitgevoerd_door or '' }}"
-                        data-opmerking="{{ keuring.opmerkingen or '' }}"
+                        data-uitgevoerd-door="{{ (keuring.uitgevoerd_door or '')|replace("'", "&#39;") }}"
+                        data-opmerking="{{ (keuring.opmerkingen or '')|replace("'", "&#39;")|replace('"', '&quot;') }}"
                         onclick="openEditKeuringModal(this)">
                   Bewerken
                 </button>
+                  {% else %}
+                    <!-- Already inspected - show "Details" -->
+                    <button type="button" 
+                            class="btn btn-sm btn-outline-secondary"
+                            onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
+                      Details
+                    </button>
+                  {% endif %}
+                </div>
               </td>
             </tr>
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="5" class="text-center text-muted py-4">
-              Nog geen geplande keuringen
+            <td colspan="7" class="text-center text-muted py-4">
+              Geen keuringen gevonden. 
+              {% if search_q or status_filter or werf_filter or type_filter or performer_filter or date_from or date_to %}
+                <a href="{{ url_for('keuringen') }}">Wis filters</a>
+              {% endif %}
             </td>
           </tr>
         {% endif %}
       </tbody>
     </table>
-  </div>
 </div>
 
-<!-- Keuringsoverzicht -->
-<div class="card panel" style="margin-top:24px;">
-  <div class="panel-title">Keuringsoverzicht</div>
-  <div class="panel-sub">Alle uitgevoerde keuringen en inspecties</div>
+  <!-- Pagination -->
+  {% if pagination and pagination.pages > 1 %}
+  <nav aria-label="Keuringen paginatie" class="mt-3">
+    <ul class="pagination justify-content-center">
+      {% if pagination.has_prev %}
+      <li class="page-item">
+        <a class="page-link" href="{{ url_for('keuringen', page=pagination.prev_num, q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter, sort=sort_by, order=sort_order) }}">Vorige</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled">
+        <span class="page-link">Vorige</span>
+      </li>
+      {% endif %}
 
-  <!-- Search and Filter -->
-  <div class="row g-2 align-items-center mt-3 mb-3">
-    <div class="col-12 col-md-8">
-      <div class="input-group">
-        <span class="input-group-text">🔍</span>
-        <input type="text" class="form-control" placeholder="Zoek op materieel of keurder...">
-      </div>
-    </div>
-    <div class="col-12 col-md-4">
-      <select class="form-select">
-        <option>Alle Resultaten</option>
-        <option>Goedgekeurd</option>
-        <option>Afgekeurd</option>
-        <option>Te Keuren</option>
-      </select>
-    </div>
-  </div>
+      {% for page_num in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if page_num %}
+          {% if page_num == pagination.page %}
+          <li class="page-item active">
+            <span class="page-link">{{ page_num }}</span>
+          </li>
+          {% else %}
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('keuringen', page=page_num, q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter, sort=sort_by, order=sort_order) }}">{{ page_num }}</a>
+          </li>
+          {% endif %}
+        {% else %}
+          <li class="page-item disabled">
+            <span class="page-link">…</span>
+          </li>
+        {% endif %}
+      {% endfor %}
 
-  <!-- Table -->
-  <div class="table-responsive">
-    <table class="table align-middle">
-      <thead>
-        <tr>
-          <th>Materieel</th>
-          <th>Keuringsdatum</th>
-          <th>Uitgevoerd door</th>
-          <th>Resultaat</th>
-          <th>Volgende Keuring</th>
-          <th class="text-end">Acties</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>
-            <strong>Boormachine Bosch GBH 2-28</strong><br>
-            <small class="text-muted">BH-2024-001</small>
-          </td>
-          <td>2024-09-15</td>
-          <td>Keuringsinstantie VINÇOTTE</td>
-          <td>
-            <span class="badge bg-dark" style="display: inline-flex; align-items: center; gap: 4px;">
-              <span style="color: #10b981;">✓</span> Goedgekeurd
-            </span>
-          </td>
-          <td>2025-03-15</td>
-          <td class="text-end">
-            <div class="btn-group">
-              <a href="#" class="btn btn-sm btn-outline-secondary">Details bekijken</a>
-              <a href="#" class="btn btn-sm btn-outline-secondary">Certificaat</a>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
+      {% if pagination.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="{{ url_for('keuringen', page=pagination.next_num, q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter, sort=sort_by, order=sort_order) }}">Volgende</a>
+      </li>
+      {% else %}
+      <li class="page-item disabled">
+        <span class="page-link">Volgende</span>
+      </li>
+      {% endif %}
+    </ul>
+  </nav>
+  {% endif %}
 </div>
 
+<!-- MODALS (keep existing modals but improve them) -->
 <!-- Modal: Nieuwe Keuring -->
 <div class="modal fade" id="nieuweKeuringModal" tabindex="-1" aria-labelledby="nieuweKeuringModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-dialog-end modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="nieuweKeuringModalLabel">Nieuwe Keuring Toevoegen</h5>
+        <h5 class="modal-title" id="nieuweKeuringModalLabel">Keuring Plannen</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('keuring_toevoegen') }}">
+      <form method="post" action="{{ url_for('keuring_toevoegen') }}" id="nieuweKeuringForm">
         <div class="modal-body">
+          <div id="nieuweKeuringErrors" class="alert alert-danger" style="display: none;"></div>
           <div class="row g-3">
             <div class="col-md-12">
-              <label class="form-label">Materieel*</label>
+              <label class="form-label">Materieel <span class="text-danger">*</span></label>
               <input name="serial"
                      id="keuring-serial"
                      list="keuring-materiaal-serial"
@@ -224,16 +403,17 @@
             </div>
 
             <div class="col-md-12">
-              <label class="form-label">Keuring Datum*</label>
+              <label class="form-label">Keuring Datum <span class="text-danger">*</span></label>
               <input type="date"
                      name="keuring_datum"
+                     id="keuring-datum"
                      class="form-control"
                      required>
               <small class="text-muted">Datum waarop de keuring plaatsvindt</small>
             </div>
 
             <div class="col-md-12">
-              <label class="form-label">Uitgevoerd door*</label>
+              <label class="form-label">Uitgevoerd door <span class="text-danger">*</span></label>
               <input name="uitgevoerd_door"
                      class="form-control"
                      placeholder="Bv. Keuringsinstantie VINÇOTTE"
@@ -254,7 +434,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
-          <button class="btn btn-primary" type="submit">Keuring Toevoegen</button>
+          <button class="btn btn-primary" type="submit">Opslaan</button>
         </div>
       </form>
     </div>
@@ -273,9 +453,10 @@
       <form method="post" action="{{ url_for('keuring_bewerken') }}" id="bewerkKeuringForm">
         <input type="hidden" name="keuring_id" id="edit-keuring-id">
         <div class="modal-body">
+          <div id="bewerkKeuringErrors" class="alert alert-danger" style="display: none;"></div>
           <div class="row g-3">
             <div class="col-md-12">
-              <label class="form-label">Materieel*</label>
+              <label class="form-label">Materieel</label>
               <input name="serial"
                      id="edit-keuring-serial"
                      class="form-control"
@@ -284,7 +465,7 @@
             </div>
 
             <div class="col-md-12">
-              <label class="form-label">Geplande Datum*</label>
+              <label class="form-label">Geplande Datum <span class="text-danger">*</span></label>
               <input type="date"
                      name="volgende_keuring_datum"
                      id="edit-volgende-keuring-datum"
@@ -294,7 +475,7 @@
             </div>
 
             <div class="col-md-12">
-              <label class="form-label">Uitgevoerd door*</label>
+              <label class="form-label">Uitgevoerd door <span class="text-danger">*</span></label>
               <input name="uitgevoerd_door"
                      id="edit-keuring-uitgevoerd-door"
                      class="form-control"
@@ -316,22 +497,107 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
-          <button class="btn btn-primary" type="submit">Wijzigingen Opslaan</button>
+          <button class="btn btn-primary" type="submit">Opslaan</button>
         </div>
       </form>
     </div>
   </div>
 </div>
 
-<!-- Modal: Materieel Details -->
-<div class="modal fade" id="materieelDetailsModal" tabindex="-1" aria-hidden="true">
+<!-- Modal: Keuring Resultaat Invoeren -->
+<div class="modal fade" id="keuringResultaatModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Resultaat Registreren</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
+        <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
+        <div class="modal-body">
+          <div id="keuringResultaatErrors" class="alert alert-danger" style="display: none;"></div>
+          <div class="row g-3">
+            <div class="col-md-12">
+              <label class="form-label">Resultaat <span class="text-danger">*</span></label>
+              <select name="resultaat" id="resultaat-select" class="form-select" required>
+                <option value="">Selecteer resultaat</option>
+                <option value="goedgekeurd">Goedgekeurd</option>
+                <option value="afgekeurd">Afgekeurd</option>
+                <option value="voorwaardelijk">Voorwaardelijk</option>
+              </select>
+              <small class="text-muted">Wat is het resultaat van de keuring?</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Keuring Datum <span class="text-danger">*</span></label>
+              <input type="date"
+                     name="keuring_datum"
+                     id="resultaat-keuring-datum"
+                     class="form-control"
+                     required>
+              <small class="text-muted">Wanneer is de keuring uitgevoerd?</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Uitgevoerd door <span class="text-danger">*</span></label>
+              <input name="uitgevoerd_door"
+                     id="resultaat-uitgevoerd-door"
+                     class="form-control"
+                     placeholder="Bv. Keuringsinstantie VINÇOTTE"
+                     value="{{ current_user.Naam if current_user else '' }}"
+                     required>
+              <small class="text-muted">Wie heeft de keuring uitgevoerd?</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Volgende Keuring Datum</label>
+              <input type="date"
+                     name="volgende_keuring_datum"
+                     id="resultaat-volgende-keuring-datum"
+                     class="form-control">
+              <small class="text-muted">Wanneer moet de volgende keuring plaatsvinden? (Laat leeg voor standaard 6 maanden)</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Certificaat (optioneel)</label>
+              <input type="file"
+                     name="certificaat"
+                     id="resultaat-certificaat"
+                     class="form-control"
+                     accept=".pdf,.jpg,.jpeg,.png">
+              <small class="text-muted">Upload het keuringscertificaat (PDF of afbeelding, max 10MB)</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Opmerking (optioneel)</label>
+              <textarea name="opmerking"
+                        id="resultaat-opmerking"
+                        class="form-control"
+                        rows="3"
+                        placeholder="Extra informatie over de keuring..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button class="btn btn-primary" type="submit">Opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Materieel Inspectie Historiek -->
+<div class="modal fade" id="materieelInspectieHistoriekModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="true">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="details-material-name">Materieel Details</h5>
+        <h5 class="modal-title" id="historiek-material-name">Materieel Inspectie Historiek</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
-      <div class="modal-body" id="materieelDetailsBody">
+      <div class="modal-body" id="materieelInspectieHistoriekBody">
         <div class="text-center">
           <div class="spinner-border" role="status">
             <span class="visually-hidden">Laden...</span>
@@ -340,153 +606,153 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
-        <a href="#" id="details-edit-link" class="btn btn-primary" style="display: none;">Bewerken</a>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-// Function to show material details
-window.showMaterialDetails = function(serial, usageId) {
-  const modal = new bootstrap.Modal(document.getElementById('materieelDetailsModal'));
-  const modalBody = document.getElementById('materieelDetailsBody');
-  const modalTitle = document.getElementById('details-material-name');
-  const editLink = document.getElementById('details-edit-link');
+// Cleanup modals
+function cleanupModals() {
+  const backdrops = document.querySelectorAll('.modal-backdrop');
+  backdrops.forEach(backdrop => backdrop.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.overflow = '';
+  document.body.style.paddingRight = '';
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  cleanupModals();
+  const allModals = document.querySelectorAll('.modal');
+  allModals.forEach(modal => {
+    modal.addEventListener('hidden.bs.modal', function() {
+      cleanupModals();
+    });
+  });
+});
+
+// Show material inspection history
+window.showMaterialInspectionHistory = function(serial, materialId) {
+  const modal = new bootstrap.Modal(document.getElementById('materieelInspectieHistoriekModal'));
+  const modalBody = document.getElementById('materieelInspectieHistoriekBody');
+  const modalTitle = document.getElementById('historiek-material-name');
   
   modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
   modal.show();
   
+  // Fetch material info and history
   fetch(`/api/search?q=${encodeURIComponent(serial)}`)
-    .then(response => {
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
-      if (data.error) {
-        throw new Error(data.error);
+      if (data.error || !data.items || data.items.length === 0) {
+        modalBody.innerHTML = '<div class="alert alert-warning">Materieel niet gevonden.</div>';
+        return;
       }
-      if (data.items && data.items.length > 0) {
-        const item = data.items[0];
-        const isInUse = item.status === 'in gebruik';
-        const statusClass = isInUse ? 'bg-success' : 'bg-danger';
-        const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
-        
-        // Keuring: based on original status (goedgekeurd/afgekeurd/keuring verlopen/keuring gepland)
-        // If status is "in gebruik", check inspection_status for the original keuring status
-        let keuringStatus = item.status;
-        if (item.status === 'in gebruik' && item.inspection_status) {
-          keuringStatus = item.inspection_status;
-        }
-        
-        // Determine badge class and text based on keuring status
-        let keuringClass = 'bg-secondary';
-        let keuringText = 'Onbekend';
-        
-        if (keuringStatus === 'goedgekeurd') {
-          keuringClass = 'bg-success';
-          keuringText = 'Goedgekeurd';
-        } else if (keuringStatus === 'afgekeurd') {
-          keuringClass = 'bg-danger';
-          keuringText = 'Afgekeurd';
-        } else if (keuringStatus === 'keuring verlopen') {
-          keuringClass = 'bg-warning';
-          keuringText = 'Keuring verlopen';
-        } else if (keuringStatus === 'keuring gepland') {
-          keuringClass = '';
-          keuringText = 'Keuring gepland';
-        } else if (item.status === 'in gebruik') {
-          // Default to goedgekeurd when in gebruik and no inspection_status
-          keuringClass = 'bg-success';
-          keuringText = 'Goedgekeurd';
-        }
-        
-        // Create badge HTML for keuring status (white background with colored border and black text)
-        let keuringBadgeHtml = '';
-        let badgeStyle = '';
-        
-        if (keuringStatus === 'goedgekeurd') {
-          badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
-        } else if (keuringStatus === 'afgekeurd') {
-          badgeStyle = 'background-color: white; color: #212529; border: 1px solid #dc3545;';
-        } else if (keuringStatus === 'keuring verlopen') {
-          badgeStyle = 'background-color: white; color: #212529; border: 1px solid #ffc107;';
-        } else if (keuringStatus === 'keuring gepland') {
-          badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
+      
+      const material = data.items[0];
+      modalTitle.textContent = `${material.name || 'Onbekend'} - Inspectie Historiek`;
+      
+      // Fetch inspection history
+      fetch(`/api/keuring/historiek/${materialId}`)
+        .then(response => response.json())
+        .then(historyData => {
+          // Determine status badge
+          let statusBadgeClass = 'bg-secondary';
+          let statusText = historyData.inspection_status || 'Onbekend';
+          if (statusText === 'goedgekeurd') {
+            statusBadgeClass = 'bg-success';
+          } else if (statusText === 'afgekeurd') {
+            statusBadgeClass = 'bg-danger';
+          } else if (statusText === 'keuring verlopen' || statusText === 'keuring gepland') {
+            statusBadgeClass = 'bg-warning';
+          }
+          
+          // Calculate next inspection info
+          let volgendeKeuringHtml = '';
+          if (historyData.volgende_keuring_datum) {
+            const dagen = historyData.dagen_verschil;
+            if (dagen !== null && dagen !== undefined) {
+              if (dagen < 0) {
+                volgendeKeuringHtml = `<br><small class="text-danger">⚠️ ${Math.abs(dagen)} dag${Math.abs(dagen) !== 1 ? 'en' : ''} te laat</small>`;
+              } else if (dagen === 0) {
+                volgendeKeuringHtml = `<br><small class="text-warning">⚠️ Vandaag!</small>`;
+              } else if (dagen <= 30) {
+                volgendeKeuringHtml = `<br><small class="text-warning">⚠️ Nog ${dagen} dag${dagen !== 1 ? 'en' : ''} tot volgende keuring</small>`;
         } else {
-          // Default to goedgekeurd style
-          badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
-        }
-        
-        if (item.keuring_gepland) {
-          keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
-        } else {
-          keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">${escapeHtml(keuringText)}</span>`;
-        }
-        
-        const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
-        
-        modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
-        
-        modalBody.innerHTML = `
-          <div class="material-detail">
+                volgendeKeuringHtml = `<br><small class="text-muted">Nog ${dagen} dag${dagen !== 1 ? 'en' : ''} tot volgende keuring</small>`;
+              }
+            }
+          }
+          
+          let historyHtml = `
             <div class="mb-3">
-              <strong>Serienummer:</strong> ${displayValue(item.serial)}
+              <strong>Serienummer:</strong> ${escapeHtml(material.serial || '')}<br>
+              <strong>Type:</strong> ${escapeHtml(material.type || '')}<br>
+              <strong>Locatie:</strong> ${escapeHtml(material.site || '-')}
             </div>
-            <div class="row g-3 mb-3">
-              <div class="col-md-6">
-                <strong>Type:</strong><br>
-                ${displayValue(item.type)}
+            <hr>
+            <h6>Huidige Status</h6>
+            <div class="mb-3">
+              <span class="badge ${statusBadgeClass}">
+                ${escapeHtml(statusText)}
+              </span>
+              ${historyData.volgende_keuring_datum ? `
+                <div class="mt-2">
+                  <strong>Volgende keuring:</strong> ${escapeHtml(historyData.volgende_keuring_datum)}
+                  ${volgendeKeuringHtml}
               </div>
-              <div class="col-md-6">
-                <strong>Status:</strong><br>
-                <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
-              </div>
-              <div class="col-md-6">
-                <strong>Keuring:</strong><br>
-                ${keuringBadgeHtml}
-                ${item.laatste_keuring ? `
-                  <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
                 ` : ''}
               </div>
-              <div class="col-md-6">
-                <strong>Toegewezen aan:</strong><br>
-                ${displayValue(item.assigned_to)}
+            <hr>
+            <h6>Inspectie Historiek</h6>
+          `;
+          
+          if (historyData.historiek && historyData.historiek.length > 0) {
+            historyHtml += '<div class="list-group">';
+            historyData.historiek.forEach(hist => {
+              const resultaatBadge = hist.resultaat === 'goedgekeurd' ? 'bg-success' : 
+                                     hist.resultaat === 'afgekeurd' ? 'bg-danger' : 'bg-warning';
+              historyHtml += `
+                <div class="list-group-item">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <strong>${escapeHtml(hist.keuring_datum || '')}</strong>
+                      <span class="badge ${resultaatBadge} ms-2">${escapeHtml(hist.resultaat || '')}</span>
+                      <br>
+                      <small class="text-muted">
+                        Uitgevoerd door: ${escapeHtml(hist.uitgevoerd_door || '')}
+                        ${hist.volgende_keuring_datum ? ` | Volgende: ${escapeHtml(hist.volgende_keuring_datum)}` : ''}
+                      </small>
+                      ${hist.opmerkingen ? `<br><small>${escapeHtml(hist.opmerkingen)}</small>` : ''}
+                      ${hist.certificaat_path ? `
+                        <br><a href="/static/${escapeHtml(hist.certificaat_path)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+                          📄 Certificaat
+                        </a>
+                      ` : ''}
               </div>
-              <div class="col-md-6">
-                <strong>Werf:</strong><br>
-                ${displayValue(item.site)}
-              </div>
-              <div class="col-md-6">
-                <strong>Aankoopdatum:</strong><br>
-                ${displayValue(item.purchase_date)}
-              </div>
-            </div>
-            <div class="mb-3">
-              <strong>Opmerking:</strong><br>
-              ${displayValue(item.note)}
             </div>
           </div>
         `;
-        
-        // Set edit link
-        if (editLink) {
-          editLink.href = `/materiaal?q=${encodeURIComponent(item.serial)}`;
-          editLink.style.display = 'inline-block';
-        }
+            });
+            historyHtml += '</div>';
       } else {
-        modalBody.innerHTML = '<div class="alert alert-warning">Item niet gevonden.</div>';
-      }
+            historyHtml += '<p class="text-muted">Nog geen inspectie historiek beschikbaar.</p>';
+          }
+          
+          modalBody.innerHTML = historyHtml;
+        })
+        .catch(error => {
+          console.error('Error loading history:', error);
+          modalBody.innerHTML = '<div class="alert alert-danger">Fout bij laden historiek.</div>';
+        });
     })
     .catch(error => {
-      console.error('Error loading material detail:', error);
-      modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
+      console.error('Error loading material:', error);
+      modalBody.innerHTML = '<div class="alert alert-danger">Fout bij laden materiaal.</div>';
     });
 };
 
-  // Function to open edit keuring modal
+// Open edit modal
   window.openEditKeuringModal = function(button) {
     const keuringId = button.getAttribute('data-keuring-id');
     const serial = button.getAttribute('data-serial') || '';
@@ -495,10 +761,23 @@ window.showMaterialDetails = function(serial, usageId) {
     const opmerking = button.getAttribute('data-opmerking') || '';
     
     document.getElementById('edit-keuring-id').value = keuringId || '';
-    document.getElementById('edit-keuring-serial').value = serial;
-    document.getElementById('edit-volgende-keuring-datum').value = volgendeDatum;
-    document.getElementById('edit-keuring-uitgevoerd-door').value = uitgevoerdDoor;
-    document.getElementById('edit-keuring-opmerking').value = opmerking;
+  document.getElementById('edit-keuring-serial').value = serial || '';
+  document.getElementById('edit-volgende-keuring-datum').value = volgendeDatum || '';
+  document.getElementById('edit-keuring-uitgevoerd-door').value = uitgevoerdDoor || '';
+  document.getElementById('edit-keuring-opmerking').value = opmerking || '';
+};
+
+// Open resultaat modal
+window.openResultaatModal = function(keuringId) {
+  document.getElementById('resultaat-keuring-id').value = keuringId || '';
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('resultaat-keuring-datum').value = today;
+  
+  // Set default volgende keuring (6 maanden later)
+  const sixMonthsLater = new Date();
+  sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
+  const nextDate = sixMonthsLater.toISOString().split('T')[0];
+  document.getElementById('resultaat-volgende-keuring-datum').value = nextDate;
   };
 
   function escapeHtml(text) {
@@ -510,7 +789,7 @@ window.showMaterialDetails = function(serial, usageId) {
     '"': '&quot;',
     "'": '&#039;'
   };
-  return text.replace(/[&<>"']/g, m => map[m]);
+  return text.toString().replace(/[&<>"']/g, m => map[m]);
 }
 </script>
 
