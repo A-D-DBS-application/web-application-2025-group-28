@@ -255,14 +255,12 @@ class MaterialType(db.Model):
     """
     Map naar Supabase tabel 'material_types'
     Referentietabel met alle mogelijke materiaal types
+    Kolommen: id, created_at, name, description, inspection_validity_days
     """
     __tablename__ = "material_types"
     
     id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
-    
-    # Kolomnaam kan variëren, probeer verschillende mogelijkheden
-    # Meest waarschijnlijk: name, type, of material_type
-    name = db.Column(db.String, nullable=True)
-    type = db.Column(db.String, nullable=True)
-    material_type = db.Column(db.String, nullable=True)
+    name = db.Column(db.String, nullable=False)  # De naam van het materiaal type (bijv. "Boormachine")
+    description = db.Column(db.Text, nullable=True)
+    inspection_validity_days = db.Column(db.Integer, nullable=True)
