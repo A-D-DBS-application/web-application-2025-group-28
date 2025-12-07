@@ -16,7 +16,7 @@ import os
 from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, MaterialType
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, MaterialType, Document
 from sqlalchemy import or_, func, and_
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -2736,6 +2736,24 @@ def documenten():
         [d for d in documents if d["type"] == "Veiligheidscertificaat"]
     )
     
+    # Get unique material types for the datalist
+    # Combine types from: material_types table, materials table, and existing safety sheets
+    material_types_list = []
+    
+    # From MaterialType table
+    material_types_from_table = MaterialType.query.with_entities(MaterialType.name).distinct().all()
+    material_types_list.extend([mt[0] for mt in material_types_from_table if mt[0]])
+    
+    # From Material table (existing materials)
+    material_types_from_materials = db.session.query(Material.type).filter(
+        Material.type.isnot(None),
+        Material.type != ""
+    ).distinct().all()
+    material_types_list.extend([mt[0] for mt in material_types_from_materials if mt[0] and mt[0] not in material_types_list])
+    
+    # Remove duplicates and sort
+    material_types_list = sorted(list(set(material_types_list)))
+    
     return render_template(
         "documenten.html",
         documents=documents,
@@ -2743,7 +2761,75 @@ def documenten():
         safety_certs=safety_certs,
         search_query=q,
         selected_type=doc_type,
+        all_materials=all_materials,
+        material_types_list=material_types_list,
     )
+
+
+@app.route("/documenten/upload", methods=["POST"])
+@login_required
+def documenten_upload():
+    """Handle document upload"""
+    document_file = request.files.get("document_file")
+    document_type = (request.form.get("document_type") or "").strip()
+    material_id = request.form.get("material_id")
+    material_type = (request.form.get("material_type") or "").strip()
+    note = (request.form.get("note") or "").strip()
+    
+    if not document_file or not document_file.filename:
+        flash("Geen bestand geselecteerd.", "danger")
+        return redirect(url_for("documenten"))
+    
+    if not document_type:
+        flash("Document type is verplicht.", "danger")
+        return redirect(url_for("documenten"))
+    
+    # Get user info
+    user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    uploaded_by = g.user.Naam if getattr(g, "user", None) else "Onbekend"
+    
+    # Determine upload folder based on document type
+    if document_type == "Veiligheidsfiche":
+        upload_folder = app.config["SAFETY_UPLOAD_FOLDER"]
+        prefix = f"safety_{material_type or 'generic'}"
+    else:
+        upload_folder = app.config["DOC_UPLOAD_FOLDER"]
+        if material_id:
+            material = Material.query.get(material_id)
+            prefix = f"{material.serial}_doc" if material else "doc"
+        else:
+            prefix = "doc"
+    
+    # Save the file
+    file_path = save_upload(document_file, upload_folder, prefix)
+    if not file_path:
+        flash("Fout bij het uploaden van het bestand.", "danger")
+        return redirect(url_for("documenten"))
+    
+    # Get file size
+    file_size = None
+    if document_file.content_length:
+        file_size = document_file.content_length
+    
+    # Create Document record
+    new_document = Document(
+        document_type=document_type,
+        file_path=file_path,
+        file_name=document_file.filename,
+        file_size=file_size,
+        material_id=int(material_id) if material_id else None,
+        material_type=material_type if material_type else None,
+        uploaded_by=uploaded_by,
+        user_id=user_id,
+        note=note if note else None,
+    )
+    
+    db.session.add(new_document)
+    db.session.commit()
+    
+    flash(f"Document '{document_file.filename}' is succesvol geüpload.", "success")
+    log_activity_db("Document toegevoegd", document_file.filename, "")
+    return redirect(url_for("documenten"))
 
 
 # -----------------------------------------------------
