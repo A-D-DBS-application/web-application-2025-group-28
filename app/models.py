@@ -203,3 +203,64 @@ class KeuringHistoriek(db.Model):
     
     # Relatie naar Material
     material = db.relationship("Material", backref="keuring_historiek")
+
+
+class Document(db.Model):
+    """
+    Map naar Supabase tabel 'documenten'
+    
+    Deze tabel slaat alle documenten op die geüpload worden via de documenten pagina.
+    Document types: Aankoopfactuur, Keuringstatus, Verkoopfactuur, Veiligheidsfiche
+    
+    Als type = 'Veiligheidsfiche', dan is material_id NULL maar material_type verplicht (gelinked aan materiaal TYPE)
+    Als type != 'Veiligheidsfiche', dan is material_id verplicht (gelinked aan specifiek materiaal)
+    
+    Kolommen in Supabase:
+    id, created_at, document_type, file_path, file_name, file_size,
+    material_id, material_type, uploaded_by, user_id, note
+    """
+    __tablename__ = "documenten"
+
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    
+    document_type = db.Column("document_type", db.String, nullable=False)
+    file_path = db.Column("file_path", db.Text, nullable=False)
+    file_name = db.Column("file_name", db.Text, nullable=False)
+    file_size = db.Column("file_size", db.BigInteger, nullable=True)
+    
+    material_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("materials.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    
+    material_type = db.Column("material_type", db.String, nullable=True)
+    
+    uploaded_by = db.Column("uploaded_by", db.String, nullable=True)
+    user_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("Gebruiker.gebruiker_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    
+    note = db.Column("note", db.Text, nullable=True)
+    
+    # Relaties
+    material = db.relationship("Material", backref="documenten")
+    user = db.relationship("Gebruiker", backref="documenten")
+
+
+class MaterialType(db.Model):
+    """
+    Map naar Supabase tabel 'material_types'
+    Referentietabel met alle mogelijke materiaal types
+    Kolommen: id, created_at, name, description, inspection_validity_days
+    """
+    __tablename__ = "material_types"
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    name = db.Column(db.String, nullable=False)  # De naam van het materiaal type (bijv. "Boormachine")
+    description = db.Column(db.Text, nullable=True)
+    inspection_validity_days = db.Column(db.Integer, nullable=True)

@@ -6,6 +6,11 @@
     <h2 class="h-title">Documenten</h2>
     <div class="h-sub">Overzicht van alle documenten en veiligheidscertificaten</div>
   </div>
+  <div>
+    <button type="button" class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#uploadDocumentModal">
+      ➕ Document toevoegen
+    </button>
+  </div>
 </div>
 
 <!-- Search and Filter -->
@@ -48,25 +53,25 @@
          class="btn btn-sm {% if not selected_type or selected_type == 'alle' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
         Alle
       </a>
+      <a href="{{ url_for('documenten', q=search_query, type='Aankoopfactuur') }}" 
+         class="btn btn-sm {% if selected_type == 'Aankoopfactuur' or selected_type == 'aankoopfactuur' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Aankoopfactuur
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='Keuringstatus') }}" 
+         class="btn btn-sm {% if selected_type == 'Keuringstatus' or selected_type == 'keuringscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Keuringstatus
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='Verkoopfactuur') }}" 
+         class="btn btn-sm {% if selected_type == 'Verkoopfactuur' or selected_type == 'verkoopfactuur' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Verkoopfactuur
+      </a>
+      <a href="{{ url_for('documenten', q=search_query, type='Veiligheidsfiche') }}" 
+         class="btn btn-sm {% if selected_type == 'Veiligheidsfiche' or selected_type == 'veiligheidsfiche' or selected_type == 'veiligheidscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+        Veiligheidsfiche
+      </a>
       <a href="{{ url_for('documenten', q=search_query, type='handleiding') }}" 
          class="btn btn-sm {% if selected_type == 'handleiding' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
         Handleiding
-      </a>
-      <a href="{{ url_for('documenten', q=search_query, type='keuringscertificaat') }}" 
-         class="btn btn-sm {% if selected_type == 'keuringscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-        Keuringscertificaat
-      </a>
-      <a href="{{ url_for('documenten', q=search_query, type='aankoopfactuur') }}" 
-         class="btn btn-sm {% if selected_type == 'aankoopfactuur' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-        Aankoopfactuur
-      </a>
-      <a href="{{ url_for('documenten', q=search_query, type='servicerapport') }}" 
-         class="btn btn-sm {% if selected_type == 'servicerapport' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-        Servicerapport
-      </a>
-      <a href="{{ url_for('documenten', q=search_query, type='veiligheidscertificaat') }}" 
-         class="btn btn-sm {% if selected_type == 'veiligheidscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-        Veiligheidscertificaat
       </a>
       <a href="{{ url_for('documenten', q=search_query, type='overige') }}" 
          class="btn btn-sm {% if selected_type == 'overige' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
@@ -138,6 +143,108 @@
     </div>
   {% endif %}
 </div>
+
+<!-- Upload Document Modal -->
+<div class="modal fade" id="uploadDocumentModal" tabindex="-1" aria-labelledby="uploadDocumentModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="uploadDocumentModalLabel">Document toevoegen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{{ url_for('documenten_upload') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="document_file" class="form-label">Bestand <span class="text-danger">*</span></label>
+            <input type="file" class="form-control" id="document_file" name="document_file" required accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+            <small class="form-text text-muted">Ondersteunde formaten: PDF, JPG, PNG, DOC, DOCX</small>
+          </div>
+
+          <div class="mb-3">
+            <label for="document_type" class="form-label">Document type <span class="text-danger">*</span></label>
+            <select class="form-select" id="document_type" name="document_type" required>
+              <option value="">Selecteer type...</option>
+              <option value="Aankoopfactuur">Aankoopfactuur</option>
+              <option value="Keuringstatus">Keuringstatus</option>
+              <option value="Verkoopfactuur">Verkoopfactuur</option>
+              <option value="Veiligheidsfiche">Veiligheidsfiche</option>
+            </select>
+          </div>
+
+          <div class="mb-3" id="material_select_container" style="display: none;">
+            <label for="material_id" class="form-label">Materieel <span class="text-danger">*</span></label>
+            <select class="form-select" id="material_id" name="material_id">
+              <option value="">Selecteer materieel...</option>
+              {% for material in all_materials %}
+                <option value="{{ material.id }}">{{ material.name }} ({{ material.serial }})</option>
+              {% endfor %}
+            </select>
+            <small class="form-text text-muted">Verplicht voor aankoopfactuur, Keuringstatus en verkoopfactuur</small>
+          </div>
+
+          <div class="mb-3" id="material_type_select_container" style="display: none;">
+            <label for="material_type" class="form-label">Materiaal Type <span class="text-danger">*</span></label>
+            <input 
+              type="text" 
+              class="form-control" 
+              id="material_type" 
+              name="material_type" 
+              list="material_types_datalist"
+              placeholder="Type of selecteer materiaal type..."
+              required
+            >
+            <datalist id="material_types_datalist">
+              {% for mat_type in material_types_list %}
+                <option value="{{ mat_type }}">{{ mat_type }}</option>
+              {% endfor %}
+            </datalist>
+            <small class="form-text text-muted">
+              Verplicht voor Veiligheidsfiche - selecteer uit de lijst of typ een nieuw materiaal type (bijv. "Boormachine", "Compressor").
+              <br>De lijst wordt automatisch aangevuld met bestaande types uit materialen en veiligheidsfiches.
+            </small>
+          </div>
+
+          <div class="mb-3">
+            <label for="note" class="form-label">Opmerking (optioneel)</label>
+            <textarea class="form-control" id="note" name="note" rows="3" placeholder="Optionele opmerkingen..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-dark">Uploaden</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Toon/verberg materiaal selectie op basis van document type
+  document.getElementById('document_type').addEventListener('change', function() {
+    const materialContainer = document.getElementById('material_select_container');
+    const materialSelect = document.getElementById('material_id');
+    const materialTypeContainer = document.getElementById('material_type_select_container');
+    const materialTypeSelect = document.getElementById('material_type');
+    
+    if (this.value === 'Veiligheidsfiche') {
+      // Voor Veiligheidsfiche: toon materiaal TYPE selectie
+      materialContainer.style.display = 'none';
+      materialSelect.removeAttribute('required');
+      materialSelect.value = '';
+      
+      materialTypeContainer.style.display = 'block';
+      materialTypeSelect.setAttribute('required', 'required');
+    } else {
+      // Voor andere types: toon specifiek materiaal selectie
+      materialContainer.style.display = 'block';
+      materialSelect.setAttribute('required', 'required');
+      
+      materialTypeContainer.style.display = 'none';
+      materialTypeSelect.removeAttribute('required');
+      materialTypeSelect.value = '';
+    }
+  });
+</script>
 
 {% endblock %}
 
