@@ -182,6 +182,28 @@
             <small class="form-text text-muted">Verplicht voor aankoopfactuur, Keuringstatus en verkoopfactuur</small>
           </div>
 
+          <div class="mb-3" id="material_type_select_container" style="display: none;">
+            <label for="material_type" class="form-label">Materiaal Type <span class="text-danger">*</span></label>
+            <input 
+              type="text" 
+              class="form-control" 
+              id="material_type" 
+              name="material_type" 
+              list="material_types_datalist"
+              placeholder="Type of selecteer materiaal type..."
+              required
+            >
+            <datalist id="material_types_datalist">
+              {% for mat_type in material_types_list %}
+                <option value="{{ mat_type }}">{{ mat_type }}</option>
+              {% endfor %}
+            </datalist>
+            <small class="form-text text-muted">
+              Verplicht voor Veiligheidsfiche - selecteer uit de lijst of typ een nieuw materiaal type (bijv. "Boormachine", "Compressor").
+              <br>De lijst wordt automatisch aangevuld met bestaande types uit materialen en veiligheidsfiches.
+            </small>
+          </div>
+
           <div class="mb-3">
             <label for="note" class="form-label">Opmerking (optioneel)</label>
             <textarea class="form-control" id="note" name="note" rows="3" placeholder="Optionele opmerkingen..."></textarea>
@@ -201,14 +223,25 @@
   document.getElementById('document_type').addEventListener('change', function() {
     const materialContainer = document.getElementById('material_select_container');
     const materialSelect = document.getElementById('material_id');
+    const materialTypeContainer = document.getElementById('material_type_select_container');
+    const materialTypeSelect = document.getElementById('material_type');
     
     if (this.value === 'Veiligheidsfiche') {
+      // Voor Veiligheidsfiche: toon materiaal TYPE selectie
       materialContainer.style.display = 'none';
       materialSelect.removeAttribute('required');
       materialSelect.value = '';
+      
+      materialTypeContainer.style.display = 'block';
+      materialTypeSelect.setAttribute('required', 'required');
     } else {
+      // Voor andere types: toon specifiek materiaal selectie
       materialContainer.style.display = 'block';
       materialSelect.setAttribute('required', 'required');
+      
+      materialTypeContainer.style.display = 'none';
+      materialTypeSelect.removeAttribute('required');
+      materialTypeSelect.value = '';
     }
   });
 </script>

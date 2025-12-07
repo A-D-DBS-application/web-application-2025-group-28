@@ -212,12 +212,12 @@ class Document(db.Model):
     Deze tabel slaat alle documenten op die geüpload worden via de documenten pagina.
     Document types: Aankoopfactuur, Keuringstatus, Verkoopfactuur, Veiligheidsfiche
     
-    Als type = 'Veiligheidsfiche', dan is material_id NULL (niet gelinked aan materiaal)
-    Als type != 'Veiligheidsfiche', dan is material_id verplicht (gelinked aan materiaal)
+    Als type = 'Veiligheidsfiche', dan is material_id NULL maar material_type verplicht (gelinked aan materiaal TYPE)
+    Als type != 'Veiligheidsfiche', dan is material_id verplicht (gelinked aan specifiek materiaal)
     
     Kolommen in Supabase:
     id, created_at, document_type, file_path, file_name, file_size,
-    material_id, uploaded_by, user_id, note
+    material_id, material_type, uploaded_by, user_id, note
     """
     __tablename__ = "documenten"
 
@@ -235,6 +235,8 @@ class Document(db.Model):
         nullable=True,
     )
     
+    material_type = db.Column("material_type", db.String, nullable=True)
+    
     uploaded_by = db.Column("uploaded_by", db.String, nullable=True)
     user_id = db.Column(
         db.BigInteger,
@@ -247,3 +249,20 @@ class Document(db.Model):
     # Relaties
     material = db.relationship("Material", backref="documenten")
     user = db.relationship("Gebruiker", backref="documenten")
+
+
+class MaterialType(db.Model):
+    """
+    Map naar Supabase tabel 'material_types'
+    Referentietabel met alle mogelijke materiaal types
+    """
+    __tablename__ = "material_types"
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    
+    # Kolomnaam kan variëren, probeer verschillende mogelijkheden
+    # Meest waarschijnlijk: name, type, of material_type
+    name = db.Column(db.String, nullable=True)
+    type = db.Column(db.String, nullable=True)
+    material_type = db.Column(db.String, nullable=True)

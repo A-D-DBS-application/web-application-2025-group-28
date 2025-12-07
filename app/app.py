@@ -16,7 +16,7 @@ import os
 from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, Document
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, Document, MaterialType
 from sqlalchemy import or_, func, and_
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -2650,24 +2650,78 @@ def documenten():
     doc_type = (request.args.get("type") or "").strip().lower()
     
     all_materials = Material.query.all()
+    
+    # Haal unieke materiaal types op voor Veiligheidsfiche dropdown
+    # Combineer types uit: material_types tabel, materials tabel, en bestaande veiligheidsfiche documenten
+    all_types = set()
+    
+    # 1. Haal types op uit material_types tabel (referentietabel)
+    try:
+        material_types_from_table = MaterialType.query.all()
+        for mt in material_types_from_table:
+            # Probeer verschillende kolomnamen
+            type_value = mt.name or mt.type or mt.material_type
+            if type_value:
+                all_types.add(type_value)
+    except Exception:
+        # Als tabel niet bestaat of kolomnamen anders zijn, skip dit
+        pass
+    
+    # 2. Haal types op uit materials tabel
+    unique_material_types_from_materials = (
+        db.session.query(Material.type)
+        .filter(Material.type.isnot(None))
+        .filter(Material.type != "")
+        .distinct()
+        .all()
+    )
+    for t in unique_material_types_from_materials:
+        if t[0]:
+            all_types.add(t[0])
+    
+    # 3. Haal types op uit bestaande veiligheidsfiche documenten
+    try:
+        unique_material_types_from_docs = (
+            db.session.query(Document.material_type)
+            .filter(Document.document_type == "Veiligheidsfiche")
+            .filter(Document.material_type.isnot(None))
+            .filter(Document.material_type != "")
+            .distinct()
+            .all()
+        )
+        for t in unique_material_types_from_docs:
+            if t[0]:
+                all_types.add(t[0])
+    except Exception:
+        # Als tabel nog niet bestaat, skip dit
+        pass
+    
+    material_types_list = sorted(list(all_types))
+    
     documents = []
     
     # Haal documenten op uit de nieuwe documenten tabel
-    query_docs = Document.query
-    
-    # Filter op document type als opgegeven
-    if doc_type and doc_type != "alle":
-        # Map oude type namen naar nieuwe
-        type_mapping = {
-            "aankoopfactuur": "Aankoopfactuur",
-            "keuringscertificaat": "Keuringstatus",
-            "verkoopfactuur": "Verkoopfactuur",
-            "veiligheidscertificaat": "Veiligheidsfiche",
-        }
-        if doc_type in type_mapping:
-            query_docs = query_docs.filter(Document.document_type == type_mapping[doc_type])
-    
-    all_documents = query_docs.order_by(Document.created_at.desc()).all()
+    # Gebruik try/except voor het geval de tabel nog niet bestaat in Supabase
+    try:
+        query_docs = Document.query
+        
+        # Filter op document type als opgegeven
+        if doc_type and doc_type != "alle":
+            # Map oude type namen naar nieuwe
+            type_mapping = {
+                "aankoopfactuur": "Aankoopfactuur",
+                "keuringscertificaat": "Keuringstatus",
+                "verkoopfactuur": "Verkoopfactuur",
+                "veiligheidscertificaat": "Veiligheidsfiche",
+            }
+            if doc_type in type_mapping:
+                query_docs = query_docs.filter(Document.document_type == type_mapping[doc_type])
+        
+        all_documents = query_docs.order_by(Document.created_at.desc()).all()
+    except Exception as e:
+        # Als de tabel nog niet bestaat, gebruik lege lijst
+        print(f"Let op: Documenten tabel bestaat nog niet in Supabase. Voer supabase_documenten.sql uit. Error: {e}")
+        all_documents = []
     
     # Converteer Document objecten naar dict formaat
     for doc in all_documents:
@@ -2676,6 +2730,10 @@ def documenten():
         if doc.material:
             material_name = doc.material.name or "Onbekend"
             material_serial = doc.material.serial or "-"
+        elif doc.material_type:
+            # Voor Veiligheidsfiche: toon materiaal type
+            material_name = doc.material_type
+            material_serial = "Type"
         
         # Format file size
         file_size_str = "Onbekend"
@@ -2779,6 +2837,7 @@ def documenten():
         search_query=q,
         selected_type=doc_type,
         all_materials=all_materials,
+        material_types_list=material_types_list,
     )
 
 
@@ -2786,9 +2845,18 @@ def documenten():
 @login_required
 def documenten_upload():
     """Upload een nieuw document"""
+    # Check of de documenten tabel bestaat
+    try:
+        # Test of we kunnen queryen op Document
+        Document.query.limit(1).all()
+    except Exception as e:
+        flash("De documenten tabel bestaat nog niet in Supabase. Voer eerst het SQL script uit (supabase_documenten.sql).", "danger")
+        return redirect(url_for("documenten"))
+    
     document_file = request.files.get("document_file")
     document_type = (request.form.get("document_type") or "").strip()
     material_id_str = (request.form.get("material_id") or "").strip()
+    material_type_str = (request.form.get("material_type") or "").strip()
     note = (request.form.get("note") or "").strip()
     
     # Validatie
@@ -2806,9 +2874,16 @@ def documenten_upload():
         flash("Ongeldig document type.", "danger")
         return redirect(url_for("documenten"))
     
-    # Als type niet Veiligheidsfiche is, moet material_id aanwezig zijn
+    # Als type Veiligheidsfiche is, moet material_type aanwezig zijn
     material_id = None
-    if document_type != "Veiligheidsfiche":
+    material_type = None
+    if document_type == "Veiligheidsfiche":
+        if not material_type_str:
+            flash("Materiaal type is verplicht voor Veiligheidsfiche.", "danger")
+            return redirect(url_for("documenten"))
+        material_type = material_type_str
+    else:
+        # Voor andere types: material_id is verplicht
         if not material_id_str:
             flash("Materieel is verplicht voor dit document type.", "danger")
             return redirect(url_for("documenten"))
@@ -2849,6 +2924,7 @@ def documenten_upload():
         file_name=filename,
         file_size=file_size,
         material_id=material_id,
+        material_type=material_type,
         uploaded_by=user_name,
         user_id=user_id,
         note=note if note else None,

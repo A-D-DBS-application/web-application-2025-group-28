@@ -3,8 +3,8 @@
 -- ============================================
 -- Deze tabel slaat alle documenten op die geüpload worden via de documenten pagina
 -- Document types: Aankoopfactuur, Keuringstatus, Verkoopfactuur, Veiligheidsfiche
--- Als type = 'Veiligheidsfiche', dan is material_id NULL (niet gelinked aan materiaal)
--- Als type != 'Veiligheidsfiche', dan is material_id verplicht (gelinked aan materiaal)
+-- Als type = 'Veiligheidsfiche', dan is material_id NULL maar material_type verplicht (gelinked aan materiaal TYPE)
+-- Als type != 'Veiligheidsfiche', dan is material_id verplicht (gelinked aan specifiek materiaal)
 
 CREATE TABLE IF NOT EXISTS public.documenten (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -20,6 +20,10 @@ CREATE TABLE IF NOT EXISTS public.documenten (
   
   -- Link naar materiaal (NULL als type = 'Veiligheidsfiche')
   material_id bigint,
+  
+  -- Link naar materiaal TYPE (alleen voor Veiligheidsfiche, bv. "Boormachine", "Compressor")
+  -- LET OP: Deze kolom bestaat al in de database, wordt hier niet aangemaakt
+  -- material_type text,
   
   -- Wie heeft het geüpload
   uploaded_by text,                           -- Naam van de gebruiker
@@ -43,6 +47,11 @@ CREATE INDEX IF NOT EXISTS idx_documenten_document_type
 -- Index voor snelle queries op materiaal
 CREATE INDEX IF NOT EXISTS idx_documenten_material_id 
   ON public.documenten(material_id);
+
+-- Index voor snelle queries op materiaal type
+-- LET OP: material_type kolom bestaat al, alleen index aanmaken
+CREATE INDEX IF NOT EXISTS idx_documenten_material_type 
+  ON public.documenten(material_type);
 
 -- Index voor snelle queries op upload datum
 CREATE INDEX IF NOT EXISTS idx_documenten_created_at 
