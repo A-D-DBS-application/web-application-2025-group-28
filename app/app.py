@@ -16,7 +16,7 @@ import os
 from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, MaterialType
 from sqlalchemy import or_, func, and_
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -561,16 +561,19 @@ DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
 SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
 PROJECT_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "projects")
 CERTIFICATE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "certificates")
+TYPE_IMAGE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "type_images")
 
 os.makedirs(DOC_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROJECT_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(CERTIFICATE_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(TYPE_IMAGE_UPLOAD_FOLDER, exist_ok=True)
 
 app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER
 app.config["SAFETY_UPLOAD_FOLDER"] = SAFETY_UPLOAD_FOLDER
 app.config["PROJECT_UPLOAD_FOLDER"] = PROJECT_UPLOAD_FOLDER
 app.config["CERTIFICATE_UPLOAD_FOLDER"] = CERTIFICATE_UPLOAD_FOLDER
+app.config["TYPE_IMAGE_UPLOAD_FOLDER"] = TYPE_IMAGE_UPLOAD_FOLDER
 
 
 def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
@@ -596,6 +599,8 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
         relative_folder = "uploads/safety"
     elif upload_folder == app.config["CERTIFICATE_UPLOAD_FOLDER"]:
         relative_folder = "uploads/certificates"
+    elif upload_folder == app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/type_images"
     else:
         relative_folder = "uploads"
 
@@ -738,6 +743,9 @@ def materiaal():
     )
     types_list = [t[0] for t in unique_types if t[0]]
 
+    # Get all Material Types for the dropdown in modals
+    all_material_types = MaterialType.query.order_by(MaterialType.name.asc()).all()
+
     return render_template(
         "materiaal.html",
         items=items,
@@ -751,6 +759,7 @@ def materiaal():
         today=today,
         types_list=types_list,
         usages_without_project=usages_without_project,
+        all_material_types=all_material_types,
     )
 
 
@@ -2735,6 +2744,257 @@ def documenten():
         search_query=q,
         selected_type=doc_type,
     )
+
+
+# -----------------------------------------------------
+# MATERIAAL TYPES
+# -----------------------------------------------------
+
+@app.route("/materiaal/types", methods=["GET"])
+@login_required
+def materiaal_types():
+    """Toon overzicht van alle materiaal types."""
+    search_q = (request.args.get("q") or "").strip().lower()
+    
+    query = MaterialType.query
+    
+    if search_q:
+        like = f"%{search_q}%"
+        query = query.filter(
+            or_(
+                MaterialType.name.ilike(like),
+                MaterialType.description.ilike(like)
+            )
+        )
+    
+    types = query.order_by(MaterialType.name.asc()).all()
+    
+    # Tel aantal materialen per type
+    for type_item in types:
+        type_item.material_count = Material.query.filter_by(type=type_item.name).count()
+    
+    return render_template(
+        "materiaal_types.html",
+        types=types,
+        search_q=search_q,
+    )
+
+
+@app.route("/materiaal/types/new", methods=["POST"])
+@login_required
+def materiaal_type_toevoegen():
+    """Voeg een nieuw materiaal type toe."""
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    inspection_validity_days = request.form.get("inspection_validity_days")
+    type_image_file = request.files.get("type_image")
+    safety_sheet_file = request.files.get("safety_sheet")
+    
+    if not name:
+        flash("Type naam is verplicht.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    if not inspection_validity_days:
+        flash("Geldigheid keuring (dagen) is verplicht.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    try:
+        inspection_validity_days = int(inspection_validity_days)
+        if inspection_validity_days < 1:
+            flash("Geldigheid keuring moet minimaal 1 dag zijn.", "danger")
+            return redirect(url_for("materiaal_types"))
+    except (ValueError, TypeError):
+        flash("Geldigheid keuring moet een geldig nummer zijn.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    # Check if type name already exists
+    existing = MaterialType.query.filter_by(name=name).first()
+    if existing:
+        flash(f"Type '{name}' bestaat al.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    # Handle type image upload
+    type_image_path = None
+    if type_image_file and type_image_file.filename:
+        filename = secure_filename(type_image_file.filename)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ['.jpg', '.jpeg', '.png']:
+            flash("Foto moet een .jpg, .jpeg of .png bestand zijn.", "danger")
+            return redirect(url_for("materiaal_types"))
+        
+        prefix = secure_filename(name)
+        type_image_path = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+    
+    # Handle safety sheet upload (use SAFETY_UPLOAD_FOLDER)
+    safety_sheet_path = None
+    if safety_sheet_file and safety_sheet_file.filename:
+        filename = secure_filename(safety_sheet_file.filename)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext != '.pdf':
+            flash("Veiligheidsfiche moet een PDF bestand zijn.", "danger")
+            return redirect(url_for("materiaal_types"))
+        
+        prefix = secure_filename(name)
+        safety_sheet_path = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+    
+    new_type = MaterialType(
+        name=name,
+        description=description if description else None,
+        inspection_validity_days=inspection_validity_days,
+        type_image=type_image_path,
+        safety_sheet=safety_sheet_path,
+    )
+    
+    db.session.add(new_type)
+    db.session.commit()
+    
+    log_activity_db("materiaal type toegevoegd", name, "")
+    flash(f"Type '{name}' is toegevoegd.", "success")
+    return redirect(url_for("materiaal_types"))
+
+
+@app.route("/materiaal/types/edit", methods=["POST"])
+@login_required
+def materiaal_type_bewerken():
+    """Bewerk een bestaand materiaal type."""
+    type_id = request.form.get("type_id")
+    name = (request.form.get("name") or "").strip()
+    description = (request.form.get("description") or "").strip()
+    inspection_validity_days = request.form.get("inspection_validity_days")
+    type_image_file = request.files.get("type_image")
+    safety_sheet_file = request.files.get("safety_sheet")
+    
+    if not type_id:
+        flash("Type ID ontbreekt.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    type_item = MaterialType.query.get(type_id)
+    if not type_item:
+        flash("Type niet gevonden.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    if not name:
+        flash("Type naam is verplicht.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    if not inspection_validity_days:
+        flash("Geldigheid keuring (dagen) is verplicht.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    try:
+        inspection_validity_days = int(inspection_validity_days)
+        if inspection_validity_days < 1:
+            flash("Geldigheid keuring moet minimaal 1 dag zijn.", "danger")
+            return redirect(url_for("materiaal_types"))
+    except (ValueError, TypeError):
+        flash("Geldigheid keuring moet een geldig nummer zijn.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    # Check if name already exists (but not for current type)
+    existing = MaterialType.query.filter_by(name=name).first()
+    if existing and existing.id != type_item.id:
+        flash(f"Type '{name}' bestaat al.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    old_name = type_item.name
+    
+    # Handle type image upload (only if new file is provided)
+    if type_image_file and type_image_file.filename:
+        filename = secure_filename(type_image_file.filename)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ['.jpg', '.jpeg', '.png']:
+            flash("Foto moet een .jpg, .jpeg of .png bestand zijn.", "danger")
+            return redirect(url_for("materiaal_types"))
+        
+        # Delete old image if exists
+        if type_item.type_image:
+            old_path = os.path.join(app.root_path, "static", type_item.type_image)
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except:
+                    pass
+        
+        prefix = secure_filename(name)
+        type_item.type_image = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+    
+    # Handle safety sheet upload (only if new file is provided)
+    if safety_sheet_file and safety_sheet_file.filename:
+        filename = secure_filename(safety_sheet_file.filename)
+        ext = os.path.splitext(filename)[1].lower()
+        if ext != '.pdf':
+            flash("Veiligheidsfiche moet een PDF bestand zijn.", "danger")
+            return redirect(url_for("materiaal_types"))
+        
+        # Delete old safety sheet if exists
+        if type_item.safety_sheet:
+            old_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except:
+                    pass
+        
+        prefix = secure_filename(name)
+        type_item.safety_sheet = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+    
+    type_item.name = name
+    type_item.description = description if description else None
+    type_item.inspection_validity_days = inspection_validity_days
+    
+    db.session.commit()
+    
+    log_activity_db("materiaal type bewerkt", name, "")
+    flash(f"Type '{name}' is bijgewerkt.", "success")
+    return redirect(url_for("materiaal_types"))
+
+
+@app.route("/materiaal/types/delete", methods=["POST"])
+@login_required
+def materiaal_type_verwijderen():
+    """Verwijder een materiaal type."""
+    type_id = request.form.get("type_id")
+    
+    if not type_id:
+        flash("Type ID ontbreekt.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    type_item = MaterialType.query.get(type_id)
+    if not type_item:
+        flash("Type niet gevonden.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    # Check if any materials use this type
+    materials_using_type = Material.query.filter_by(type=type_item.name).count()
+    if materials_using_type > 0:
+        flash(f"Kan type '{type_item.name}' niet verwijderen omdat {materials_using_type} materiaal(len) dit type gebruiken.", "danger")
+        return redirect(url_for("materiaal_types"))
+    
+    type_name = type_item.name
+    
+    # Delete associated files
+    if type_item.type_image:
+        image_path = os.path.join(app.root_path, "static", type_item.type_image)
+        if os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except:
+                pass
+    
+    if type_item.safety_sheet:
+        safety_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+        if os.path.exists(safety_path):
+            try:
+                os.remove(safety_path)
+            except:
+                pass
+    
+    db.session.delete(type_item)
+    db.session.commit()
+    
+    log_activity_db("materiaal type verwijderd", type_name, "")
+    flash(f"Type '{type_name}' is verwijderd.", "success")
+    return redirect(url_for("materiaal_types"))
 
 
 if __name__ == "__main__":

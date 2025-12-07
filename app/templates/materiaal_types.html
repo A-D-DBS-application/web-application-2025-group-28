@@ -1,0 +1,475 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+  <div>
+    <h2 class="h-title">Types materiaal</h2>
+    <div class="h-sub">Overzicht van alle materiaaltypes</div>
+  </div>
+
+  <button class="btn btn-dark"
+          data-bs-toggle="modal"
+          data-bs-target="#nieuwTypeModal">
+    + Type toevoegen
+  </button>
+</div>
+
+<!-- Zoekbalk -->
+<form method="get" action="{{ url_for('materiaal_types') }}" class="mt-3" style="max-width: 300px;">
+  <div class="input-group input-group-sm">
+    <span class="input-group-text">🔍</span>
+    <input type="text" 
+           name="q" 
+           class="form-control" 
+           placeholder="Zoek type..." 
+           value="{{ search_q or '' }}"
+           autocomplete="off">
+    {% if search_q %}
+      <a href="{{ url_for('materiaal_types') }}" class="btn btn-outline-secondary" title="Wissen">✕</a>
+    {% endif %}
+  </div>
+</form>
+
+<div class="row g-3 mt-2">
+  {% if types %}
+    {% for type_item in types %}
+      <div class="col-12 col-md-6 col-xl-4">
+        <div class="card h-100"
+             style="border-radius:16px; overflow:hidden; position:relative;">
+          {% if type_item.type_image %}
+            <div style="height:160px; overflow:hidden; background-color:#f8f9fa;">
+              <img src="{{ url_for('static', filename=type_item.type_image) }}"
+                   alt="{{ type_item.name }}"
+                   style="width:100%; height:100%; object-fit:cover;">
+            </div>
+          {% else %}
+            <div style="height:160px; overflow:hidden; background-color:#f8f9fa; display:flex; align-items:center; justify-content:center;">
+              <span style="font-size:48px; color:#dee2e6;">📦</span>
+            </div>
+          {% endif %}
+
+          <div class="card-body">
+            <h5 class="card-title mb-1">
+              {{ type_item.name }}
+            </h5>
+            
+            {% if type_item.description %}
+              <div class="small text-muted mb-2" style="min-height:2.5em;">
+                {{ type_item.description }}
+              </div>
+            {% endif %}
+            
+            <div class="small mb-2">
+              <strong>Geldigheid keuring:</strong> {{ type_item.inspection_validity_days }} dagen
+            </div>
+
+            <div class="d-flex justify-content-center mt-2">
+              <button type="button"
+                      class="btn btn-sm btn-outline-dark"
+                      onclick="showTypeDetails({{ type_item.id }}, '{{ type_item.name|replace("'", "\\'") }}', '{{ (type_item.description or '')|replace("'", "\\'") }}', {{ type_item.inspection_validity_days }}, '{{ type_item.type_image or '' }}', '{{ type_item.safety_sheet or '' }}')">
+                Details bekijken
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="col-12">
+      <div class="card panel">
+        <div class="panel-title">Nog geen types</div>
+        <div class="panel-sub">Klik op "Type toevoegen" om je eerste type aan te maken.</div>
+      </div>
+    </div>
+  {% endif %}
+</div>
+
+<!-- Modal: nieuw type -->
+<div class="modal fade" id="nieuwTypeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nieuw type toevoegen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post"
+            action="{{ url_for('materiaal_type_toevoegen') }}"
+            enctype="multipart/form-data">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-12">
+              <label class="form-label">Type naam*</label>
+              <input name="name" class="form-control" required placeholder="Bv. Elektrisch gereedschap">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Beschrijving (optioneel)</label>
+              <textarea name="description" class="form-control" rows="3" placeholder="Extra info over het type…"></textarea>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Geldigheid keuring (dagen)*</label>
+              <input name="inspection_validity_days" 
+                     type="number" 
+                     class="form-control" 
+                     required 
+                     min="1"
+                     placeholder="Bv. 180">
+              <small class="text-muted">Aantal dagen dat een keuring geldig is voor dit type materiaal</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Foto van het type (optioneel)</label>
+              <input name="type_image" 
+                     type="file" 
+                     class="form-control" 
+                     accept=".jpg,.jpeg,.png">
+              <small class="text-muted">Alleen .jpg, .jpeg of .png bestanden</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Veiligheidsfiche (optioneel)</label>
+              <input name="safety_sheet" 
+                     type="file" 
+                     class="form-control" 
+                     accept=".pdf">
+              <small class="text-muted">Alleen PDF bestanden</small>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button class="btn btn-primary" type="submit">Type toevoegen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: type bewerken -->
+<div class="modal fade" id="editTypeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Type bewerken</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post"
+            action="{{ url_for('materiaal_type_bewerken') }}"
+            enctype="multipart/form-data">
+        <input type="hidden" name="type_id" id="edit-type-id">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-12">
+              <label class="form-label">Type naam*</label>
+              <input name="name" id="edit-type-name" class="form-control" required placeholder="Bv. Elektrisch gereedschap">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Beschrijving (optioneel)</label>
+              <textarea name="description" id="edit-type-description" class="form-control" rows="3" placeholder="Extra info over het type…"></textarea>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Geldigheid keuring (dagen)*</label>
+              <input name="inspection_validity_days" 
+                     id="edit-type-validity"
+                     type="number" 
+                     class="form-control" 
+                     required 
+                     min="1"
+                     placeholder="Bv. 180">
+              <small class="text-muted">Aantal dagen dat een keuring geldig is voor dit type materiaal</small>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Foto van het type (optioneel)</label>
+              <input name="type_image" 
+                     type="file" 
+                     class="form-control" 
+                     accept=".jpg,.jpeg,.png">
+              <small class="text-muted">Alleen .jpg, .jpeg of .png bestanden. Laat leeg om huidige foto te behouden.</small>
+              <div id="edit-current-image" class="mt-2"></div>
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Veiligheidsfiche (optioneel)</label>
+              <input name="safety_sheet" 
+                     type="file" 
+                     class="form-control" 
+                     accept=".pdf">
+              <small class="text-muted">Alleen PDF bestanden. Laat leeg om huidige fiche te behouden.</small>
+              <div id="edit-current-safety" class="mt-2"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button class="btn btn-primary" type="submit">Opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: type verwijderen -->
+<div class="modal fade" id="deleteTypeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('materiaal_type_verwijderen') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Type verwijderen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="type_id" id="delete-type-id">
+          <p>
+            Ben je zeker dat je dit type materiaal wilt verwijderen?
+            <br><br>
+            <strong id="delete-type-name"></strong>
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-danger">Verwijderen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: type details -->
+<div class="modal fade" id="typeDetailsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="details-type-name">Type Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+      <div class="modal-body" id="typeDetailsBody">
+        <!-- Content will be populated by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
+        <button type="button" 
+                class="btn btn-outline-dark" 
+                id="details-edit-btn"
+                style="display:none;">
+          Bewerken
+        </button>
+        <button type="button" 
+                class="btn btn-outline-danger" 
+                id="details-delete-btn"
+                style="display:none;">
+          Verwijderen
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const deleteModal = document.getElementById('deleteTypeModal');
+  if (deleteModal) {
+    deleteModal.addEventListener('show.bs.modal', function (event) {
+      const button = event.relatedTarget;
+      if (!button) return;
+
+      const id = button.getAttribute('data-type-id');
+      const name = button.getAttribute('data-type-name') || 'dit type';
+
+      const idInput = document.getElementById('delete-type-id');
+      const nameSpan = document.getElementById('delete-type-name');
+
+      if (idInput) idInput.value = id;
+      if (nameSpan) nameSpan.textContent = name;
+    });
+  }
+
+  const editModal = document.getElementById('editTypeModal');
+  if (editModal) {
+    editModal.addEventListener('show.bs.modal', function (event) {
+      const button = event.relatedTarget;
+      if (!button) return;
+
+      const id = button.getAttribute('data-type-id');
+      const name = button.getAttribute('data-type-name') || '';
+      const description = button.getAttribute('data-type-description') || '';
+      const validity = button.getAttribute('data-type-validity') || '180';
+      const image = button.getAttribute('data-type-image') || '';
+      const safety = button.getAttribute('data-type-safety') || '';
+
+      document.getElementById('edit-type-id').value = id;
+      document.getElementById('edit-type-name').value = name;
+      document.getElementById('edit-type-description').value = description;
+      document.getElementById('edit-type-validity').value = validity;
+
+      // Show current image if exists
+      const currentImageDiv = document.getElementById('edit-current-image');
+      if (image) {
+        currentImageDiv.innerHTML = `
+          <small class="text-muted">Huidige foto:</small><br>
+          <img src="/static/${escapeHtml(image)}" style="max-width:200px; max-height:150px; object-fit:cover; border-radius:8px; margin-top:4px;" alt="Huidige foto">
+        `;
+      } else {
+        currentImageDiv.innerHTML = '';
+      }
+
+      // Show current safety sheet if exists
+      const currentSafetyDiv = document.getElementById('edit-current-safety');
+      if (safety) {
+        currentSafetyDiv.innerHTML = `
+          <small class="text-muted">Huidige veiligheidsfiche:</small><br>
+          <a href="/static/${escapeHtml(safety)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+            📄 Bekijk huidige fiche
+          </a>
+        `;
+      } else {
+        currentSafetyDiv.innerHTML = '';
+      }
+    });
+  }
+});
+
+// Store current type data for details modal
+let currentTypeDetails = null;
+
+function showTypeDetails(id, name, description, validityDays, imagePath, safetyPath) {
+  const modal = new bootstrap.Modal(document.getElementById('typeDetailsModal'));
+  const modalTitle = document.getElementById('details-type-name');
+  const modalBody = document.getElementById('typeDetailsBody');
+  const editBtn = document.getElementById('details-edit-btn');
+  const deleteBtn = document.getElementById('details-delete-btn');
+  
+  // Store type data for edit/delete buttons
+  currentTypeDetails = {
+    id: id,
+    name: name,
+    description: description,
+    validityDays: validityDays,
+    imagePath: imagePath,
+    safetyPath: safetyPath
+  };
+  
+  modalTitle.textContent = name;
+  
+  let html = '';
+  
+  if (imagePath) {
+    html += `
+      <div class="mb-3 text-center">
+        <img src="/static/${escapeHtml(imagePath)}" 
+             style="max-width:100%; max-height:300px; object-fit:cover; border-radius:8px;" 
+             alt="${escapeHtml(name)}">
+      </div>
+    `;
+  }
+  
+  html += `
+    <div class="mb-3">
+      <strong>Type naam:</strong> ${escapeHtml(name)}
+    </div>
+    <div class="mb-3">
+      <strong>Geldigheid keuring:</strong> ${validityDays} dagen
+    </div>
+  `;
+  
+  if (description) {
+    html += `
+      <div class="mb-3">
+        <strong>Beschrijving:</strong><br>
+        ${escapeHtml(description)}
+      </div>
+    `;
+  }
+  
+  if (safetyPath) {
+    html += `
+      <div class="mb-3">
+        <strong>Veiligheidsfiche:</strong><br>
+        <a href="/static/${escapeHtml(safetyPath)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+          📄 Bekijk veiligheidsfiche
+        </a>
+      </div>
+    `;
+  }
+  
+  modalBody.innerHTML = html;
+  
+  // Show edit and delete buttons
+  if (editBtn) {
+    editBtn.style.display = 'inline-block';
+    editBtn.onclick = function() {
+      // Close details modal
+      modal.hide();
+      
+      // Open edit modal with current type data
+      const editModal = new bootstrap.Modal(document.getElementById('editTypeModal'));
+      document.getElementById('edit-type-id').value = id;
+      document.getElementById('edit-type-name').value = name;
+      document.getElementById('edit-type-description').value = description || '';
+      document.getElementById('edit-type-validity').value = validityDays;
+      
+      // Show current image if exists
+      const currentImageDiv = document.getElementById('edit-current-image');
+      if (imagePath) {
+        currentImageDiv.innerHTML = `
+          <small class="text-muted">Huidige foto:</small><br>
+          <img src="/static/${escapeHtml(imagePath)}" style="max-width:200px; max-height:150px; object-fit:cover; border-radius:8px; margin-top:4px;" alt="Huidige foto">
+        `;
+      } else {
+        currentImageDiv.innerHTML = '';
+      }
+      
+      // Show current safety sheet if exists
+      const currentSafetyDiv = document.getElementById('edit-current-safety');
+      if (safetyPath) {
+        currentSafetyDiv.innerHTML = `
+          <small class="text-muted">Huidige veiligheidsfiche:</small><br>
+          <a href="/static/${escapeHtml(safetyPath)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+            📄 Bekijk huidige fiche
+          </a>
+        `;
+      } else {
+        currentSafetyDiv.innerHTML = '';
+      }
+      
+      editModal.show();
+    };
+  }
+  
+  if (deleteBtn) {
+    deleteBtn.style.display = 'inline-block';
+    deleteBtn.onclick = function() {
+      // Close details modal
+      modal.hide();
+      
+      // Open delete modal
+      const deleteModal = new bootstrap.Modal(document.getElementById('deleteTypeModal'));
+      document.getElementById('delete-type-id').value = id;
+      document.getElementById('delete-type-name').textContent = name;
+      deleteModal.show();
+    };
+  }
+  
+  modal.show();
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, m => map[m]);
+}
+</script>
+
+{% endblock %}
+

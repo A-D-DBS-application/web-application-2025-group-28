@@ -7,14 +7,21 @@
     <div class="h-sub">Overzicht van beheer van al het bedrijfsmateriaal</div>
   </div>
 
-  <!-- Knop "in gebruik nemen" rechts naast de paginatitel (zoals bij werven) -->
-  <button class="btn btn-dark"
-          data-bs-toggle="modal"
-          data-bs-target="#gebruikMaterieelModal"
-          style="display:inline-flex;align-items:center;gap:8px;">
-    <span style="font-size:18px;line-height:1;">+</span>
-    <span>Gebruik materiaal</span>
-  </button>
+  <!-- Knoppen rechts naast de paginatitel -->
+  <div style="display:flex;gap:8px;">
+    <button class="btn btn-dark"
+            data-bs-toggle="modal"
+            data-bs-target="#gebruikMaterieelModal"
+            style="display:inline-flex;align-items:center;gap:8px;">
+      <span style="font-size:18px;line-height:1;">+</span>
+      <span>Gebruik materiaal</span>
+    </button>
+    <a href="{{ url_for('materiaal_types') }}" 
+       class="btn btn-outline-dark"
+       style="display:inline-flex;align-items:center;gap:8px;">
+      <span>Types materiaal</span>
+    </a>
+  </div>
 </div>
 
 <!-- KPI's in één grid -->
@@ -392,8 +399,20 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Type*</label>
-              <input name="type" required class="form-control" placeholder="Bv. Elektrisch gereedschap">
+              <label class="form-label" for="type">Type*</label>
+              <select id="type" name="type" required class="form-select">
+                <option value="">-- Selecteer een type --</option>
+                {% if all_material_types %}
+                  {% for material_type in all_material_types %}
+                    <option value="{{ material_type.name }}">{{ material_type.name }}</option>
+                  {% endfor %}
+                {% else %}
+                  <option value="" disabled>Geen materiaaltypes beschikbaar. Voeg eerst een type toe.</option>
+                {% endif %}
+              </select>
+              {% if not all_material_types %}
+                <small class="text-muted">Geen materiaaltypes beschikbaar. <a href="{{ url_for('materiaal_types') }}">Voeg eerst een type toe</a>.</small>
+              {% endif %}
             </div>
 
             <div class="col-md-6">
@@ -458,7 +477,7 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-primary" type="button" id="submitMaterieelBtn">Materieel Toevoegen</button>
+          <button class="btn btn-primary" type="button" id="submitMaterieelBtn" {% if not all_material_types %}disabled{% endif %}>Materieel Toevoegen</button>
         </div>
       </form>
     </div>
@@ -628,8 +647,20 @@
             </div>
 
             <div class="col-md-6">
-              <label class="form-label">Type*</label>
-              <input name="type" id="edit-type" required class="form-control">
+              <label class="form-label" for="edit-type">Type*</label>
+              <select id="edit-type" name="type" required class="form-select">
+                <option value="">-- Selecteer een type --</option>
+                {% if all_material_types %}
+                  {% for material_type in all_material_types %}
+                    <option value="{{ material_type.name }}">{{ material_type.name }}</option>
+                  {% endfor %}
+                {% else %}
+                  <option value="" disabled>Geen materiaaltypes beschikbaar. Voeg eerst een type toe.</option>
+                {% endif %}
+              </select>
+              {% if not all_material_types %}
+                <small class="text-muted">Geen materiaaltypes beschikbaar. <a href="{{ url_for('materiaal_types') }}">Voeg eerst een type toe</a>.</small>
+              {% endif %}
             </div>
 
             <div class="col-md-6">
@@ -739,6 +770,34 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+  // Validate type selection in "Nieuw Materiaal" modal
+  const typeSelect = document.getElementById('type');
+  const submitBtn = document.getElementById('submitMaterieelBtn');
+  
+  if (typeSelect && submitBtn) {
+    typeSelect.addEventListener('change', function() {
+      // Enable/disable submit button based on selection
+      if (this.value === '' || this.options[this.selectedIndex].disabled) {
+        submitBtn.disabled = true;
+      } else {
+        submitBtn.disabled = false;
+      }
+    });
+    
+    // Initial check on modal open
+    const nieuwModal = document.getElementById('nieuwMaterieelModal');
+    if (nieuwModal) {
+      nieuwModal.addEventListener('show.bs.modal', function() {
+        // Reset selection and check if submit should be disabled
+        if (typeSelect.value === '' || typeSelect.options[typeSelect.selectedIndex].disabled) {
+          submitBtn.disabled = true;
+        } else {
+          submitBtn.disabled = false;
+        }
+      });
+    }
+  }
+
   // Bewerken-modal vullen
   const editModal = document.getElementById('editMaterieelModal');
   if (editModal) {
@@ -763,7 +822,11 @@ document.addEventListener('DOMContentLoaded', function () {
       document.getElementById('edit-original-serial').value = data.serial;
       document.getElementById('edit-serial').value = data.serial;
       document.getElementById('edit-name').value = data.name;
-      document.getElementById('edit-type').value = data.type;
+      // Set the selected type in the dropdown
+      const editTypeSelect = document.getElementById('edit-type');
+      if (editTypeSelect && data.type) {
+        editTypeSelect.value = data.type;
+      }
       document.getElementById('edit-purchase_date').value = data.purchase_date;
       document.getElementById('edit-assigned_to').value = data.assigned_to;
       document.getElementById('edit-site').value = data.site;
