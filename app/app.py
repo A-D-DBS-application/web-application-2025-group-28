@@ -16,7 +16,7 @@ import os
 from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, Document
 from sqlalchemy import or_, func, and_
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -2652,6 +2652,55 @@ def documenten():
     all_materials = Material.query.all()
     documents = []
     
+    # Haal documenten op uit de nieuwe documenten tabel
+    query_docs = Document.query
+    
+    # Filter op document type als opgegeven
+    if doc_type and doc_type != "alle":
+        # Map oude type namen naar nieuwe
+        type_mapping = {
+            "aankoopfactuur": "Aankoopfactuur",
+            "keuringscertificaat": "Keuringstatus",
+            "verkoopfactuur": "Verkoopfactuur",
+            "veiligheidscertificaat": "Veiligheidsfiche",
+        }
+        if doc_type in type_mapping:
+            query_docs = query_docs.filter(Document.document_type == type_mapping[doc_type])
+    
+    all_documents = query_docs.order_by(Document.created_at.desc()).all()
+    
+    # Converteer Document objecten naar dict formaat
+    for doc in all_documents:
+        material_name = "Niet gekoppeld"
+        material_serial = "-"
+        if doc.material:
+            material_name = doc.material.name or "Onbekend"
+            material_serial = doc.material.serial or "-"
+        
+        # Format file size
+        file_size_str = "Onbekend"
+        if doc.file_size:
+            if doc.file_size < 1024:
+                file_size_str = f"{doc.file_size} B"
+            elif doc.file_size < 1024 * 1024:
+                file_size_str = f"{doc.file_size / 1024:.1f} KB"
+            else:
+                file_size_str = f"{doc.file_size / (1024 * 1024):.1f} MB"
+        
+        documents.append({
+            "type": doc.document_type,
+            "name": doc.file_name,
+            "material": material_name,
+            "material_serial": material_serial,
+            "date": doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "",
+            "size": file_size_str,
+            "uploaded_by": doc.uploaded_by or "Onbekend",
+            "path": doc.file_path,
+            "status": doc.document_type,
+            "id": doc.id,
+        })
+    
+    # Voeg ook oude documenten toe (van materials tabel) voor backward compatibility
     for material in all_materials:
         if material.documentation_path:
             doc_name = _os.path.basename(material.documentation_path)
@@ -2695,36 +2744,31 @@ def documenten():
                     "status": "Veiligheidscertificaat",
                 }
             )
-    
-    documents.append(
-        {
-        "type": "Servicerapport",
-        "name": "Service-Rapport-Augustus-2024.pdf",
-        "material": "Compressor Atlas Copco",
-        "material_serial": "CP-2022-112",
-        "date": "2024-08-01",
-        "size": "1.1 MB",
-        "uploaded_by": "Atlas Copco",
-        "path": None,
-            "status": "Servicerapport",
-        }
-    )
 
+    # Filter op zoekterm
     if q:
         documents = [
             d
             for d in documents
-            if q in d["name"].lower() or q in d["material"].lower()
+            if q in d["name"].lower() or q in d["material"].lower() or q in (d.get("material_serial", "") or "").lower()
         ]
 
+    # Filter op type (als nog niet gefilterd)
     if doc_type and doc_type != "alle":
+        type_mapping_lower = {
+            "aankoopfactuur": "Aankoopfactuur",
+            "keuringscertificaat": "Keuringstatus",
+            "verkoopfactuur": "Verkoopfactuur",
+            "veiligheidscertificaat": "Veiligheidsfiche",
+        }
+        filter_type = type_mapping_lower.get(doc_type, doc_type)
         documents = [
-            d for d in documents if d["type"].lower() == doc_type.lower()
+            d for d in documents if d["type"].lower() == filter_type.lower()
         ]
     
     total_docs = len(documents)
     safety_certs = len(
-        [d for d in documents if d["type"] == "Veiligheidscertificaat"]
+        [d for d in documents if d["type"] == "Veiligheidsfiche" or d["type"] == "Veiligheidscertificaat"]
     )
     
     return render_template(
@@ -2734,7 +2778,98 @@ def documenten():
         safety_certs=safety_certs,
         search_query=q,
         selected_type=doc_type,
+        all_materials=all_materials,
     )
+
+
+@app.route("/documenten/upload", methods=["POST"])
+@login_required
+def documenten_upload():
+    """Upload een nieuw document"""
+    document_file = request.files.get("document_file")
+    document_type = (request.form.get("document_type") or "").strip()
+    material_id_str = (request.form.get("material_id") or "").strip()
+    note = (request.form.get("note") or "").strip()
+    
+    # Validatie
+    if not document_file or not document_file.filename:
+        flash("Geen bestand geselecteerd.", "danger")
+        return redirect(url_for("documenten"))
+    
+    if not document_type:
+        flash("Document type is verplicht.", "danger")
+        return redirect(url_for("documenten"))
+    
+    # Valideer document type
+    valid_types = ["Aankoopfactuur", "Keuringstatus", "Verkoopfactuur", "Veiligheidsfiche"]
+    if document_type not in valid_types:
+        flash("Ongeldig document type.", "danger")
+        return redirect(url_for("documenten"))
+    
+    # Als type niet Veiligheidsfiche is, moet material_id aanwezig zijn
+    material_id = None
+    if document_type != "Veiligheidsfiche":
+        if not material_id_str:
+            flash("Materieel is verplicht voor dit document type.", "danger")
+            return redirect(url_for("documenten"))
+        try:
+            material_id = int(material_id_str)
+            # Controleer of materiaal bestaat
+            material = Material.query.filter_by(id=material_id).first()
+            if not material:
+                flash("Materiaal niet gevonden.", "danger")
+                return redirect(url_for("documenten"))
+        except ValueError:
+            flash("Ongeldig materiaal ID.", "danger")
+            return redirect(url_for("documenten"))
+    
+    # Sla bestand op
+    filename = secure_filename(document_file.filename)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    prefix = f"{document_type}_{timestamp}"
+    final_filename = f"{prefix}_{filename}"
+    
+    full_path = os.path.join(app.config["DOC_UPLOAD_FOLDER"], final_filename)
+    document_file.save(full_path)
+    
+    # Bepaal relatief pad
+    relative_path = f"uploads/docs/{final_filename}"
+    
+    # Bepaal bestandsgrootte
+    file_size = os.path.getsize(full_path) if os.path.exists(full_path) else None
+    
+    # Haal gebruiker informatie op
+    user_name = g.user.Naam if getattr(g, "user", None) and g.user.Naam else "Onbekend"
+    user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
+    
+    # Maak document record aan
+    new_document = Document(
+        document_type=document_type,
+        file_path=relative_path,
+        file_name=filename,
+        file_size=file_size,
+        material_id=material_id,
+        uploaded_by=user_name,
+        user_id=user_id,
+        note=note if note else None,
+        created_at=datetime.utcnow(),
+    )
+    
+    db.session.add(new_document)
+    db.session.commit()
+    
+    # Log activiteit
+    material_name = ""
+    material_serial = ""
+    if material_id:
+        material = Material.query.filter_by(id=material_id).first()
+        if material:
+            material_name = material.name or ""
+            material_serial = material.serial or ""
+    
+    log_activity_db(f"Document geüpload: {document_type}", material_name, material_serial)
+    flash(f"Document '{filename}' succesvol geüpload.", "success")
+    return redirect(url_for("documenten"))
 
 
 if __name__ == "__main__":
