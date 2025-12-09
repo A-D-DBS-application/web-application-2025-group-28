@@ -6,11 +6,10 @@
     <h2 class="h-title">Keuringen & Inspecties</h2>
     <div class="h-sub">Wat moet ik nu keuren?</div>
   </div>
-  <button class="btn btn-dark" 
-          style="display: flex; align-items: center; gap: 8px;"
+  <button class="btn btn-dark btn-with-icon" 
           data-bs-toggle="modal"
           data-bs-target="#nieuweKeuringModal">
-    <span style="font-size: 18px; line-height: 1;">+</span>
+    <span class="btn-icon-large">+</span>
     <span>Keuring Plannen</span>
   </button>
 </div>
@@ -20,11 +19,9 @@
   <div class="col-md-4">
     <a href="{{ url_for('keuringen', priority='te_laat', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
        class="text-decoration-none">
-      <div class="card kpi" style="cursor: pointer; transition: transform 0.2s;" 
-           onmouseover="this.style.transform='scale(1.02)'" 
-           onmouseout="this.style.transform='scale(1)'">
+      <div class="card kpi kpi-clickable">
         <div class="kpi-title">Te laat</div>
-        <div class="kpi-value" style="color: #dc3545;">{{ te_laat_count or 0 }}</div>
+        <div class="kpi-value kpi-value-danger">{{ te_laat_count or 0 }}</div>
         <div class="kpi-sub">Keuringen die verlopen zijn</div>
       </div>
     </a>
@@ -32,11 +29,9 @@
   <div class="col-md-4">
     <a href="{{ url_for('keuringen', priority='vandaag', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
        class="text-decoration-none">
-      <div class="card kpi" style="cursor: pointer; transition: transform 0.2s;" 
-           onmouseover="this.style.transform='scale(1.02)'" 
-           onmouseout="this.style.transform='scale(1)'">
+      <div class="card kpi kpi-clickable">
         <div class="kpi-title">Te keuren vandaag</div>
-        <div class="kpi-value" style="color: #ffc107;">{{ vandaag_count or 0 }}</div>
+        <div class="kpi-value kpi-value-warning">{{ vandaag_count or 0 }}</div>
         <div class="kpi-sub">Moeten vandaag gekeurd worden</div>
       </div>
     </a>
@@ -44,11 +39,9 @@
   <div class="col-md-4">
     <a href="{{ url_for('keuringen', priority='binnen_30', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
        class="text-decoration-none">
-      <div class="card kpi" style="cursor: pointer; transition: transform 0.2s;" 
-           onmouseover="this.style.transform='scale(1.02)'" 
-           onmouseout="this.style.transform='scale(1)'">
+      <div class="card kpi kpi-clickable">
         <div class="kpi-title">Binnen 30 dagen</div>
-        <div class="kpi-value" style="color: #fd7e14;">{{ binnen_30_dagen_count or 0 }}</div>
+        <div class="kpi-value kpi-value-orange">{{ binnen_30_dagen_count or 0 }}</div>
         <div class="kpi-sub">Keuringen binnenkort</div>
       </div>
     </a>
@@ -56,7 +49,7 @@
 </div>
 
 <!-- B. FILTER BAR -->
-<div class="card panel" style="margin-top:24px;">
+<div class="card panel panel-spacing">
   <div class="panel-title">Keuringen Overzicht</div>
   <div class="panel-sub">{{ total_items }} keuring(en) gevonden</div>
 
@@ -83,10 +76,9 @@
       <div class="col-12 col-md-6 col-lg-2">
         <select name="status" class="form-select">
           <option value="">Alle statussen</option>
-          <option value="te_laat" {% if status_filter == 'te_laat' %}selected{% endif %}>Te laat</option>
-          <option value="gepland" {% if status_filter == 'gepland' %}selected{% endif %}>Gepland</option>
-          <option value="goedgekeurd" {% if status_filter == 'goedgekeurd' %}selected{% endif %}>Goedgekeurd</option>
-          <option value="afgekeurd" {% if status_filter == 'afgekeurd' %}selected{% endif %}>Afgekeurd</option>
+          {% for filter_key, filter_data in keuring_status_filters.items() %}
+          <option value="{{ filter_data.value }}" {% if status_filter == filter_data.value %}selected{% endif %}>{{ filter_data.label }}</option>
+          {% endfor %}
         </select>
       </div>
 
@@ -152,7 +144,7 @@
 </div>
 
 <!-- C. MAIN TABLE -->
-<div class="card panel" style="margin-top:24px;">
+<div class="card panel panel-spacing">
   <div class="panel-title">Keuringen Lijst</div>
 
   <div class="table-responsive mt-3">
@@ -208,8 +200,7 @@
             <tr>
               <td>
                 <button type="button"
-                        class="btn btn-link p-0 fw-bold text-start"
-                        style="text-decoration: none; color: inherit;"
+                        class="btn btn-link p-0 fw-bold text-start link-no-decoration"
                         onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
                   <strong>{{ material.name or 'Onbekend' }}</strong><br>
                   <small class="text-muted">{{ material.serial }}</small>
@@ -259,7 +250,7 @@
                 {% elif item.status_badge == 'vandaag' %}
                   <span class="badge bg-warning">Vandaag</span>
                 {% elif item.status_badge == 'binnenkort' %}
-                  <span class="badge" style="background-color: #fd7e14;">Binnenkort</span>
+                  <span class="badge badge-orange">Binnenkort</span>
                 {% elif item.status_badge == 'goedgekeurd' %}
                   <span class="badge bg-success">✓ Goedgekeurd</span>
                 {% elif item.status_badge == 'afgekeurd' %}
@@ -382,7 +373,7 @@
 
       <form method="post" action="{{ url_for('keuring_toevoegen') }}" id="nieuweKeuringForm">
         <div class="modal-body">
-          <div id="nieuweKeuringErrors" class="alert alert-danger" style="display: none;"></div>
+          <div id="nieuweKeuringErrors" class="alert alert-danger error-container"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel <span class="text-danger">*</span></label>
@@ -453,7 +444,7 @@
       <form method="post" action="{{ url_for('keuring_bewerken') }}" id="bewerkKeuringForm">
         <input type="hidden" name="keuring_id" id="edit-keuring-id">
         <div class="modal-body">
-          <div id="bewerkKeuringErrors" class="alert alert-danger" style="display: none;"></div>
+          <div id="bewerkKeuringErrors" class="alert alert-danger error-container"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel</label>
@@ -516,7 +507,7 @@
       <form method="post" action="{{ url_for('keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
         <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
         <div class="modal-body">
-          <div id="keuringResultaatErrors" class="alert alert-danger" style="display: none;"></div>
+          <div id="keuringResultaatErrors" class="alert alert-danger error-container"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Resultaat <span class="text-danger">*</span></label>
@@ -724,8 +715,8 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
                         ${hist.volgende_keuring_datum ? ` | Volgende: ${escapeHtml(hist.volgende_keuring_datum)}` : ''}
                       </small>
                       ${hist.opmerkingen ? `<br><small>${escapeHtml(hist.opmerkingen)}</small>` : ''}
-                      ${hist.certificaat_path ? `
-                        <br><a href="/static/${escapeHtml(hist.certificaat_path)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+                      ${hist.certificaat_url ? `
+                        <br><a href="${escapeHtml(hist.certificaat_url)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
                           📄 Certificaat
                         </a>
                       ` : ''}

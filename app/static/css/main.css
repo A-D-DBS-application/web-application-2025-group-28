@@ -1,0 +1,360 @@
+/**
+ * Main CSS file - consolidated styles extracted from inline styles in templates
+ * This file contains page-specific styles that were previously inline
+ */
+
+/* ================== AUTH PAGES ================== */
+/* Styles for login and signup pages */
+body.auth-page {
+  background: #ffffff;
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 480px;
+  padding: 40px 20px;
+}
+
+.auth-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 40px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.auth-logo {
+  max-width: 200px;
+  height: auto;
+  margin: 0 auto 32px auto;
+  display: block;
+}
+
+.auth-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  margin-bottom: 8px;
+}
+
+.auth-subtitle {
+  color: #6b7280;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.auth-page .form-label {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.auth-page .form-control {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.auth-page .form-control:focus {
+  border-color: #111827;
+  box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.1);
+}
+
+.auth-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.btn-login {
+  background: #111827;
+  border-color: #111827;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 14px;
+  flex: 1;
+}
+
+.btn-login:hover {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.btn-register {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  color: #111827;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 14px;
+  flex: 1;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-register:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.auth-page .alert {
+  border-radius: 8px;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+}
+
+/* ================== MODAL STYLES ================== */
+.modal-dialog-end {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+/* ================== MATERIAAL PAGE STYLES ================== */
+.materiaal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-auto-rows: minmax(0, auto);
+  gap: 16px;
+}
+
+.usage-panel {
+  /* Panel for usage information */
+}
+
+.kpi-with-plus {
+  position: relative;
+}
+
+.kpi-plus-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #000;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.kpi-plus-btn:hover {
+  opacity: 0.85;
+}
+
+/* ================== TABLE ROW STYLES ================== */
+.table-row-clickable {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.table-row-clickable:hover {
+  background-color: #f8f9fa;
+}
+
+/* ================== ACTION BUTTON GROUPS ================== */
+.action-buttons-group {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ================== BADGE STYLES (from constants) ================== */
+.badge-outline-success {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #198754;
+}
+
+.badge-outline-danger {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #dc3545;
+}
+
+.badge-outline-warning {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #ffc107;
+}
+
+.badge-outline-purple {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #a855f7;
+}
+
+.badge-outline-secondary {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #6c757d;
+}
+
+/* ================== KEUERINGEN PAGE STYLES ================== */
+/* Button with icon and text */
+.btn-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-icon-large {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* KPI card hover effects */
+.kpi-clickable {
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.kpi-clickable:hover {
+  transform: scale(1.02);
+}
+
+/* KPI value colors */
+.kpi-value-danger {
+  color: #dc3545;
+}
+
+.kpi-value-warning {
+  color: #ffc107;
+}
+
+.kpi-value-orange {
+  color: #fd7e14;
+}
+
+/* Panel spacing */
+.panel-spacing {
+  margin-top: 24px;
+}
+
+.panel-spacing-sm {
+  margin-top: 16px;
+}
+
+/* Badge colors for keuringen */
+.badge-orange {
+  background-color: #fd7e14;
+  color: white;
+}
+
+/* Link without decoration */
+.link-no-decoration {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Error container (initially hidden) */
+.error-container {
+  display: none;
+}
+
+/* ================== JAVASCRIPT GENERATED STYLES ================== */
+/* Badge styles for dynamic content */
+.badge-keuring-goedgekeurd {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #198754;
+}
+
+.badge-keuring-afgekeurd {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #dc3545;
+}
+
+.badge-keuring-verlopen {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #ffc107;
+}
+
+.badge-keuring-gepland {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #a855f7;
+}
+
+.badge-keuring-none {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #6c757d;
+}
+
+/* List group scrollable */
+.list-group-scrollable {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* List group item hover */
+.list-group-item-hover {
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.list-group-item-hover:hover {
+  background-color: #f8f9fa;
+}
+
+/* Hidden form */
+.form-hidden {
+  display: none !important;
+}
+
+/* Image preview styles */
+.image-preview-small {
+  max-width: 200px;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-top: 4px;
+}
+
+/* Material type image container */
+.material-type-image-container {
+  display: none;
+}
+
+/* ================== UTILITY CLASSES ================== */
+/* Display utilities */
+.d-none-important {
+  display: none !important;
+}
+
+/* Font size utilities */
+.fs-18 {
+  font-size: 18px;
+}
+
+/* Flex utilities */
+.flex-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+

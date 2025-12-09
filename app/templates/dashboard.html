@@ -14,7 +14,7 @@
     <div class="grid grid-top">
       <div class="card kpi">
         <div class="kpi-title">
-          <span style="font-size: 18px;">📦</span>
+          <span class="fs-18">📦</span>
           Totaal materiaal
         </div>
         <div class="kpi-value">{{ total_items }}</div>
@@ -133,67 +133,7 @@
 </div>
 
 <!-- Modal: Gebruik Materieel -->
-<div class="modal fade" id="gebruikMaterieelModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-end modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Materiaal in gebruik nemen</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
-      </div>
-
-      <form method="post" action="{{ url_for('materiaal_gebruiken') }}">
-        <div class="modal-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <label class="form-label">Naam*</label>
-              <input name="name"
-                     id="use-name"
-                     list="materiaal-namen"
-                     class="form-control"
-                     placeholder="Kies of typ een naam">
-              <datalist id="materiaal-namen">
-                {% for m in all_materials %}
-                  {% if m.name %}
-                    <option value="{{ m.name }}">{{ m.name }}</option>
-                  {% endif %}
-                {% endfor %}
-              </datalist>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Gebruikt door</label>
-              <input name="assigned_to"
-                     id="use-assigned_to"
-                     class="form-control"
-                     value="{{ current_user.Naam if current_user else '' }}">
-            </div>
-
-            <div class="col-md-12">
-              <label class="form-label">Werf (project)</label>
-              <select name="project_id" class="form-select">
-                <option value="">Geen specifieke werf</option>
-                {% for p in projects %}
-                  {% set is_future = p.start_date and p.start_date > today %}
-                  <option value="{{ p.id }}">
-                    {{ p.name or 'Werf ' ~ p.id }}
-                    {% if is_future and p.start_date %}
-                      (start {{ p.start_date.strftime('%Y-%m-%d') }})
-                    {% endif %}
-                  </option>
-                {% endfor %}
-              </select>
-              <small class="text-muted">De gekozen werf wordt gelinkt aan dit gebruik.</small>
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer">
-          <button class="btn btn-primary" type="submit">Materieel gebruiken</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
+{% include 'partials/modals/gebruik_materieel.html' %}
 
 <!-- Modal: Bewerken Materieel -->
 <div class="modal fade" id="editMaterieelModal" tabindex="-1" aria-hidden="true">
@@ -251,10 +191,9 @@
             <div class="col-md-6">
               <label class="form-label">Keuring*</label>
               <select name="status" id="edit-status" class="form-select" required>
-                <option value="goedgekeurd">Goedgekeurd</option>
-                <option value="afgekeurd">Afgekeurd</option>
-                <option value="keuring verlopen">Keuring verlopen</option>
-                <option value="keuring gepland">Keuring gepland</option>
+                {% for status_key, status_data in inspection_statuses.items() %}
+                <option value="{{ status_data.value }}">{{ status_data.label }}</option>
+                {% endfor %}
               </select>
             </div>
 
@@ -292,9 +231,6 @@
   </div>
 </div>
 
-<style>
-.modal-dialog-end { margin-right: 0; margin-left: auto; }
-</style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -357,27 +293,27 @@ document.addEventListener('DOMContentLoaded', function() {
               keuringText = 'Keuring gepland';
             }
             
-            // Create badge HTML for keuring status (white background with colored border and black text)
+            // Create badge HTML for keuring status using CSS classes
             let keuringBadgeHtml = '';
-            let badgeStyle = '';
+            let badgeClass = '';
             
             if (keuringStatus === 'goedgekeurd') {
-              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+              badgeClass = 'badge-keuring-goedgekeurd';
             } else if (keuringStatus === 'afgekeurd') {
-              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #dc3545;';
+              badgeClass = 'badge-keuring-afgekeurd';
             } else if (keuringStatus === 'keuring verlopen') {
-              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #ffc107;';
+              badgeClass = 'badge-keuring-verlopen';
             } else if (keuringStatus === 'keuring gepland') {
-              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
+              badgeClass = 'badge-keuring-gepland';
             } else {
               // Geen keuring - grijs
-              badgeStyle = 'background-color: white; color: #212529; border: 1px solid #6c757d;';
+              badgeClass = 'badge-keuring-none';
             }
             
             if (item.keuring_gepland) {
-              keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
+              keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
             } else {
-              keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">${escapeHtml(keuringText)}</span>`;
+              keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
             }
             
             // Helper function to display value or "onbekend"
@@ -429,10 +365,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${item.documentation_path ? `
                   <div class="mb-3">
                     <strong>Documentatie:</strong><br>
-                    <a href="/static/${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
                       📄 Bekijk documentatie
                     </a>
-                    <a href="/static/${escapeHtml(item.documentation_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
                       ⬇️ Download
                     </a>
                   </div>
@@ -440,10 +376,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${item.safety_sheet_path ? `
                   <div class="mb-3">
                     <strong>Veiligheidsfiche:</strong><br>
-                    <a href="/static/${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
                       📄 Bekijk veiligheidsfiche
                     </a>
-                    <a href="/static/${escapeHtml(item.safety_sheet_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
                       ⬇️ Download
                     </a>
                   </div>
@@ -468,17 +404,14 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
           } else {
             // Multiple results - show list
-            let html = '<div class="list-group" style="max-height: 500px; overflow-y: auto;">';
+            let html = '<div class="list-group list-group-scrollable">';
             data.items.forEach(item => {
               // Status: "in gebruik" or "niet in gebruik"
               const isInUse = item.status === 'in gebruik';
               const statusClass = isInUse ? 'bg-success' : 'bg-danger';
               const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
               html += `
-                <div class="list-group-item list-group-item-action" 
-                     style="cursor: pointer; transition: background-color 0.2s;" 
-                     onmouseover="this.style.backgroundColor='#f8f9fa'" 
-                     onmouseout="this.style.backgroundColor=''" 
+                <div class="list-group-item list-group-item-action list-group-item-hover" 
                      onclick="showMaterialDetail('${escapeHtml(item.serial)}')">
                   <div class="d-flex justify-content-between align-items-start">
                     <div class="flex-grow-1">
@@ -568,27 +501,27 @@ document.addEventListener('DOMContentLoaded', function() {
             keuringText = 'Keuring gepland';
           }
           
-          // Create badge HTML for keuring status (white background with colored border and black text)
+          // Create badge HTML for keuring status using CSS classes
           let keuringBadgeHtml = '';
-          let badgeStyle = '';
+          let badgeClass = '';
           
           if (keuringStatus === 'goedgekeurd') {
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #198754;';
+            badgeClass = 'badge-keuring-goedgekeurd';
           } else if (keuringStatus === 'afgekeurd') {
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #dc3545;';
+            badgeClass = 'badge-keuring-afgekeurd';
           } else if (keuringStatus === 'keuring verlopen') {
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #ffc107;';
+            badgeClass = 'badge-keuring-verlopen';
           } else if (keuringStatus === 'keuring gepland') {
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #a855f7;';
+            badgeClass = 'badge-keuring-gepland';
           } else {
             // Geen keuring - grijs
-            badgeStyle = 'background-color: white; color: #212529; border: 1px solid #6c757d;';
+            badgeClass = 'badge-keuring-none';
           }
           
           if (item.keuring_gepland) {
-            keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
+            keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
           } else {
-            keuringBadgeHtml = `<span class="badge" style="${badgeStyle}">${escapeHtml(keuringText)}</span>`;
+            keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
           }
           
           // Helper function to display value or "onbekend"
@@ -640,10 +573,10 @@ document.addEventListener('DOMContentLoaded', function() {
               ${item.documentation_path ? `
                 <div class="mb-3">
                   <strong>Documentatie:</strong><br>
-                  <a href="/static/${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
                     📄 Bekijk documentatie
                   </a>
-                  <a href="/static/${escapeHtml(item.documentation_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
                     ⬇️ Download
                   </a>
                 </div>
@@ -651,10 +584,10 @@ document.addEventListener('DOMContentLoaded', function() {
               ${item.safety_sheet_path ? `
                 <div class="mb-3">
                   <strong>Veiligheidsfiche:</strong><br>
-                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
                     📄 Bekijk veiligheidsfiche
                   </a>
-                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" download class="btn btn-sm btn-outline-secondary me-2">
+                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
                     ⬇️ Download
                   </a>
                 </div>

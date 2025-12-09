@@ -21,6 +21,11 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/components.css') }}?v=1"
   >
+  <!-- Main consolidated styles (extracted from inline styles) -->
+  <link
+    rel="stylesheet"
+    href="{{ url_for('static', filename='css/main.css') }}?v=1"
+  >
 </head>
 <body>
   {% include 'partials/navbar.html' %}
