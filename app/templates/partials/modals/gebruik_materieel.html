@@ -1,0 +1,64 @@
+<!-- Modal: Gebruik Materieel -->
+<!-- This modal is reusable across multiple templates -->
+<div class="modal fade" id="gebruikMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Materiaal in gebruik nemen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal_gebruiken') }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name"
+                     id="use-name"
+                     list="materiaal-namen"
+                     class="form-control"
+                     placeholder="Kies of typ een naam">
+              <datalist id="materiaal-namen">
+                {% for m in all_materials %}
+                  {% if m.name %}
+                    <option value="{{ m.name }}">{{ m.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </datalist>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Gebruikt door</label>
+              <input name="assigned_to"
+                     id="use-assigned_to"
+                     class="form-control"
+                     value="{{ current_user.Naam if current_user else '' }}">
+            </div>
+
+            <div class="col-md-12">
+              <label class="form-label">Werf (project)</label>
+              <select name="project_id" class="form-select">
+                <option value="">Geen specifieke werf</option>
+                {% for p in projects %}
+                  {% set is_future = p.start_date and p.start_date > today %}
+                  <option value="{{ p.id }}">
+                    {{ p.name or 'Werf ' ~ p.id }}
+                    {% if is_future and p.start_date %}
+                      (start {{ p.start_date.strftime('%Y-%m-%d') }})
+                    {% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+              <small class="text-muted">De gekozen werf wordt gelinkt aan dit gebruik.</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Materieel gebruiken</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+

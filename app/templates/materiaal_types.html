@@ -258,13 +258,13 @@
         <button type="button" 
                 class="btn btn-outline-dark" 
                 id="details-edit-btn"
-                style="display:none;">
+                class="d-none">
           Bewerken
         </button>
         <button type="button" 
                 class="btn btn-outline-danger" 
                 id="details-delete-btn"
-                style="display:none;">
+                class="d-none">
           Verwijderen
         </button>
       </div>
@@ -378,7 +378,7 @@ document.addEventListener('DOMContentLoaded', function () {
       if (image) {
         currentImageDiv.innerHTML = `
           <small class="text-muted">Huidige foto:</small><br>
-          <img src="/static/${escapeHtml(image)}" style="max-width:200px; max-height:150px; object-fit:cover; border-radius:8px; margin-top:4px;" alt="Huidige foto">
+          <img src="/static/${escapeHtml(image)}" class="image-preview-small" alt="Huidige foto">
         `;
       } else {
         currentImageDiv.innerHTML = '';
@@ -428,7 +428,7 @@ function showTypeDetails(id, name, description, validityDays, imagePath, safetyP
     html += `
       <div class="mb-3 text-center">
         <img src="/static/${escapeHtml(imagePath)}" 
-             style="max-width:100%; max-height:300px; object-fit:cover; border-radius:8px;" 
+             class="image-preview-large" 
              alt="${escapeHtml(name)}">
       </div>
     `;
@@ -484,7 +484,7 @@ function showTypeDetails(id, name, description, validityDays, imagePath, safetyP
       if (imagePath) {
         currentImageDiv.innerHTML = `
           <small class="text-muted">Huidige foto:</small><br>
-          <img src="/static/${escapeHtml(imagePath)}" style="max-width:200px; max-height:150px; object-fit:cover; border-radius:8px; margin-top:4px;" alt="Huidige foto">
+          <img src="/static/${escapeHtml(imagePath)}" class="image-preview-small" alt="Huidige foto">
         `;
       } else {
         currentImageDiv.innerHTML = '';
