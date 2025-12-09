@@ -1,0 +1,457 @@
+"""
+Service layer for business logic - separates business rules from route handlers.
+Routes should call these functions instead of containing business logic directly.
+"""
+from datetime import datetime, timedelta
+from models import (
+    db, Material, MaterialUsage, Project, Keuringstatus, 
+    KeuringHistoriek, MaterialType, Activity
+)
+from sqlalchemy import or_, func, and_, case
+from constants import (
+    DEFAULT_INSPECTION_STATUS, VALID_INSPECTION_STATUSES,
+    VALID_USAGE_STATUSES
+)
+
+
+class MaterialService:
+    """Service for material-related business logic"""
+    
+    @staticmethod
+    def find_by_serial(serial: str) -> Material | None:
+        """Find material by serial number"""
+        if not serial:
+            return None
+        return Material.query.filter_by(serial=serial).first()
+    
+    @staticmethod
+    def find_by_name_or_number(name: str, nummer: str | None) -> Material | None:
+        """Find material by nummer_op_materieel first, then by name"""
+        item = None
+        if nummer:
+            item = Material.query.filter_by(nummer_op_materieel=nummer).first()
+        if not item and name:
+            item = Material.query.filter_by(name=name).first()
+        return item
+    
+    @staticmethod
+    def get_total_count() -> int:
+        """Get total count of materials"""
+        return Material.query.count()
+    
+    @staticmethod
+    def get_in_use_count() -> int:
+        """Get count of materials currently in use"""
+        return (
+            db.session.query(func.count(MaterialUsage.id))
+            .filter(MaterialUsage.is_active.is_(True))
+            .scalar()
+        ) or 0
+    
+    @staticmethod
+    def get_to_inspect_count() -> int:
+        """Get count of materials requiring inspection"""
+        keuring_verlopen = Material.query.filter_by(
+            inspection_status="keuring verlopen"
+        ).count()
+        keuring_gepland = Material.query.filter_by(
+            inspection_status="keuring gepland"
+        ).count()
+        return keuring_verlopen + keuring_gepland
+    
+    @staticmethod
+    def update_expired_inspections() -> int:
+        """
+        Automatically update materials with expired inspections.
+        Optimized to avoid N+1 queries by using a single bulk update query.
+        Returns count of updated materials.
+        """
+        today = datetime.utcnow().date()
+        
+        # Get keuringen with expired dates
+        keuringen_met_verlopen_datum = Keuringstatus.query.filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle < today,
+            Keuringstatus.laatste_controle.is_(None)
+        ).all()
+        
+        if not keuringen_met_verlopen_datum:
+            return 0
+        
+        # Collect all serial numbers for batch lookup
+        serials = [k.serienummer for k in keuringen_met_verlopen_datum if k.serienummer]
+        if not serials:
+            return 0
+        
+        # Single query to get all materials by serial numbers
+        materials = Material.query.filter(
+            Material.serial.in_(serials),
+            ~Material.inspection_status.in_(["keuring verlopen", "keuring gepland"])
+        ).all()
+        
+        # Create a map of serial -> material for O(1) lookup
+        material_map = {m.serial: m for m in materials}
+        
+        # Update materials that need updating
+        updated_count = 0
+        for keuring in keuringen_met_verlopen_datum:
+            if not keuring.serienummer:
+                continue
+            
+            material = material_map.get(keuring.serienummer)
+            if material:
+                material.inspection_status = "keuring verlopen"
+                updated_count += 1
+        
+        if updated_count > 0:
+            db.session.commit()
+        
+        return updated_count
+    
+    @staticmethod
+    def is_material_in_use(material_id: int) -> bool:
+        """Check if material is currently in use"""
+        return MaterialUsage.query.filter_by(
+            material_id=material_id,
+            is_active=True
+        ).count() > 0
+    
+    @staticmethod
+    def get_active_usage(material_id: int) -> MaterialUsage | None:
+        """Get active usage record for material"""
+        return MaterialUsage.query.filter_by(
+            material_id=material_id,
+            is_active=True
+        ).first()
+    
+    @staticmethod
+    def update_material_status(material: Material) -> None:
+        """
+        Update material status based on active usages.
+        Status = "in gebruik" if has active usage, else "niet in gebruik"
+        """
+        active_count = MaterialUsage.query.filter_by(
+            material_id=material.id,
+            is_active=True
+        ).count()
+        
+        if active_count > 0:
+            material.status = "in gebruik"
+        else:
+            material.status = "niet in gebruik"
+
+
+class MaterialUsageService:
+    """Service for material usage-related business logic"""
+    
+    @staticmethod
+    def start_usage(
+        material: Material,
+        user_id: int,
+        used_by: str,
+        project_id: int | None = None,
+        site: str | None = None
+    ) -> MaterialUsage:
+        """
+        Start a new material usage session.
+        Returns the created MaterialUsage object.
+        """
+        # Check if already in use
+        existing = MaterialUsageService.get_active_usage(material.id)
+        if existing:
+            raise ValueError("Material is already in use")
+        
+        # Create usage record
+        usage = MaterialUsage(
+            material_id=material.id,
+            user_id=user_id,
+            site=site or (material.site if material.site else None),
+            start_time=datetime.utcnow(),
+            is_active=True,
+            used_by=used_by,
+            project_id=project_id
+        )
+        
+        db.session.add(usage)
+        
+        # Update material
+        material.assigned_to = used_by
+        if project_id:
+            material.project_id = project_id
+        if site:
+            material.site = site
+        material.status = "in gebruik"
+        
+        db.session.commit()
+        return usage
+    
+    @staticmethod
+    def stop_usage(usage_id: int, user_name: str, is_admin: bool = False) -> MaterialUsage:
+        """
+        Stop an active material usage session.
+        Returns the updated MaterialUsage object.
+        """
+        usage = MaterialUsage.query.filter_by(id=usage_id).first()
+        if not usage or not usage.is_active:
+            raise ValueError("Usage record not found or not active")
+        
+        # Check permissions
+        usage_name = (usage.used_by or "").strip()
+        is_own_usage = usage_name.lower() == user_name.lower()
+        
+        if not is_own_usage and not is_admin:
+            raise PermissionError("Can only stop own material usage")
+        
+        # Update usage
+        usage.is_active = False
+        usage.end_time = datetime.utcnow()
+        
+        # Update material if needed
+        material = Material.query.filter_by(id=usage.material_id).first()
+        if material:
+            if material.assigned_to == usage.used_by:
+                material.assigned_to = None
+                material.site = None
+            
+            # Check if other active usages exist
+            other_active = MaterialUsage.query.filter_by(
+                material_id=material.id,
+                is_active=True
+            ).count()
+            
+            if other_active == 0:
+                material.status = "niet in gebruik"
+        
+        db.session.commit()
+        return usage
+    
+    @staticmethod
+    def get_active_usage(material_id: int) -> MaterialUsage | None:
+        """Get active usage for material"""
+        return MaterialUsage.query.filter_by(
+            material_id=material_id,
+            is_active=True
+        ).first()
+    
+    @staticmethod
+    def assign_to_project(usage_id: int, project_id: int) -> MaterialUsage:
+        """
+        Assign an active usage to a project.
+        Returns the updated MaterialUsage object.
+        """
+        usage = MaterialUsage.query.filter_by(id=usage_id, is_active=True).first()
+        if not usage:
+            raise ValueError("Active usage not found")
+        
+        project = Project.query.filter_by(id=project_id, is_deleted=False).first()
+        if not project:
+            raise ValueError("Project not found")
+        
+        material = Material.query.filter_by(id=usage.material_id).first()
+        if not material:
+            raise ValueError("Material not found")
+        
+        # Update usage and material
+        usage.project_id = project_id
+        usage.site = project.name
+        material.project_id = project_id
+        material.site = project.name
+        
+        db.session.commit()
+        return usage
+
+
+class ActivityService:
+    """Service for activity-related business logic and filtering"""
+    
+    @staticmethod
+    def get_activities_filtered(
+        filter_type: str = "all",
+        filter_user: str = "",
+        filter_period: str = "all",
+        search_q: str = "",
+        limit: int | None = 500
+    ) -> tuple[list[Activity], dict]:
+        """
+        Get filtered activities using ORM queries.
+        Returns (activities_list, counts_dict)
+        """
+        today = datetime.utcnow().date()
+        query = Activity.query
+        
+        # Filter by period using ORM
+        if filter_period == "today":
+            start_date = datetime.combine(today, datetime.min.time())
+            query = query.filter(Activity.created_at >= start_date)
+        elif filter_period == "week":
+            start_date = datetime.combine(today - timedelta(days=7), datetime.min.time())
+            query = query.filter(Activity.created_at >= start_date)
+        elif filter_period == "month":
+            start_date = datetime.combine(today - timedelta(days=30), datetime.min.time())
+            query = query.filter(Activity.created_at >= start_date)
+        
+        # Filter by user using ORM
+        if filter_user:
+            query = query.filter(Activity.user_name.ilike(f"%{filter_user}%"))
+        
+        # Filter by search query using ORM
+        if search_q:
+            query = query.filter(
+                or_(
+                    Activity.name.ilike(f"%{search_q}%"),
+                    Activity.serial.ilike(f"%{search_q}%"),
+                    Activity.action.ilike(f"%{search_q}%"),
+                )
+            )
+        
+        # Count by category using ORM subqueries (more efficient than Python loops)
+        materiaal_query = query.filter(
+            or_(
+                Activity.action.ilike("%toegevoegd%"),
+                Activity.action.ilike("%bewerkt%"),
+                Activity.action.ilike("%verwijderd%"),
+            )
+        )
+        gebruik_query = query.filter(
+            or_(
+                Activity.action.ilike("%in gebruik%"),
+                Activity.action.ilike("%verplaatst%"),
+                Activity.action.ilike("%gekoppeld%"),
+            )
+        )
+        keuring_query = query.filter(Activity.action.ilike("%keuring%"))
+        
+        # Get counts
+        materiaal_count = materiaal_query.count()
+        gebruik_count = gebruik_query.count()
+        keuring_count = keuring_query.count()
+        
+        # Filter by type if specified, then apply limit
+        if filter_type == "materiaal":
+            display_query = materiaal_query.order_by(Activity.created_at.desc())
+        elif filter_type == "gebruik":
+            display_query = gebruik_query.order_by(Activity.created_at.desc())
+        elif filter_type == "keuring":
+            display_query = keuring_query.order_by(Activity.created_at.desc())
+        else:
+            display_query = query.order_by(Activity.created_at.desc())
+        
+        # Apply limit if specified
+        if limit:
+            display_activities = display_query.limit(limit).all()
+            all_activities = query.order_by(Activity.created_at.desc()).limit(limit).all()
+        else:
+            display_activities = display_query.all()
+            all_activities = query.order_by(Activity.created_at.desc()).all()
+        
+        counts = {
+            "all": len(all_activities),
+            "materiaal": materiaal_count,
+            "gebruik": gebruik_count,
+            "keuring": keuring_count,
+        }
+        
+        return display_activities, counts
+    
+    @staticmethod
+    def get_unique_users() -> list[str]:
+        """Get unique user names using ORM"""
+        unique_users = db.session.query(Activity.user_name).filter(
+            Activity.user_name.isnot(None),
+            Activity.user_name != ""
+        ).distinct().order_by(Activity.user_name).all()
+        return [u[0] for u in unique_users if u[0]]
+
+
+class MaterialUsageRepository:
+    """Repository for material usage queries - handles ORM-based filtering"""
+    
+    @staticmethod
+    def get_active_usages_grouped(user_name: str | None = None) -> tuple[list[dict], list[dict], list[dict]]:
+        """
+        Get active usages grouped by user using ORM queries.
+        Returns (my_usages, other_usages, usages_without_project)
+        """
+        # Base query with joins
+        query = (
+            db.session.query(MaterialUsage, Material)
+            .join(Material, MaterialUsage.material_id == Material.id)
+            .filter(MaterialUsage.is_active.is_(True))
+            .order_by(MaterialUsage.start_time.desc())
+        )
+        
+        # Get all active usages
+        active_usages = query.all()
+        
+        # Build result dictionaries
+        my_usages = []
+        other_usages = []
+        usages_without_project = []
+        
+        user_name_lower = (user_name or "").lower()
+        
+        for usage, material in active_usages:
+            row = {
+                "id": usage.id,
+                "material_id": material.id,
+                "name": material.name,
+                "serial": material.serial,
+                "site": usage.site or "",
+                "used_by": usage.used_by or "",
+                "start_time": usage.start_time,
+                "project_id": usage.project_id,
+                "material": material,
+                "project": usage.project,
+            }
+            
+            # Check if usage has no project
+            if usage.project_id is None:
+                usages_without_project.append(row)
+            
+            # Check if the "used_by" name matches the logged-in user's name
+            usage_name = (usage.used_by or "").strip().lower()
+            if user_name_lower and usage_name == user_name_lower:
+                my_usages.append(row)
+            else:
+                other_usages.append(row)
+        
+        return my_usages, other_usages, usages_without_project
+    
+    @staticmethod
+    def get_active_material_ids() -> set[int]:
+        """Get set of material IDs that are currently in use using ORM"""
+        active_ids = (
+            db.session.query(MaterialUsage.material_id)
+            .filter(MaterialUsage.is_active.is_(True))
+            .distinct()
+            .all()
+        )
+        return {row[0] for row in active_ids}
+
+
+class KeuringRepository:
+    """Repository for keuring queries - handles ORM-based filtering"""
+    
+    @staticmethod
+    def get_uitgevoerde_keuringen(today: datetime.date) -> list[Keuringstatus]:
+        """Get executed keuringen using ORM"""
+        return (
+            Keuringstatus.query
+            .filter(Keuringstatus.laatste_controle.isnot(None))
+            .filter(Keuringstatus.laatste_controle <= today)
+            .order_by(Keuringstatus.laatste_controle.desc())
+            .all()
+        )
+    
+    @staticmethod
+    def get_geplande_keuringen(today: datetime.date) -> list[Keuringstatus]:
+        """Get planned keuringen using ORM"""
+        return (
+            Keuringstatus.query
+            .filter(Keuringstatus.volgende_controle.isnot(None))
+            .filter(Keuringstatus.volgende_controle > today)
+            .filter(Keuringstatus.laatste_controle.is_(None))
+            .order_by(Keuringstatus.volgende_controle.asc())
+            .all()
+        )
+

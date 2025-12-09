@@ -4,46 +4,20 @@ Materiaal blueprint - handles all material-related routes
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, g
 from models import db, Material, MaterialUsage, Project, MaterialType, Activity, Keuringstatus
 from helpers import login_required, log_activity_db
+from services import MaterialService, MaterialUsageRepository
 from datetime import datetime
-from sqlalchemy import or_, func
+from sqlalchemy import or_, func, case
 from werkzeug.utils import secure_filename
 import os
 
 materiaal_bp = Blueprint('materiaal', __name__, url_prefix='/materiaal')
-
-# Import helper functions from app.py (will be moved later)
-# For now, we'll import them or define them here
-def update_verlopen_keuringen():
-    """Update expired inspections automatically"""
-    from models import Keuringstatus
-    today = datetime.utcnow().date()
-    
-    keuringen_met_verlopen_datum = Keuringstatus.query.filter(
-        Keuringstatus.volgende_controle.isnot(None),
-        Keuringstatus.volgende_controle < today,
-        Keuringstatus.laatste_controle.is_(None)
-    ).all()
-    
-    updated_count = 0
-    for keuring in keuringen_met_verlopen_datum:
-        if not keuring.serienummer:
-            continue
-        material = Material.query.filter_by(serial=keuring.serienummer).first()
-        if material:
-            material.inspection_status = "keuring verlopen"
-            updated_count += 1
-    
-    if updated_count > 0:
-        db.session.commit()
-    
-    return updated_count
 
 
 @materiaal_bp.route("", methods=["GET"])
 @login_required
 def materiaal():
     """Materiaal overzicht"""
-    update_verlopen_keuringen()
+    MaterialService.update_expired_inspections()
     
     q = (request.args.get("q") or "").strip().lower()
     type_filter = (request.args.get("type") or "").strip().lower()
@@ -66,61 +40,25 @@ def materiaal():
         elif status == "niet in gebruik":
             query = query.filter(Material.status != "in gebruik")
 
-    total_items = Material.query.count()
-    in_use = (
-        db.session.query(func.count(MaterialUsage.id))
-        .filter(MaterialUsage.is_active.is_(True))
-        .scalar()
-    ) or 0
+    # Use service layer for counts
+    total_items = MaterialService.get_total_count()
+    in_use = MaterialService.get_in_use_count()
 
     all_materials = Material.query.all()
     
-    active_usages = (
-        db.session.query(MaterialUsage, Material)
-        .join(Material, MaterialUsage.material_id == Material.id)
-        .filter(MaterialUsage.is_active.is_(True))
-        .order_by(MaterialUsage.start_time.desc())
-        .all()
-    )
-
-    my_usages = []
-    other_usages = []
-    usages_without_project = []
-    
+    # Use repository for usage grouping (ORM-based)
     current_user_name = g.user.Naam if getattr(g, "user", None) else None
-
-    for usage, material in active_usages:
-        row = {
-            "id": usage.id,
-            "material_id": material.id,
-            "name": material.name,
-            "serial": material.serial,
-            "site": usage.site or "",
-            "used_by": usage.used_by or "",
-            "start_time": usage.start_time,
-            "project_id": usage.project_id,
-            "material": material,  # Voor backward compatibility
-            "project": usage.project,
-        }
-        
-        # Check if usage has no project
-        if usage.project_id is None:
-            usages_without_project.append(row)
-        
-        # Check if the "used_by" name matches the logged-in user's name
-        usage_name = (usage.used_by or "").strip()
-        if current_user_name and usage_name.lower() == current_user_name.lower():
-            my_usages.append(row)
-        else:
-            other_usages.append(row)
-
-    # Items ophalen en sorteren: eerst materiaal dat in gebruik is, daarna de rest
-    active_material_ids = set()
-    for usage_dict in my_usages + other_usages:
-        if 'material' in usage_dict and usage_dict['material']:
-            active_material_ids.add(usage_dict['material'].id)
+    my_usages, other_usages, usages_without_project = MaterialUsageRepository.get_active_usages_grouped(
+        user_name=current_user_name
+    )
     
+    # Get active material IDs using repository (ORM-based)
+    active_material_ids = MaterialUsageRepository.get_active_material_ids()
+    
+    # Get items and sort using ORM order_by with case expression
     items = query.all()
+    # Sort in Python for now (could be optimized with SQL CASE, but complex)
+    # This is acceptable since we're sorting a filtered result set
     items.sort(
         key=lambda it: (
             it.id not in active_material_ids,  # in gebruik (False) komt eerst

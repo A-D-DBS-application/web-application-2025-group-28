@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from sqlalchemy.orm import relationship
 
 db = SQLAlchemy()
 
@@ -15,13 +16,20 @@ class Gebruiker(db.Model):
     Functie = db.Column(db.String)                   # "Functie"
 
     # na de SQL hierboven is dit BIGINT in de database
-    project_id = db.Column(db.BigInteger, nullable=True)
+    project_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("Project.ProjectID"),
+        nullable=True
+    )
 
     telefoon_nummer = db.Column(db.Numeric, nullable=True)
     password_hash = db.Column(db.String, nullable=True)
 
     # Admin status voor beheerfuncties
     is_admin = db.Column(db.Boolean, default=False)
+    
+    # Relationships
+    project = db.relationship("Project", backref="gebruikers", foreign_keys=[project_id])
 
 
 class Project(db.Model):
@@ -61,16 +69,36 @@ class Material(db.Model):
     # mappen op kolomnamen in Supabase
     name = db.Column("Naam", db.String)              # "Naam"
     status = db.Column("Status", db.String)          # "Status"
-    keuring_id = db.Column("Keuring", db.BigInteger, nullable=True)
+    
+    # Foreign key to Keuringstatus
+    keuring_id = db.Column(
+        "Keuring",
+        db.BigInteger,
+        db.ForeignKey("Keuringstatus.id", ondelete="SET NULL"),
+        nullable=True
+    )
 
-    # na SQL hierboven is dit BIGINT in de database
-    project_id = db.Column("project_id", db.BigInteger, nullable=True)
+    # Foreign key to Project - Project table uses "ProjectID" as column name
+    project_id = db.Column(
+        "project_id",
+        db.BigInteger,
+        db.ForeignKey("Project.ProjectID", ondelete="SET NULL"),
+        nullable=True
+    )
 
     serial = db.Column("Serienummer", db.String, unique=True, nullable=False)
-    type = db.Column("type", db.String)              # "type"
+    
+    # Foreign key to MaterialType - materials belong to a material_type
+    material_type_id = db.Column(
+        "material_type_id",
+        db.BigInteger,
+        db.ForeignKey("material_types.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    type = db.Column("type", db.String)              # "type" (legacy string field, kept for backward compatibility)
 
     purchase_date = db.Column("purchase_date", db.Date, nullable=True)
-    assigned_to = db.Column("assigned_to", db.String, nullable=True)
+    assigned_to = db.Column("assigned_to", db.String, nullable=True)  # Denormalized user name (not FK - for display/historical purposes)
     site = db.Column("site", db.String, nullable=True)
     note = db.Column("note", db.String, nullable=True)
 
@@ -80,19 +108,37 @@ class Material(db.Model):
     nummer_op_materieel = db.Column("nummer_op_materieel", db.String, nullable=True)
     inspection_status = db.Column("inspection_status", db.String, nullable=True)
 
-    # handige (read-only) relatie naar Project
+    # Relationships with optimized lazy loading
+    # Using "select" lazy loading (default) - loads on access, but can be overridden with eager loading
     project = db.relationship(
         "Project",
         backref="materials",
-        primaryjoin="Project.id == foreign(Material.project_id)",
-        viewonly=True,
+        foreign_keys=[project_id],
+        lazy="select",  # Explicit lazy loading strategy
+    )
+    
+    # Relationship to Keuringstatus via keuring_id
+    keuring = db.relationship(
+        "Keuringstatus",
+        backref="materials",
+        foreign_keys=[keuring_id],
+        uselist=False,  # One-to-one relationship
+        lazy="select",  # Explicit lazy loading strategy
+    )
+    
+    # Relationship to MaterialType via material_type_id
+    material_type = db.relationship(
+        "MaterialType",
+        backref="materials",
+        foreign_keys=[material_type_id],
+        lazy="select",
     )
 
 
 class Activity(db.Model):
     """
     Map naar Supabase tabel 'activity_log'
-    kolommen: id, created_at, action, name, serial, user_name
+    kolommen: id, created_at, action, name, serial, user_name, user_id
     """
     __tablename__ = "activity_log"
 
@@ -101,7 +147,23 @@ class Activity(db.Model):
     action = db.Column(db.String)
     name = db.Column(db.String)
     serial = db.Column(db.String)
-    user_name = db.Column(db.String)
+    user_name = db.Column(db.String)  # Denormalized user name (for historical reference)
+    
+    # Foreign key to Gebruiker - links activity to user
+    user_id = db.Column(
+        "user_id",
+        db.BigInteger,
+        db.ForeignKey("Gebruiker.gebruiker_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    
+    # Relationship to Gebruiker
+    user = db.relationship(
+        "Gebruiker",
+        backref="activities",
+        foreign_keys=[user_id],
+        lazy="select",
+    )
 
 
 class MaterialUsage(db.Model):
@@ -127,8 +189,13 @@ class MaterialUsage(db.Model):
         nullable=True,
     )
 
-    # na SQL hierboven is dit BIGINT
-    project_id = db.Column("project_id", db.BigInteger, nullable=True)
+    # Foreign key to Project - Project table uses "ProjectID" as column name
+    project_id = db.Column(
+        "project_id",
+        db.BigInteger,
+        db.ForeignKey("Project.ProjectID", ondelete="SET NULL"),
+        nullable=True
+    )
 
     site = db.Column(db.Text, nullable=True)
     note = db.Column(db.Text, nullable=True)
@@ -137,15 +204,15 @@ class MaterialUsage(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     used_by = db.Column(db.Text, nullable=True)
 
-    # handige relaties
-    material = db.relationship("Material", backref="usages")
-    user = db.relationship("Gebruiker", backref="usages")
+    # Relationships with optimized lazy loading
+    material = db.relationship("Material", backref="usages", lazy="select")
+    user = db.relationship("Gebruiker", backref="usages", lazy="select")
 
+    # Relationship to Project - now with proper ForeignKey, no need for primaryjoin
     project = db.relationship(
         "Project",
         backref="material_usages",
-        primaryjoin="Project.id == foreign(MaterialUsage.project_id)",
-        viewonly=True,
+        lazy="select",
     )
 
 
@@ -167,7 +234,9 @@ class Keuringstatus(db.Model):
     uitgevoerd_door = db.Column("uitgevoerd_door", db.String, nullable=True)
     opmerkingen = db.Column("opmerkingen", db.Text, nullable=True)
     
-    # Relatie naar Material via serienummer (niet via foreign key, maar via serienummer match)
+    # Relationships
+    # Note: Material relationship is via keuring_id FK in Material model
+    # This is a reverse relationship - materials reference this keuring
 
 
 class KeuringHistoriek(db.Model):
@@ -202,7 +271,7 @@ class KeuringHistoriek(db.Model):
     certificaat_path = db.Column("certificaat_path", db.Text, nullable=True)
     
     # Relatie naar Material
-    material = db.relationship("Material", backref="keuring_historiek")
+    material = db.relationship("Material", backref="keuring_historiek", lazy="select")
 
 
 class Document(db.Model):
@@ -252,9 +321,15 @@ class Document(db.Model):
     
     note = db.Column("note", db.Text, nullable=True)
     
-    # Relaties
-    material = db.relationship("Material", backref="documenten")
-    user = db.relationship("Gebruiker", backref="documenten")
+    # Relationships with optimized lazy loading
+    material = db.relationship("Material", backref="documenten", lazy="select")
+    user = db.relationship("Gebruiker", backref="documenten", lazy="select")
+    document_type_ref = db.relationship(
+        "DocumentType",
+        backref="documents",
+        foreign_keys=[document_type_id],
+        lazy="select",
+    )
 
 
 class MaterialType(db.Model):
@@ -267,11 +342,14 @@ class MaterialType(db.Model):
     
     id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
-    name = db.Column(db.String, nullable=False)  # De naam van het materiaal type (bijv. "Boormachine")
+    name = db.Column(db.String, nullable=False, unique=True)  # De naam van het materiaal type (bijv. "Boormachine")
     description = db.Column(db.Text, nullable=True)
     inspection_validity_days = db.Column(db.Integer, nullable=True)
     type_image = db.Column(db.Text, nullable=True)  # Pad naar type afbeelding
     safety_sheet = db.Column(db.Text, nullable=True)  # Pad naar veiligheidsfiche
+    
+    # Relationship with Material (backref defined in Material model)
+    # Materials can reference MaterialType via material_type_id FK
 
 
 class DocumentType(db.Model):
@@ -287,5 +365,5 @@ class DocumentType(db.Model):
     description = db.Column(db.Text, nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     
-    # Relatie met Document
-    documents = db.relationship("Document", backref="type_ref", foreign_keys="Document.document_type_id")
+    # Relationship with Document (already defined in Document model)
+    # documents backref is defined in Document.document_type_ref
