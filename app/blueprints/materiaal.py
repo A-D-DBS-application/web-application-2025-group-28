@@ -208,7 +208,6 @@ def materiaal_types():
 @login_required
 def materiaal_type_toevoegen():
     """Voeg een nieuw materiaal type toe."""
-    from app import app, save_upload
     
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip()
@@ -247,7 +246,7 @@ def materiaal_type_toevoegen():
             return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
-        type_image_path = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+        type_image_path = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
     safety_sheet_path = None
     if safety_sheet_file and safety_sheet_file.filename:
@@ -258,7 +257,7 @@ def materiaal_type_toevoegen():
             return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
-        safety_sheet_path = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        safety_sheet_path = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
     
     new_type = MaterialType(
         name=name,
@@ -280,7 +279,6 @@ def materiaal_type_toevoegen():
 @login_required
 def materiaal_type_bewerken():
     """Bewerk een bestaand materiaal type."""
-    from app import app, save_upload
     
     type_id = request.form.get("type_id")
     name = (request.form.get("name") or "").strip()
@@ -330,7 +328,7 @@ def materiaal_type_bewerken():
             return redirect(url_for("materiaal.materiaal_types"))
         
         if type_item.type_image:
-            old_path = os.path.join(app.root_path, "static", type_item.type_image)
+            old_path = os.path.join(current_app.root_path, "static", type_item.type_image)
             if os.path.exists(old_path):
                 try:
                     os.remove(old_path)
@@ -338,7 +336,7 @@ def materiaal_type_bewerken():
                     pass
         
         prefix = secure_filename(name)
-        type_item.type_image = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+        type_item.type_image = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
     if safety_sheet_file and safety_sheet_file.filename:
         filename = secure_filename(safety_sheet_file.filename)
@@ -348,7 +346,7 @@ def materiaal_type_bewerken():
             return redirect(url_for("materiaal.materiaal_types"))
         
         if type_item.safety_sheet:
-            old_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+            old_path = os.path.join(current_app.root_path, "static", type_item.safety_sheet)
             if os.path.exists(old_path):
                 try:
                     os.remove(old_path)
@@ -356,7 +354,7 @@ def materiaal_type_bewerken():
                     pass
         
         prefix = secure_filename(name)
-        type_item.safety_sheet = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        type_item.safety_sheet = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
     
     type_item.name = name
     type_item.description = description if description else None
@@ -373,8 +371,6 @@ def materiaal_type_bewerken():
 @login_required
 def materiaal_type_verwijderen():
     """Verwijder een materiaal type."""
-    from app import app
-    
     type_id = request.form.get("type_id")
     
     if not type_id:
@@ -394,7 +390,7 @@ def materiaal_type_verwijderen():
     
     # Delete associated files
     if type_item.type_image:
-        old_path = os.path.join(app.root_path, "static", type_item.type_image)
+        old_path = os.path.join(current_app.root_path, "static", type_item.type_image)
         if os.path.exists(old_path):
             try:
                 os.remove(old_path)
@@ -402,7 +398,7 @@ def materiaal_type_verwijderen():
                 pass
     
     if type_item.safety_sheet:
-        old_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+        old_path = os.path.join(current_app.root_path, "static", type_item.safety_sheet)
         if os.path.exists(old_path):
             try:
                 os.remove(old_path)
@@ -444,8 +440,10 @@ def materiaal_toevoegen():
     project_id_str = (f.get("project_id") or "").strip()
     assigned_to = (f.get("assigned_to") or "").strip()
     note = (f.get("note") or "").strip()
-    status = (f.get("status") or DEFAULT_INSPECTION_STATUS).strip()
-    inspection_status = (f.get("inspection_status") or "").strip()
+    # Keuringstatus komt uit het "status" formulier veld, maar moet in inspection_status kolom
+    keuring_status = (f.get("status") or DEFAULT_INSPECTION_STATUS).strip()
+    # Optionele inspection_status uit formulier (voor backward compatibility)
+    inspection_status_from_form = (f.get("inspection_status") or "").strip()
 
     # Get project if project_id is provided
     project_id = int(project_id_str) if project_id_str else None
@@ -476,6 +474,10 @@ def materiaal_toevoegen():
         safety_file, current_app.config["SAFETY_UPLOAD_FOLDER"], f"{serial}_safety"
     )
 
+    # Status kolom is voor "in gebruik" / "niet in gebruik", niet voor keuringstatus
+    # Nieuw materiaal is standaard "niet in gebruik"
+    usage_status = "niet in gebruik"
+    
     item = Material(
         name=name,
         serial=serial,
@@ -484,7 +486,7 @@ def materiaal_toevoegen():
         site=site if site else None,
         project_id=project_id,
         note=note if note else None,
-        status=status,
+        status=usage_status,  # Gebruik status, niet keuringstatus
         nummer_op_materieel=nummer if nummer else None,
         documentation_path=documentation_path,
         safety_sheet_path=safety_sheet_path,
@@ -496,12 +498,15 @@ def materiaal_toevoegen():
         except ValueError:
             pass
 
-    # optioneel inspection_status als kolom bestaat
+    # Keuringstatus moet in inspection_status kolom, niet in status kolom
     if hasattr(item, "inspection_status"):
+        # Gebruik keuring_status uit formulier (komt van "status" veld)
+        # Of fallback naar inspection_status_from_form als die bestaat
+        final_inspection_status = keuring_status if keuring_status else (inspection_status_from_form if inspection_status_from_form else DEFAULT_INSPECTION_STATUS)
         setattr(
             item,
             "inspection_status",
-            inspection_status if inspection_status else None,
+            final_inspection_status,
         )
 
     db.session.add(item)

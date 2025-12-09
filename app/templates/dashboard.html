@@ -14,7 +14,7 @@
     <div class="grid grid-top">
       <div class="card kpi">
         <div class="kpi-title">
-          <span class="fs-18">📦</span>
+          <i class="bi bi-box-seam fs-5"></i>
           Totaal materiaal
         </div>
         <div class="kpi-value">{{ total_items }}</div>
@@ -23,7 +23,7 @@
 
       <div class="card kpi warn">
         <div class="kpi-title">
-          <span class="kpi-alert">⚠</span>
+          <i class="bi bi-exclamation-triangle kpi-alert"></i>
           Keuring vereiste
         </div>
         <div class="kpi-value">{{ to_inspect }}</div>
@@ -40,7 +40,7 @@
 <!-- Zoekbalk: zoekt via API en toont popup -->
 <form class="card search" id="searchForm" onsubmit="return false;">
   <div class="search-wrap">
-    <span class="search-icon">🔍</span>
+    <span class="search-icon"><i class="bi bi-search"></i></span>
     <input
       type="text"
       id="searchInput"
@@ -61,7 +61,7 @@
         <div class="panel-sub">Laatste wijzigingen in het systeem</div>
       </div>
       <a href="{{ url_for('geschiedenis.geschiedenis') }}" class="btn btn-sm btn-outline-primary">
-        📜 Geschiedenis
+        <i class="bi bi-clock-history me-1"></i>Geschiedenis
       </a>
     </div>
 
@@ -237,7 +237,16 @@ document.addEventListener('DOMContentLoaded', function() {
   const searchForm = document.getElementById('searchForm');
   const searchInput = document.getElementById('searchInput');
   const searchBtn = document.getElementById('searchBtn');
-  const searchModal = new bootstrap.Modal(document.getElementById('searchResultsModal'));
+  
+  // Initialize modal only when Bootstrap is available
+  let searchModal = null;
+  const modalElement = document.getElementById('searchResultsModal');
+  if (modalElement && typeof bootstrap !== 'undefined') {
+    searchModal = bootstrap.Modal.getOrCreateInstance(modalElement);
+  } else if (modalElement) {
+    // Fallback if Bootstrap not yet loaded
+    searchModal = new bootstrap.Modal(modalElement);
+  }
   
   function performSearch() {
     const query = searchInput.value.trim();
@@ -245,8 +254,25 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
     
+    // Ensure modal is initialized
+    if (!searchModal && modalElement && typeof bootstrap !== 'undefined') {
+      searchModal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    }
+    
+    if (!searchModal) {
+      console.error('Search modal not available');
+      alert('Zoekfunctionaliteit is niet beschikbaar. Herlaad de pagina.');
+      return;
+    }
+    
     const modalBody = document.getElementById('searchModalBody');
     const modalTitle = document.getElementById('searchModalTitle');
+    
+    if (!modalBody || !modalTitle) {
+      console.error('Modal elements not found');
+      return;
+    }
+    
     modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
     modalTitle.textContent = `Zoekresultaten voor "${query}"`;
     searchModal.show();
@@ -362,26 +388,39 @@ document.addEventListener('DOMContentLoaded', function() {
                   <strong>Opmerking:</strong><br>
                   ${displayValue(item.note)}
                 </div>
+                ${item.documents && item.documents.length > 0 ? `
+                  <div class="mb-3">
+                    <strong>Documenten:</strong><br>
+                    <ul class="list-unstyled mt-2">
+                      ${item.documents.map(doc => `
+                        <li class="mb-2">
+                          <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} — 
+                          <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
+                        </li>
+                      `).join('')}
+                    </ul>
+                  </div>
+                ` : ''}
                 ${item.documentation_path ? `
                   <div class="mb-3">
                     <strong>Documentatie:</strong><br>
                   <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                      📄 Bekijk documentatie
-                    </a>
+                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk documentatie
+                  </a>
                   <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                      ⬇️ Download
-                    </a>
+                    <i class="bi bi-download me-1"></i>Download
+                  </a>
                   </div>
                 ` : ''}
                 ${item.safety_sheet_path ? `
                   <div class="mb-3">
                     <strong>Veiligheidsfiche:</strong><br>
                   <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                      📄 Bekijk veiligheidsfiche
-                    </a>
+                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
+                  </a>
                   <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                      ⬇️ Download
-                    </a>
+                    <i class="bi bi-download me-1"></i>Download
+                  </a>
                   </div>
                 ` : ''}
                 <div class="d-flex gap-2 mt-4">
@@ -406,8 +445,8 @@ document.addEventListener('DOMContentLoaded', function() {
             // Multiple results - show list
             let html = '<div class="list-group list-group-scrollable">';
             data.items.forEach(item => {
-              // Status: "in gebruik" or "niet in gebruik"
-              const isInUse = item.status === 'in gebruik';
+              // Status: "in gebruik" or "niet in gebruik" - use is_in_use from API
+              const isInUse = item.is_in_use === true;
               const statusClass = isInUse ? 'bg-success' : 'bg-danger';
               const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
               html += `
@@ -415,8 +454,9 @@ document.addEventListener('DOMContentLoaded', function() {
                      onclick="showMaterialDetail('${escapeHtml(item.serial)}')">
                   <div class="d-flex justify-content-between align-items-start">
                     <div class="flex-grow-1">
-                      <h6 class="mb-1 fw-bold">${escapeHtml(item.name)}</h6>
-                      <small class="text-muted">ID: ${escapeHtml(item.serial)}</small>
+                      <h6 class="mb-1 fw-bold">${escapeHtml(item.name || 'Onbekend')}</h6>
+                      <small class="text-muted">Serienummer: ${escapeHtml(item.serial || 'Onbekend')}</small>
+                      ${item.type ? `<br><small class="text-muted">Type: ${escapeHtml(item.type)}</small>` : ''}
                     </div>
                     <span class="badge ${statusClass} ms-2">${escapeHtml(statusText)}</span>
                   </div>
@@ -432,7 +472,11 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(error => {
         console.error('Search error:', error);
-        modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het zoeken.</div>';
+        const errorMessage = error.message || 'Er is een fout opgetreden bij het zoeken.';
+        modalBody.innerHTML = `<div class="alert alert-danger">
+          <strong>Zoekfout:</strong> ${escapeHtml(errorMessage)}
+          <br><small>Controleer de console voor meer details.</small>
+        </div>`;
       });
   }
   
@@ -446,6 +490,7 @@ document.addEventListener('DOMContentLoaded', function() {
     performSearch();
   });
   
+  // escapeHtml function - make it globally available
   function escapeHtml(text) {
     if (!text) return '';
     const map = {
@@ -458,10 +503,24 @@ document.addEventListener('DOMContentLoaded', function() {
     return text.replace(/[&<>"']/g, m => map[m]);
   }
   
+  // Make escapeHtml globally available
+  window.escapeHtml = escapeHtml;
+  
   window.showMaterialDetail = function(serial) {
+    if (!serial) {
+      console.error('No serial provided to showMaterialDetail');
+      return;
+    }
+    
     // Re-fetch and show single item detail
     const modalBody = document.getElementById('searchModalBody');
     const modalTitle = document.getElementById('searchModalTitle');
+    
+    if (!modalBody || !modalTitle) {
+      console.error('Modal elements not found');
+      return;
+    }
+    
     modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
     
     fetch(`/api/search?q=${encodeURIComponent(serial)}`)
@@ -570,28 +629,41 @@ document.addEventListener('DOMContentLoaded', function() {
                 <strong>Opmerking:</strong><br>
                 ${displayValue(item.note)}
               </div>
-              ${item.documentation_path ? `
+              ${item.documents && item.documents.length > 0 ? `
                 <div class="mb-3">
-                  <strong>Documentatie:</strong><br>
+                  <strong>Documenten:</strong><br>
+                  <ul class="list-unstyled mt-2">
+                    ${item.documents.map(doc => `
+                      <li class="mb-2">
+                        <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} — 
+                        <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
+                      </li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+                ${item.documentation_path ? `
+                  <div class="mb-3">
+                    <strong>Documentatie:</strong><br>
                   <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                    📄 Bekijk documentatie
+                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk documentatie
                   </a>
                   <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                    ⬇️ Download
+                    <i class="bi bi-download me-1"></i>Download
                   </a>
-                </div>
-              ` : ''}
-              ${item.safety_sheet_path ? `
-                <div class="mb-3">
-                  <strong>Veiligheidsfiche:</strong><br>
+                  </div>
+                ` : ''}
+                ${item.safety_sheet_path ? `
+                  <div class="mb-3">
+                    <strong>Veiligheidsfiche:</strong><br>
                   <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                    📄 Bekijk veiligheidsfiche
+                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
                   </a>
                   <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                    ⬇️ Download
+                    <i class="bi bi-download me-1"></i>Download
                   </a>
-                </div>
-              ` : ''}
+                  </div>
+                ` : ''}
               <div class="d-flex gap-2 mt-4">
                 <button type="button" 
                         class="btn btn-outline-secondary edit-material-btn" 
@@ -616,7 +688,11 @@ document.addEventListener('DOMContentLoaded', function() {
       })
       .catch(error => {
         console.error('Error loading material detail:', error);
-        modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
+        const errorMessage = error.message || 'Er is een fout opgetreden bij het laden van de details.';
+        modalBody.innerHTML = `<div class="alert alert-danger">
+          <strong>Fout:</strong> ${escapeHtml(errorMessage)}
+          <br><small>Controleer de console voor meer details.</small>
+        </div>`;
       });
   };
   

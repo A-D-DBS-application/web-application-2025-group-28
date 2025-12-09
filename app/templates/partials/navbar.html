@@ -1,23 +1,23 @@
 <!-- Mobiele onderbalk navigatie (alleen zichtbaar op kleine schermen) -->
 <nav class="mobile-nav d-md-none">
   <a href="{{ url_for('dashboard.dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}">
-    <span class="mobile-nav-icon">📊</span>
+    <span class="mobile-nav-icon"><i class="bi bi-list"></i></span>
     <span class="mobile-nav-label">Dashboard</span>
   </a>
   <a href="{{ url_for('materiaal.materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}">
-    <span class="mobile-nav-icon">📦</span>
+    <span class="mobile-nav-icon"><i class="bi bi-box-seam"></i></span>
     <span class="mobile-nav-label">Materiaal</span>
   </a>
   <a href="{{ url_for('werven.werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}">
-    <span class="mobile-nav-icon">🏗️</span>
+    <span class="mobile-nav-icon"><i class="bi bi-geo-alt"></i></span>
     <span class="mobile-nav-label">Werven</span>
   </a>
   <a href="{{ url_for('keuringen.keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}">
-    <span class="mobile-nav-icon">✓</span>
+    <span class="mobile-nav-icon"><i class="bi bi-check-circle"></i></span>
     <span class="mobile-nav-label">Keuringen</span>
   </a>
   <a href="{{ url_for('documenten.documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}">
-    <span class="mobile-nav-icon">📄</span>
+    <span class="mobile-nav-icon"><i class="bi bi-file-earmark-text"></i></span>
     <span class="mobile-nav-label">Docs</span>
   </a>
 </nav>

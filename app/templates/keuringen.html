@@ -1,80 +1,75 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header">
-  <div>
-    <h2 class="h-title">Keuringen & Inspecties</h2>
-    <div class="h-sub">Wat moet ik nu keuren?</div>
+<div class="keuringen-header">
+  <div class="keuringen-header-content">
+    <div>
+      <h1 class="keuringen-main-title">Keuringen & Inspecties</h1>
+      <p class="keuringen-subtitle">Wat moet ik nu keuren?</p>
+    </div>
+    <button class="btn btn-dark btn-with-icon" 
+            data-bs-toggle="modal"
+            data-bs-target="#nieuweKeuringModal">
+      <span class="btn-icon-large">+</span>
+      <span>Keuring Plannen</span>
+    </button>
   </div>
-  <button class="btn btn-dark btn-with-icon" 
-          data-bs-toggle="modal"
-          data-bs-target="#nieuweKeuringModal">
-    <span class="btn-icon-large">+</span>
-    <span>Keuring Plannen</span>
-  </button>
 </div>
 
 <!-- A. PRIORITEIT CARDS -->
-<div class="row g-3 mt-3">
-  <div class="col-md-4">
-    <a href="{{ url_for('keuringen.keuringen', priority='te_laat', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
-       class="text-decoration-none">
-      <div class="card kpi kpi-clickable">
-        <div class="kpi-title">Te laat</div>
-        <div class="kpi-value kpi-value-danger">{{ te_laat_count or 0 }}</div>
-        <div class="kpi-sub">Keuringen die verlopen zijn</div>
-      </div>
-    </a>
-  </div>
-  <div class="col-md-4">
-    <a href="{{ url_for('keuringen.keuringen', priority='vandaag', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
-       class="text-decoration-none">
-      <div class="card kpi kpi-clickable">
-        <div class="kpi-title">Te keuren vandaag</div>
-        <div class="kpi-value kpi-value-warning">{{ vandaag_count or 0 }}</div>
-        <div class="kpi-sub">Moeten vandaag gekeurd worden</div>
-      </div>
-    </a>
-  </div>
-  <div class="col-md-4">
-    <a href="{{ url_for('keuringen.keuringen', priority='binnen_30', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
-       class="text-decoration-none">
-      <div class="card kpi kpi-clickable">
-        <div class="kpi-title">Binnen 30 dagen</div>
-        <div class="kpi-value kpi-value-orange">{{ binnen_30_dagen_count or 0 }}</div>
-        <div class="kpi-sub">Keuringen binnenkort</div>
-      </div>
-    </a>
-  </div>
+<div class="keuringen-stats-grid">
+  <a href="{{ url_for('keuringen.keuringen', priority='te_laat', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
+     class="keuringen-stat-card">
+    <div class="keuringen-stat-icon keuringen-stat-icon-danger"><i class="bi bi-exclamation-triangle"></i></div>
+    <div class="keuringen-stat-value keuringen-stat-value-danger">{{ te_laat_count or 0 }}</div>
+    <div class="keuringen-stat-label">Te laat</div>
+    <div class="keuringen-stat-desc">Keuringen die verlopen zijn</div>
+  </a>
+  <a href="{{ url_for('keuringen.keuringen', priority='vandaag', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
+     class="keuringen-stat-card">
+    <div class="keuringen-stat-icon keuringen-stat-icon-warning"><i class="bi bi-calendar-event"></i></div>
+    <div class="keuringen-stat-value keuringen-stat-value-warning">{{ vandaag_count or 0 }}</div>
+    <div class="keuringen-stat-label">Te keuren vandaag</div>
+    <div class="keuringen-stat-desc">Moeten vandaag gekeurd worden</div>
+  </a>
+  <a href="{{ url_for('keuringen.keuringen', priority='binnen_30', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
+     class="keuringen-stat-card">
+    <div class="keuringen-stat-icon keuringen-stat-icon-orange"><i class="bi bi-clock"></i></div>
+    <div class="keuringen-stat-value keuringen-stat-value-orange">{{ binnen_30_dagen_count or 0 }}</div>
+    <div class="keuringen-stat-label">Binnen 30 dagen</div>
+    <div class="keuringen-stat-desc">Keuringen binnenkort</div>
+  </a>
 </div>
 
 <!-- B. FILTER BAR -->
-<div class="card panel panel-spacing">
-  <div class="panel-title">Keuringen Overzicht</div>
-  <div class="panel-sub">{{ total_items }} keuring(en) gevonden</div>
+<div class="keuringen-overview-section">
+  <div class="keuringen-overview-header">
+    <h2 class="keuringen-overview-title">Keringsoverzicht</h2>
+    <p class="keuringen-overview-subtitle">{{ total_items }} keuring(en) gevonden</p>
+  </div>
 
-  <form method="get" action="{{ url_for('keuringen.keuringen') }}" id="filterForm">
+  <form method="get" action="{{ url_for('keuringen.keuringen') }}" id="filterForm" class="keuringen-filter-form">
     <!-- Preserve priority filter if set -->
     {% if priority_filter %}
     <input type="hidden" name="priority" value="{{ priority_filter }}">
-                  {% endif %}
+    {% endif %}
     
-    <div class="row g-2 mt-3">
+    <div class="keuringen-filter-grid">
       <!-- Text Search -->
-      <div class="col-12 col-md-6 col-lg-3">
-        <div class="input-group">
-          <span class="input-group-text">🔍</span>
+      <div class="keuringen-filter-item keuringen-filter-search">
+        <div class="keuringen-search-wrapper">
+          <span class="keuringen-search-icon"><i class="bi bi-search"></i></span>
           <input type="text" 
                  name="q" 
                  value="{{ search_q }}" 
-                 class="form-control" 
+                 class="keuringen-search-input" 
                  placeholder="Zoek op naam of serienummer...">
-              </div>
-            </div>
+        </div>
+      </div>
 
       <!-- Status Filter -->
-      <div class="col-12 col-md-6 col-lg-2">
-        <select name="status" class="form-select">
+      <div class="keuringen-filter-item">
+        <select name="status" class="keuringen-filter-select">
           <option value="">Alle statussen</option>
           {% for filter_key, filter_data in keuring_status_filters.items() %}
           <option value="{{ filter_data.value }}" {% if status_filter == filter_data.value %}selected{% endif %}>{{ filter_data.label }}</option>
@@ -83,8 +78,8 @@
       </div>
 
       <!-- Werf/Location Filter -->
-      <div class="col-12 col-md-6 col-lg-2">
-        <select name="werf" class="form-select">
+      <div class="keuringen-filter-item">
+        <select name="werf" class="keuringen-filter-select">
           <option value="">Alle werven</option>
           {% for project in all_projects %}
           <option value="{{ project.id }}" {% if werf_filter == project.id|string %}selected{% endif %}>
@@ -92,79 +87,77 @@
           </option>
           {% endfor %}
         </select>
-          </div>
+      </div>
 
       <!-- Type Filter -->
-      <div class="col-12 col-md-6 col-lg-2">
-        <select name="type" class="form-select">
+      <div class="keuringen-filter-item">
+        <select name="type" class="keuringen-filter-select">
           <option value="">Alle types</option>
           {% for t in types_list %}
           <option value="{{ t }}" {% if type_filter == t %}selected{% endif %}>{{ t }}</option>
           {% endfor %}
         </select>
-        </div>
+      </div>
 
       <!-- Performer Filter -->
-      <div class="col-12 col-md-6 col-lg-2">
-        <select name="performer" class="form-select">
+      <div class="keuringen-filter-item">
+        <select name="performer" class="keuringen-filter-select">
           <option value="">Alle keurders</option>
           {% for p in performers_list %}
           <option value="{{ p }}" {% if performer_filter == p %}selected{% endif %}>{{ p }}</option>
-      {% endfor %}
+          {% endfor %}
         </select>
       </div>
 
       <!-- Date Range -->
-      <div class="col-12 col-md-6 col-lg-2">
+      <div class="keuringen-filter-item">
         <input type="date" 
                name="date_from" 
                value="{{ date_from }}" 
-               class="form-control" 
+               class="keuringen-filter-select" 
                placeholder="Van datum">
       </div>
-      <div class="col-12 col-md-6 col-lg-2">
+      <div class="keuringen-filter-item">
         <input type="date" 
                name="date_to" 
                value="{{ date_to }}" 
-               class="form-control" 
+               class="keuringen-filter-select" 
                placeholder="Tot datum">
       </div>
 
       <!-- Buttons -->
-      <div class="col-12 col-md-6 col-lg-4">
-        <button type="submit" class="btn btn-primary">Filteren</button>
-        <a href="{{ url_for('keuringen.keuringen') }}" class="btn btn-outline-secondary">Reset</a>
+      <div class="keuringen-filter-actions">
+        <button type="submit" class="btn btn-primary keuringen-filter-btn">Filteren</button>
+        <a href="{{ url_for('keuringen.keuringen') }}" class="btn btn-outline-secondary keuringen-filter-btn">Reset</a>
         <a href="{{ url_for('keuringen.keuringen_export', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
-           class="btn btn-outline-primary">
+           class="btn btn-outline-primary keuringen-filter-btn">
           📥 Export CSV
         </a>
       </div>
-  </div>
+    </div>
   </form>
 </div>
 
 <!-- C. MAIN TABLE -->
-<div class="card panel panel-spacing">
-  <div class="panel-title">Keuringen Lijst</div>
-
-  <div class="table-responsive mt-3">
-    <table class="table align-middle table-hover">
+<div class="keuringen-table-container">
+  <div class="table-responsive">
+    <table class="keuringen-table">
       <thead>
         <tr>
           <th>
             <a href="{{ url_for('keuringen.keuringen', sort='materieel', order='asc' if sort_by != 'materieel' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
-               class="text-decoration-none text-dark">
-              Materieel
+               class="keuringen-table-header-link">
+              MATERIEEL
               {% if sort_by == 'materieel' %}
                 {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
               {% endif %}
             </a>
           </th>
-          <th>Werf / Locatie</th>
+          <th>WERF / LOCATIE</th>
           <th>
             <a href="{{ url_for('keuringen.keuringen', sort='laatste_keuring', order='asc' if sort_by != 'laatste_keuring' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
-               class="text-decoration-none text-dark">
-              Laatste Keuring
+               class="keuringen-table-header-link">
+              LAATSTE KEURING
               {% if sort_by == 'laatste_keuring' %}
                 {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
               {% endif %}
@@ -172,8 +165,8 @@
           </th>
           <th>
             <a href="{{ url_for('keuringen.keuringen', sort='volgende_keuring', order='asc' if sort_by != 'volgende_keuring' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
-               class="text-decoration-none text-dark">
-              Volgende Keuring
+               class="keuringen-table-header-link">
+              VOLGENDE KEURING
               {% if sort_by == 'volgende_keuring' %}
                 {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
               {% endif %}
@@ -181,15 +174,15 @@
           </th>
           <th>
             <a href="{{ url_for('keuringen.keuringen', sort='resultaat', order='asc' if sort_by != 'resultaat' or sort_order == 'desc' else 'desc', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
-               class="text-decoration-none text-dark">
-              Resultaat
+               class="keuringen-table-header-link">
+              RESULTAAT
               {% if sort_by == 'resultaat' %}
                 {% if sort_order == 'asc' %}↑{% else %}↓{% endif %}
               {% endif %}
             </a>
           </th>
-          <th>Certificaat</th>
-          <th class="text-end">Acties</th>
+          <th>CERTIFICAAT</th>
+          <th class="text-end">ACTIES</th>
         </tr>
       </thead>
       <tbody>
@@ -200,10 +193,10 @@
             <tr>
               <td>
                 <button type="button"
-                        class="btn btn-link p-0 fw-bold text-start link-no-decoration"
+                        class="keuringen-material-link"
                         onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
-                  <strong>{{ material.name or 'Onbekend' }}</strong><br>
-                  <small class="text-muted">{{ material.serial }}</small>
+                  <div class="keuringen-material-name">{{ material.name or 'Onbekend' }}</div>
+                  <div class="keuringen-material-serial">{{ material.serial }}</div>
                 </button>
               </td>
               <td>
@@ -214,88 +207,92 @@
                   {% if matching_project %}
                     {{ matching_project.name }}
                   {% else %}
-                    <span class="text-muted">-</span>
+                    <span style="color: #9CA3AF;">-</span>
                   {% endif %}
                 {% else %}
-                  <span class="text-muted">-</span>
+                  <span style="color: #9CA3AF;">-</span>
                 {% endif %}
               </td>
               <td>
                 {% if keuring.laatste_controle %}
                   {{ keuring.laatste_controle.strftime('%Y-%m-%d') }}
                 {% else %}
-                  <span class="text-muted">Nog niet uitgevoerd</span>
+                  <span style="color: #9CA3AF;">Nog niet uitgevoerd</span>
                 {% endif %}
               </td>
               <td>
                 {% if keuring.volgende_controle %}
-                  {{ keuring.volgende_controle.strftime('%Y-%m-%d') }}
+                  <div>{{ keuring.volgende_controle.strftime('%Y-%m-%d') }}</div>
                   {% if item.dagen_verschil is not none %}
-                    <br>
                     {% if item.dagen_verschil < 0 %}
-                      <small class="text-danger">({{ -item.dagen_verschil }} dag{% if -item.dagen_verschil != 1 %}en{% endif %} te laat)</small>
+                      <small style="color: #DC2626; font-size: 12px;">({{ -item.dagen_verschil }} dag{% if -item.dagen_verschil != 1 %}en{% endif %} te laat)</small>
                     {% elif item.dagen_verschil == 0 %}
-                      <small class="text-warning">(Vandaag!)</small>
+                      <small style="color: #F59E0B; font-size: 12px;">(Vandaag!)</small>
                     {% else %}
-                      <small class="text-muted">(over {{ item.dagen_verschil }} dag{% if item.dagen_verschil != 1 %}en{% endif %})</small>
+                      <small style="color: #6B7280; font-size: 12px;">(over {{ item.dagen_verschil }} dag{% if item.dagen_verschil != 1 %}en{% endif %})</small>
                     {% endif %}
                   {% endif %}
                 {% else %}
-                  <span class="text-muted">-</span>
+                  <span style="color: #9CA3AF;">-</span>
                 {% endif %}
               </td>
               <td>
                 {% if item.status_badge == 'te laat' %}
-                  <span class="badge bg-danger">Te laat</span>
+                  <span class="keuringen-badge keuringen-badge-te-laat"><i class="bi bi-exclamation-triangle me-1"></i>Te laat</span>
                 {% elif item.status_badge == 'vandaag' %}
-                  <span class="badge bg-warning">Vandaag</span>
+                  <span class="keuringen-badge keuringen-badge-vandaag"><i class="bi bi-calendar-event me-1"></i>Vandaag</span>
                 {% elif item.status_badge == 'binnenkort' %}
-                  <span class="badge badge-orange">Binnenkort</span>
+                  <span class="keuringen-badge keuringen-badge-binnenkort"><i class="bi bi-clock me-1"></i>Binnenkort</span>
                 {% elif item.status_badge == 'goedgekeurd' %}
-                  <span class="badge bg-success">✓ Goedgekeurd</span>
+                  <span class="keuringen-badge keuringen-badge-goedgekeurd"><i class="bi bi-check-circle me-1"></i>Goedgekeurd</span>
                 {% elif item.status_badge == 'afgekeurd' %}
-                  <span class="badge bg-danger">✗ Afgekeurd</span>
+                  <span class="keuringen-badge keuringen-badge-afgekeurd"><i class="bi bi-x-circle me-1"></i>Afgekeurd</span>
                 {% else %}
-                  <span class="badge bg-secondary">Gepland</span>
+                  <span class="keuringen-badge keuringen-badge-gepland">Te Keuren</span>
                 {% endif %}
               </td>
               <td>
                 {% if item.has_certificate %}
-                  <span class="badge bg-info" title="Certificaat beschikbaar">📄</span>
+                  <span class="keuringen-cert-badge" title="Certificaat beschikbaar"><i class="bi bi-file-earmark-text"></i></span>
                 {% else %}
-                  <span class="text-muted">-</span>
+                  <span style="color: #9CA3AF;">-</span>
                 {% endif %}
               </td>
               <td class="text-end">
-                <div class="btn-group">
+                <div class="keuringen-action-buttons">
                   {% if not keuring.laatste_controle %}
                     <!-- Not yet inspected - show "Resultaat registreren" -->
                     <button type="button" 
-                            class="btn btn-sm btn-primary"
+                            class="keuringen-action-btn keuringen-action-btn-primary"
                             data-bs-toggle="modal"
                             data-bs-target="#keuringResultaatModal"
                             onclick="openResultaatModal({{ keuring.id }})">
                       Resultaat registreren
                     </button>
-                <button type="button" 
-                        class="btn btn-sm btn-outline-secondary"
-                        data-bs-toggle="modal"
-                        data-bs-target="#bewerkKeuringModal"
-                        data-keuring-id="{{ keuring.id }}"
-                        data-serial="{{ material.serial }}"
-                        data-volgende-datum="{{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '' }}"
-                        data-uitgevoerd-door="{{ (keuring.uitgevoerd_door or '')|replace("'", "&#39;") }}"
-                        data-opmerking="{{ (keuring.opmerkingen or '')|replace("'", "&#39;")|replace('"', '&quot;') }}"
-                        onclick="openEditKeuringModal(this)">
-                  Bewerken
-                </button>
+                    <button type="button" 
+                            class="keuringen-action-btn"
+                            data-bs-toggle="modal"
+                            data-bs-target="#bewerkKeuringModal"
+                            data-keuring-id="{{ keuring.id }}"
+                            data-serial="{{ material.serial }}"
+                            data-volgende-datum="{{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '' }}"
+                            data-uitgevoerd-door="{{ (keuring.uitgevoerd_door or '')|replace("'", "&#39;") }}"
+                            data-opmerking="{{ (keuring.opmerkingen or '')|replace("'", "&#39;")|replace('"', '&quot;') }}"
+                            onclick="openEditKeuringModal(this)">
+                      Bewerken
+                    </button>
                   {% else %}
                     <!-- Already inspected - show "Details" -->
                     <button type="button" 
-                            class="btn btn-sm btn-outline-secondary"
+                            class="keuringen-action-btn"
                             onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
                       Details
                     </button>
+                    {% if item.has_certificate %}
+                      <a href="#" class="keuringen-action-btn keuringen-action-btn-link" title="Certificaat">
+                        Certificaat
+                      </a>
+                    {% endif %}
                   {% endif %}
                 </div>
               </td>
@@ -303,16 +300,17 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="7" class="text-center text-muted py-4">
+            <td colspan="7" style="text-align: center; color: #6B7280; padding: 48px 20px;">
               Geen keuringen gevonden. 
               {% if search_q or status_filter or werf_filter or type_filter or performer_filter or date_from or date_to %}
-                <a href="{{ url_for('keuringen.keuringen') }}">Wis filters</a>
+                <a href="{{ url_for('keuringen.keuringen') }}" style="color: var(--text); text-decoration: underline; margin-left: 8px;">Wis filters</a>
               {% endif %}
             </td>
           </tr>
         {% endif %}
       </tbody>
     </table>
+  </div>
 </div>
 
   <!-- Pagination -->
@@ -664,11 +662,11 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
             const dagen = historyData.dagen_verschil;
             if (dagen !== null && dagen !== undefined) {
               if (dagen < 0) {
-                volgendeKeuringHtml = `<br><small class="text-danger">⚠️ ${Math.abs(dagen)} dag${Math.abs(dagen) !== 1 ? 'en' : ''} te laat</small>`;
+                volgendeKeuringHtml = `<br><small class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${Math.abs(dagen)} dag${Math.abs(dagen) !== 1 ? 'en' : ''} te laat</small>`;
               } else if (dagen === 0) {
-                volgendeKeuringHtml = `<br><small class="text-warning">⚠️ Vandaag!</small>`;
+                volgendeKeuringHtml = `<br><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Vandaag!</small>`;
               } else if (dagen <= 30) {
-                volgendeKeuringHtml = `<br><small class="text-warning">⚠️ Nog ${dagen} dag${dagen !== 1 ? 'en' : ''} tot volgende keuring</small>`;
+                volgendeKeuringHtml = `<br><small class="text-warning"><i class="bi bi-exclamation-triangle me-1"></i>Nog ${dagen} dag${dagen !== 1 ? 'en' : ''} tot volgende keuring</small>`;
         } else {
                 volgendeKeuringHtml = `<br><small class="text-muted">Nog ${dagen} dag${dagen !== 1 ? 'en' : ''} tot volgende keuring</small>`;
               }
@@ -717,7 +715,7 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
                       ${hist.opmerkingen ? `<br><small>${escapeHtml(hist.opmerkingen)}</small>` : ''}
                       ${hist.certificaat_url ? `
                         <br><a href="${escapeHtml(hist.certificaat_url)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
-                          📄 Certificaat
+                          <i class="bi bi-file-earmark-text me-1"></i>Certificaat
                         </a>
                       ` : ''}
               </div>

@@ -17,7 +17,7 @@
 <!-- Zoekbalk met autocomplete -->
 <form method="get" action="{{ url_for('werven.werven') }}" class="mt-3 max-w-300">
   <div class="input-group input-group-sm">
-    <span class="input-group-text">🔍</span>
+    <span class="input-group-text"><i class="bi bi-search"></i></span>
     <input type="text" 
            name="q" 
            class="form-control" 
@@ -31,7 +31,7 @@
       {% endfor %}
     </datalist>
     {% if search_q %}
-      <a href="{{ url_for('werven.werven') }}" class="btn btn-outline-secondary" title="Wissen">✕</a>
+      <a href="{{ url_for('werven.werven') }}" class="btn btn-outline-secondary" title="Wissen"><i class="bi bi-x-lg"></i></a>
     {% endif %}
   </div>
 </form>

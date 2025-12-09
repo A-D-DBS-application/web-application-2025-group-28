@@ -8,7 +8,7 @@
   </div>
   <div>
     <button type="button" class="btn btn-dark" data-bs-toggle="modal" data-bs-target="#uploadDocumentModal">
-      ➕ Document toevoegen
+      <i class="bi bi-plus-lg me-1"></i>Document toevoegen
     </button>
   </div>
 </div>
@@ -21,7 +21,7 @@
       <div class="panel-sub">Zoek en filter documenten</div>
     </div>
     <button class="btn btn-outline-secondary btn-sm">
-      <span>🔽</span> Exporteren
+      <i class="bi bi-download me-1"></i>Exporteren
     </button>
   </div>
 
@@ -30,7 +30,7 @@
     <div class="row g-2">
       <div class="col-12 col-md-8">
         <div class="input-group">
-          <span class="input-group-text">🔍</span>
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
           <input 
             type="text" 
             name="q" 
@@ -82,7 +82,7 @@
           {% for doc in documents %}
           <tr>
             <td>
-              <span class="fs-5">📄</span>
+              <span class="fs-5"><i class="bi bi-file-earmark-text"></i></span>
             </td>
             <td>
               <strong>{{ doc.name }}</strong>

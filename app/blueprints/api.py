@@ -2,7 +2,7 @@
 API blueprint - handles API endpoints
 """
 from flask import Blueprint, request, jsonify, g
-from models import db, Material, MaterialUsage, Keuringstatus
+from models import db, Material, MaterialUsage, Keuringstatus, Document
 from helpers import login_required, get_file_url_from_path
 from sqlalchemy import or_, func
 from sqlalchemy.orm import joinedload
@@ -25,11 +25,10 @@ def api_search():
         
         like = f"%{q}%"
         
-        # Optimized query with eager loading for keuring relationship
-        # This loads keuring data in a single query instead of N queries
+        # Optimized query - removed eager loading to avoid potential issues with NULL keuring_id
+        # We'll query keuring separately if needed
         items = (
             Material.query
-            .options(joinedload(Material.keuring))  # Eager load keuring relationship
             .filter(or_(Material.name.ilike(like), Material.serial.ilike(like)))
             .limit(10)
             .all()
@@ -43,32 +42,65 @@ def api_search():
         
         # Single query to get active usage counts for all materials at once
         # This avoids N+1 queries by using a subquery/aggregation
-        active_usage_counts = (
-            db.session.query(
-                MaterialUsage.material_id,
-                func.count(MaterialUsage.id).label('count')
-            )
-            .filter(
-                MaterialUsage.material_id.in_(material_ids),
-                MaterialUsage.is_active.is_(True)
-            )
-            .group_by(MaterialUsage.material_id)
-            .all()
-        )
+        usage_count_map = {}
+        if material_ids:
+            try:
+                active_usage_counts = (
+                    db.session.query(
+                        MaterialUsage.material_id,
+                        func.count(MaterialUsage.id).label('count')
+                    )
+                    .filter(
+                        MaterialUsage.material_id.in_(material_ids),
+                        MaterialUsage.is_active.is_(True)
+                    )
+                    .group_by(MaterialUsage.material_id)
+                    .all()
+                )
+                
+                # Convert to dictionary for O(1) lookup
+                usage_count_map = {row[0]: row[1] for row in active_usage_counts if row and row[0]}
+            except Exception as usage_query_error:
+                print(f"Warning: Could not query material usage: {usage_query_error}")
+                usage_count_map = {}
         
-        # Convert to dictionary for O(1) lookup
-        usage_count_map = {row[0]: row[1] for row in active_usage_counts}
+        # Query all documents for these materials in one query
+        documents_by_material = {}
+        if material_ids:
+            try:
+                material_documents = (
+                    Document.query
+                    .filter(Document.material_id.in_(material_ids))
+                    .all()
+                )
+                
+                # Group documents by material_id
+                for doc in material_documents:
+                    if doc and doc.material_id:
+                        if doc.material_id not in documents_by_material:
+                            documents_by_material[doc.material_id] = []
+                        documents_by_material[doc.material_id].append(doc)
+            except Exception as doc_query_error:
+                print(f"Warning: Could not query documents: {doc_query_error}")
+                documents_by_material = {}
         
         # Also query keuring by serienummer for materials that don't have keuring_id
         # This handles the fallback case more efficiently
         serials = [item.serial for item in items if item.serial]
-        keuring_by_serial = {
-            k.serienummer: k 
-            for k in Keuringstatus.query.filter(
-                Keuringstatus.serienummer.in_(serials)
-            ).all()
-            if k.serienummer
-        }
+        keuring_by_serial = {}
+        if serials:
+            try:
+                keuring_records = Keuringstatus.query.filter(
+                    Keuringstatus.serienummer.in_(serials)
+                ).all()
+                keuring_by_serial = {
+                    k.serienummer: k 
+                    for k in keuring_records
+                    if k and k.serienummer
+                }
+            except Exception as keuring_query_error:
+                print(f"Warning: Could not query keuring by serial: {keuring_query_error}")
+                keuring_by_serial = {}
         
         results = []
         for item in items:
@@ -79,12 +111,19 @@ def api_search():
                 # Determine actual status: if has active usages, status is "in gebruik"
                 actual_status = "in gebruik" if active_usages_count > 0 else (item.status or "")
                 
-                # Get keuring info - first try eager-loaded relationship, then fallback
+                # Get keuring info - try relationship first, then fallback to serial lookup
                 keuring_info = None
-                if item.keuring:
-                    keuring_info = item.keuring
-                elif item.serial and item.serial in keuring_by_serial:
-                    keuring_info = keuring_by_serial[item.serial]
+                try:
+                    # Try to access keuring relationship (may be None if no keuring_id)
+                    if item.keuring_id and item.keuring:
+                        keuring_info = item.keuring
+                    elif item.serial and item.serial in keuring_by_serial:
+                        keuring_info = keuring_by_serial[item.serial]
+                except Exception as keuring_error:
+                    # If accessing relationship fails, fallback to serial lookup
+                    print(f"Warning: Could not access keuring relationship for {item.serial}: {keuring_error}")
+                    if item.serial and item.serial in keuring_by_serial:
+                        keuring_info = keuring_by_serial[item.serial]
                 
                 # Safe date formatting for keuring dates
                 keuring_gepland = None
@@ -102,30 +141,72 @@ def api_search():
                             laatste_keuring = None
                 
                 # Build URLs for documentation and safety sheets using storage helper
-                documentation_url = get_file_url_from_path(item.documentation_path) if item.documentation_path else ""
-                safety_sheet_url = get_file_url_from_path(item.safety_sheet_path) if item.safety_sheet_path else ""
+                documentation_url = ""
+                safety_sheet_url = ""
+                try:
+                    if item.documentation_path:
+                        documentation_url = get_file_url_from_path(item.documentation_path) or ""
+                except Exception as doc_url_error:
+                    print(f"Warning: Could not generate documentation URL for {item.serial}: {doc_url_error}")
+                    documentation_url = ""
+                
+                try:
+                    if item.safety_sheet_path:
+                        safety_sheet_url = get_file_url_from_path(item.safety_sheet_path) or ""
+                except Exception as safety_url_error:
+                    print(f"Warning: Could not generate safety sheet URL for {item.serial}: {safety_url_error}")
+                    safety_sheet_url = ""
+                
+                # Get documents for this material
+                material_docs = documents_by_material.get(item.id, [])
+                documents_list = []
+                for doc in material_docs:
+                    doc_url = ""
+                    try:
+                        if doc.file_path:
+                            doc_url = get_file_url_from_path(doc.file_path) or ""
+                    except Exception as doc_url_error:
+                        print(f"Warning: Could not generate document URL: {doc_url_error}")
+                        doc_url = ""
+                    
+                    documents_list.append({
+                        "id": doc.id if doc.id else None,
+                        "file_name": str(doc.file_name) if doc.file_name else "",
+                        "file_path": str(doc.file_path) if doc.file_path else "",
+                        "file_url": str(doc_url) if doc_url else "",
+                        "document_type": str(doc.document_type) if doc.document_type else "",
+                        "file_size": int(doc.file_size) if doc.file_size else 0,
+                    })
+                
+                # Safely format purchase_date
+                purchase_date_str = ""
+                try:
+                    if item.purchase_date:
+                        purchase_date_str = item.purchase_date.strftime("%Y-%m-%d")
+                except (AttributeError, ValueError, TypeError) as date_error:
+                    print(f"Warning: Could not format purchase_date for {item.serial}: {date_error}")
+                    purchase_date_str = ""
                 
                 results.append(
                     {
-                    "serial": item.serial or "",
-                    "name": item.name or "",
-                    "type": item.type or "",
-                    "status": actual_status,
-                    "is_in_use": active_usages_count > 0,
-                    "assigned_to": item.assigned_to or "",
-                    "site": item.site or "",
-                    "purchase_date": item.purchase_date.strftime("%Y-%m-%d")
-                        if item.purchase_date
-                        else "",
-                    "note": item.note or "",
-                    "nummer_op_materieel": item.nummer_op_materieel or "",
-                    "documentation_path": item.documentation_path or "",
-                    "documentation_url": documentation_url,
-                    "safety_sheet_path": item.safety_sheet_path or "",
-                    "safety_sheet_url": safety_sheet_url,
-                    "inspection_status": item.inspection_status or "",
-                    "keuring_gepland": keuring_gepland,
-                    "laatste_keuring": laatste_keuring,
+                    "serial": str(item.serial) if item.serial else "",
+                    "name": str(item.name) if item.name else "",
+                    "type": str(item.type) if item.type else "",
+                    "status": str(actual_status) if actual_status else "",
+                    "is_in_use": bool(active_usages_count > 0),
+                    "assigned_to": str(item.assigned_to) if item.assigned_to else "",
+                    "site": str(item.site) if item.site else "",
+                    "purchase_date": purchase_date_str,
+                    "note": str(item.note) if item.note else "",
+                    "nummer_op_materieel": str(item.nummer_op_materieel) if item.nummer_op_materieel else "",
+                    "documentation_path": str(item.documentation_path) if item.documentation_path else "",
+                    "documentation_url": str(documentation_url) if documentation_url else "",
+                    "safety_sheet_path": str(item.safety_sheet_path) if item.safety_sheet_path else "",
+                    "safety_sheet_url": str(safety_sheet_url) if safety_sheet_url else "",
+                    "inspection_status": str(item.inspection_status) if item.inspection_status else "",
+                    "keuring_gepland": str(keuring_gepland) if keuring_gepland else None,
+                    "laatste_keuring": str(laatste_keuring) if laatste_keuring else None,
+                    "documents": documents_list,
                     }
                 )
             except Exception as e:
@@ -136,8 +217,16 @@ def api_search():
         return jsonify({"items": results}), 200
     except Exception as e:
         # Log the error and return a proper error response
-        print(f"Error in api_search: {e}")
         import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e), "items": []}), 500
+        error_details = traceback.format_exc()
+        print(f"Error in api_search: {e}")
+        print(f"Traceback: {error_details}")
+        
+        # Return a user-friendly error message
+        error_message = f"Er is een fout opgetreden bij het zoeken: {str(e)}"
+        return jsonify({
+            "error": error_message,
+            "error_type": type(e).__name__,
+            "items": []
+        }), 500
 

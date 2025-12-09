@@ -39,7 +39,7 @@ def signup():
 
         session["user_email"] = email
         flash("Account aangemaakt en ingelogd.", "success")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard.dashboard"))
 
     # GET
     return render_template("auth_signup.html")
@@ -68,7 +68,7 @@ def login():
         session["user_email"] = email
         flash("Je bent ingelogd.", "success")
         next_url = request.args.get("next")
-        return redirect(next_url or url_for("dashboard"))
+        return redirect(next_url or url_for("dashboard.dashboard"))
 
     # GET
     return render_template("auth_login.html", prefill_email=prefill_email)
