@@ -16,7 +16,7 @@ import os
 from dateutil.relativedelta import relativedelta
 
 from config import Config
-from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, MaterialType, Document
+from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, MaterialType, Document, DocumentType
 from sqlalchemy import or_, func, and_, text
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -55,9 +55,12 @@ else:
 # BLUEPRINTS
 # -----------------------------------------------------
 
-# Register auth blueprint
+# Register blueprints
 from blueprints.auth import auth_bp
 app.register_blueprint(auth_bp)
+
+from blueprints.materiaal import materiaal_bp
+app.register_blueprint(materiaal_bp)
 
 # -----------------------------------------------------
 # HELPERS
@@ -101,6 +104,35 @@ def log_activity_db(action: str, name: str, serial: str):
     )
     db.session.add(act)
     db.session.commit()
+
+
+def init_default_document_types():
+    """Initialiseer default document types als ze nog niet bestaan"""
+    default_types = [
+        "Aankoopfactuur",
+        "Keuringstatus",
+        "Verkoopfactuur",
+        "Veiligheidsfiche",
+        "Handleiding",
+        "Overige"
+    ]
+    
+    for type_name in default_types:
+        existing = DocumentType.query.filter_by(name=type_name).first()
+        if not existing:
+            doc_type = DocumentType(name=type_name, is_active=True)
+            db.session.add(doc_type)
+    
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"Warning: Could not initialize document types: {e}")
+
+
+def get_document_types():
+    """Haal alle actieve document types op"""
+    return DocumentType.query.filter_by(is_active=True).order_by(DocumentType.name).all()
 
 
 def find_material_by_serial(serial: str):
@@ -734,138 +766,8 @@ def get_file_url_from_path(file_path: str) -> str | None:
 # -----------------------------------------------------
 
 
-@app.route("/materiaal", methods=["GET"])
-@login_required
-def materiaal():
-    # Update automatisch verlopen keuringen
-    update_verlopen_keuringen()
-    
-    q = (request.args.get("q") or "").strip().lower()
-    type_filter = (request.args.get("type") or "").strip().lower()
-    status = (request.args.get("status") or "").strip().lower()
-
-    query = Material.query
-
-    if q:
-        like = f"%{q}%"
-        query = query.filter(
-            or_(Material.name.ilike(like), Material.serial.ilike(like))
-        )
-
-    if type_filter:
-        query = query.filter(Material.type.ilike(f"%{type_filter}%"))
-
-    if status:
-        if status == "in gebruik":
-            query = query.filter(Material.status == "in gebruik")
-        elif status == "niet in gebruik":
-            query = query.filter(Material.status != "in gebruik")
-
-    # totaal aantal in systeem
-    total_items = Material.query.count()
-
-    # Aantal in gebruik via material_usage (actieve sessies)
-    in_use = (
-        db.session.query(func.count(MaterialUsage.id))
-        .filter(MaterialUsage.is_active.is_(True))
-        .scalar()
-    ) or 0
-
-    # alle materialen voor datalist in "Gebruik Materieel"
-    all_materials = Material.query.all()
-
-    # Actief gebruik ophalen (join material_usage + materials)
-    active_usages = (
-        db.session.query(MaterialUsage, Material)
-        .join(Material, MaterialUsage.material_id == Material.id)
-        .filter(MaterialUsage.is_active.is_(True))
-        .order_by(MaterialUsage.start_time.desc())
-        .all()
-    )
-
-    my_usages = []
-    other_usages = []
-    active_material_ids = set()
-
-    current_user_id = g.user.gebruiker_id if getattr(g, "user", None) else None
-    current_user_name = g.user.Naam if getattr(g, "user", None) else None
-
-    # Usages zonder werf (project_id IS NULL)
-    usages_without_project = []
-
-    for usage, mat in active_usages:
-        active_material_ids.add(mat.id)
-
-        row = {
-            "id": usage.id,
-            "material_id": mat.id,
-            "name": mat.name,
-            "serial": mat.serial,
-            "site": usage.site or "",
-            "used_by": usage.used_by or "",
-            "start_time": usage.start_time,
-            "project_id": usage.project_id,
-        }
-
-        # Check if usage has no project
-        if usage.project_id is None:
-            usages_without_project.append(row)
-
-        # Check if the "used_by" name matches the logged-in user's name
-        usage_name = (usage.used_by or "").strip()
-        if current_user_name and usage_name.lower() == current_user_name.lower():
-            my_usages.append(row)
-        else:
-            other_usages.append(row)
-
-    # Items ophalen en sorteren:
-    #   - eerst materiaal dat in gebruik is (groen lichtje)
-    #   - daarna de rest (alfabetisch op naam)
-    items = query.all()
-    items.sort(
-        key=lambda it: (
-            it.id not in active_material_ids,  # in gebruik (False) komt eerst
-            (it.name or "").lower(),
-        )
-    )
-
-    # Werven voor de dropdown in "Gebruik Materieel"
-    today = datetime.utcnow().date()
-    projects = (
-        Project.query.filter_by(is_deleted=False)
-        .order_by(Project.start_date.asc())
-        .all()
-    )
-
-    # Get all unique types from materials for the filter dropdown
-    unique_types = (
-        db.session.query(Material.type)
-        .filter(Material.type.isnot(None))
-        .filter(Material.type != "")
-        .distinct()
-        .order_by(Material.type)
-        .all()
-    )
-    types_list = [t[0] for t in unique_types if t[0]]
-
-    # Get all Material Types for the dropdown in modals
-    all_material_types = MaterialType.query.order_by(MaterialType.name.asc()).all()
-
-    return render_template(
-        "materiaal.html",
-        items=items,
-        total_items=total_items,
-        in_use=in_use,
-        all_materials=all_materials,
-        my_usages=my_usages,
-        other_usages=other_usages,
-        active_material_ids=active_material_ids,
-        projects=projects,
-        today=today,
-        types_list=types_list,
-        usages_without_project=usages_without_project,
-        all_material_types=all_material_types,
-    )
+# Route verplaatst naar blueprints/materiaal.py
+# De oude route hieronder is uitgeschakeld om conflicten te voorkomen
 
 
 # -----------------------------------------------------
@@ -883,7 +785,7 @@ def materiaal_toevoegen():
     # Admin check
     if not getattr(g.user, 'is_admin', False):
         flash("Geen toegang tot deze functie. Alleen admins kunnen materiaal toevoegen.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     f = request.form
     name = (f.get("name") or "").strip()
@@ -911,12 +813,12 @@ def materiaal_toevoegen():
 
     if not name or not serial:
         flash("Naam en serienummer zijn verplicht.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     bestaand = find_material_by_serial(serial)
     if bestaand:
         flash("Serienummer bestaat al in het systeem.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     documentation_path = save_upload(
         documentation_file, app.config["DOC_UPLOAD_FOLDER"], f"{serial}_doc"
@@ -958,7 +860,7 @@ def materiaal_toevoegen():
 
     log_activity_db("Toegevoegd", item.name or "", item.serial or "")
     flash("Nieuw materieel is toegevoegd aan Supabase.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 # -----------------------------------------------------
@@ -974,16 +876,16 @@ def materiaal_bewerken():
     item = find_material_by_serial(original_serial)
     if not item:
         flash("Item niet gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     new_serial = (f.get("serial") or "").strip()
     if not new_serial:
         flash("Serienummer is verplicht.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     if new_serial != original_serial and find_material_by_serial(new_serial):
         flash("Nieuw serienummer bestaat al.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     item.serial = new_serial
     item.name = (f.get("name") or "").strip()
@@ -1037,7 +939,7 @@ def materiaal_bewerken():
 
     log_activity_db("Bewerkt", item.name or "", item.serial or "")
     flash("Materieel bewerkt.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 # -----------------------------------------------------
@@ -1051,13 +953,13 @@ def materiaal_verwijderen():
     # Admin check
     if not getattr(g.user, 'is_admin', False):
         flash("Geen toegang tot deze functie. Alleen admins kunnen materiaal verwijderen.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     serial = (request.form.get("serial") or "").strip()
     item = find_material_by_serial(serial)
     if not item:
         flash("Item niet gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # -------------------------------------------------
     # 1) Alle gekoppelde gebruiksregistraties verwijderen
@@ -1099,7 +1001,7 @@ def materiaal_verwijderen():
 
     log_activity_db("Verwijderd", item.name or "", serial)
     flash("Materieel verwijderd.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 # -----------------------------------------------------
@@ -1116,12 +1018,12 @@ def materiaal_document_verwijderen():
     
     if not serial or not doc_type:
         flash("Ongeldige aanvraag.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
     
     item = find_material_by_serial(serial)
     if not item:
         flash("Item niet gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
     
     # Bepaal welk pad moet worden verwijderd
     file_path = None
@@ -1135,7 +1037,7 @@ def materiaal_document_verwijderen():
         field_name = "safety_sheet_path"
     else:
         flash("Ongeldig document type.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
     
     # Verwijder fysiek bestand als het bestaat
     if file_path:
@@ -1154,7 +1056,7 @@ def materiaal_document_verwijderen():
     doc_name = "Documentatie" if doc_type == "documentation" else "Veiligheidsfiche"
     log_activity_db(f"{doc_name} verwijderd", item.name or "", item.serial or "")
     flash(f"{doc_name} verwijderd.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 # -----------------------------------------------------
@@ -1183,12 +1085,12 @@ def materiaal_gebruiken():
 
     if not name and not nummer:
         flash("Naam of nummer op materieel is verplicht.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     item = find_material_by_name_or_number(name, nummer)
     if not item:
         flash("Materiaal niet gevonden in het datasysteem.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # Check if material is already in use
     active_usage = MaterialUsage.query.filter_by(
@@ -1198,7 +1100,7 @@ def materiaal_gebruiken():
     
     if active_usage:
         flash("Materiaal is niet beschikbaar voor deze toewijzing.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     if not assigned_to and getattr(g, "user", None):
         assigned_to = g.user.Naam or ""
@@ -1232,7 +1134,7 @@ def materiaal_gebruiken():
 
     log_activity_db("In gebruik", item.name or "", item.serial or "")
     flash("Materieel staat nu als 'in gebruik'.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 # -----------------------------------------------------
@@ -1246,12 +1148,12 @@ def materiaal_stop_gebruik():
     usage_id = request.form.get("usage_id", "").strip()
     if not usage_id:
         flash("Geen gebruiksessie gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     usage = MaterialUsage.query.filter_by(id=usage_id).first()
     if not usage or not usage.is_active:
         flash("Gebruiksregistratie niet gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # Check of de gebruiker dit materiaal zelf in gebruik heeft OF admin is
     current_user_name = g.user.Naam if getattr(g, "user", None) else None
@@ -1262,7 +1164,7 @@ def materiaal_stop_gebruik():
     
     if not is_own_usage and not is_admin:
         flash("Je kunt alleen je eigen materiaal stoppen. Neem contact op met een admin.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     usage.is_active = False
     usage.end_time = datetime.utcnow()
@@ -1290,7 +1192,7 @@ def materiaal_stop_gebruik():
         log_activity_db("Niet meer in gebruik", mat.name or "", mat.serial or "")
 
     flash("Materieel wordt niet langer als 'in gebruik' getoond.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 @app.route("/materiaal/assign_to_project", methods=["POST"])
@@ -1304,25 +1206,25 @@ def materiaal_assign_to_project():
 
     if not usage_id or not project_id:
         flash("Selecteer een werf om het materiaal aan te koppelen.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # Haal usage op
     usage = MaterialUsage.query.filter_by(id=usage_id, is_active=True).first()
     if not usage:
         flash("Gebruiksregistratie niet gevonden of niet actief.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # Controleer of werf bestaat
     project = Project.query.filter_by(id=project_id, is_deleted=False).first()
     if not project:
         flash("Werf niet gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # Haal materiaal op
     mat = Material.query.filter_by(id=usage.material_id).first()
     if not mat:
         flash("Materiaal niet gevonden.", "danger")
-        return redirect(url_for("materiaal"))
+        return redirect(url_for("materiaal.materiaal"))
 
     # Update usage en materiaal met project
     usage.project_id = int(project_id)
@@ -1337,7 +1239,7 @@ def materiaal_assign_to_project():
     )
 
     flash(f"Materiaal is gekoppeld aan werf '{project.name}'.", "success")
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 
 # -----------------------------------------------------
@@ -2829,8 +2731,14 @@ def documenten():
     """Documenten overzicht met zoeken en filteren"""
     import os as _os
     
+    # Initialiseer default document types bij eerste gebruik
+    init_default_document_types()
+    
     q = (request.args.get("q") or "").strip().lower()
     doc_type = (request.args.get("type") or "").strip().lower()
+    
+    # Haal document types op voor dropdown
+    document_types = get_document_types()
     
     all_materials = Material.query.all()
     documents = []
@@ -2998,6 +2906,7 @@ def documenten():
         selected_type=doc_type,
         all_materials=all_materials,
         material_types_list=material_types_list,
+        document_types=document_types,  # Voor dynamische dropdown
     )
 
 
@@ -3070,10 +2979,11 @@ def documenten_upload():
 # -----------------------------------------------------
 # MATERIAAL TYPES
 # -----------------------------------------------------
+# Routes zijn verplaatst naar blueprints/materiaal.py
 
-@app.route("/materiaal/types", methods=["GET"])
-@login_required
-def materiaal_types():
+# @app.route("/materiaal/types", methods=["GET"])
+# @login_required
+# def materiaal_types():
     """Toon overzicht van alle materiaal types."""
     search_q = (request.args.get("q") or "").strip().lower()
     
@@ -3113,26 +3023,26 @@ def materiaal_type_toevoegen():
     
     if not name:
         flash("Type naam is verplicht.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     if not inspection_validity_days:
         flash("Geldigheid keuring (dagen) is verplicht.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     try:
         inspection_validity_days = int(inspection_validity_days)
         if inspection_validity_days < 1:
             flash("Geldigheid keuring moet minimaal 1 dag zijn.", "danger")
-            return redirect(url_for("materiaal_types"))
+            return redirect(url_for("materiaal.materiaal_types"))
     except (ValueError, TypeError):
         flash("Geldigheid keuring moet een geldig nummer zijn.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     # Check if type name already exists
     existing = MaterialType.query.filter_by(name=name).first()
     if existing:
         flash(f"Type '{name}' bestaat al.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     # Handle type image upload
     type_image_path = None
@@ -3141,7 +3051,7 @@ def materiaal_type_toevoegen():
         ext = os.path.splitext(filename)[1].lower()
         if ext not in ['.jpg', '.jpeg', '.png']:
             flash("Foto moet een .jpg, .jpeg of .png bestand zijn.", "danger")
-            return redirect(url_for("materiaal_types"))
+            return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
         type_image_path = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
@@ -3153,7 +3063,7 @@ def materiaal_type_toevoegen():
         ext = os.path.splitext(filename)[1].lower()
         if ext != '.pdf':
             flash("Veiligheidsfiche moet een PDF bestand zijn.", "danger")
-            return redirect(url_for("materiaal_types"))
+            return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
         safety_sheet_path = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
@@ -3171,7 +3081,7 @@ def materiaal_type_toevoegen():
     
     log_activity_db("materiaal type toegevoegd", name, "")
     flash(f"Type '{name}' is toegevoegd.", "success")
-    return redirect(url_for("materiaal_types"))
+    return redirect(url_for("materiaal.materiaal_types"))
 
 
 @app.route("/materiaal/types/edit", methods=["POST"])
@@ -3187,35 +3097,35 @@ def materiaal_type_bewerken():
     
     if not type_id:
         flash("Type ID ontbreekt.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     type_item = MaterialType.query.get(type_id)
     if not type_item:
         flash("Type niet gevonden.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     if not name:
         flash("Type naam is verplicht.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     if not inspection_validity_days:
         flash("Geldigheid keuring (dagen) is verplicht.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     try:
         inspection_validity_days = int(inspection_validity_days)
         if inspection_validity_days < 1:
             flash("Geldigheid keuring moet minimaal 1 dag zijn.", "danger")
-            return redirect(url_for("materiaal_types"))
+            return redirect(url_for("materiaal.materiaal_types"))
     except (ValueError, TypeError):
         flash("Geldigheid keuring moet een geldig nummer zijn.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     # Check if name already exists (but not for current type)
     existing = MaterialType.query.filter_by(name=name).first()
     if existing and existing.id != type_item.id:
         flash(f"Type '{name}' bestaat al.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     old_name = type_item.name
     
@@ -3225,7 +3135,7 @@ def materiaal_type_bewerken():
         ext = os.path.splitext(filename)[1].lower()
         if ext not in ['.jpg', '.jpeg', '.png']:
             flash("Foto moet een .jpg, .jpeg of .png bestand zijn.", "danger")
-            return redirect(url_for("materiaal_types"))
+            return redirect(url_for("materiaal.materiaal_types"))
         
         # Delete old image if exists
         if type_item.type_image:
@@ -3245,7 +3155,7 @@ def materiaal_type_bewerken():
         ext = os.path.splitext(filename)[1].lower()
         if ext != '.pdf':
             flash("Veiligheidsfiche moet een PDF bestand zijn.", "danger")
-            return redirect(url_for("materiaal_types"))
+            return redirect(url_for("materiaal.materiaal_types"))
         
         # Delete old safety sheet if exists
         if type_item.safety_sheet:
@@ -3267,7 +3177,7 @@ def materiaal_type_bewerken():
     
     log_activity_db("materiaal type bewerkt", name, "")
     flash(f"Type '{name}' is bijgewerkt.", "success")
-    return redirect(url_for("materiaal_types"))
+    return redirect(url_for("materiaal.materiaal_types"))
 
 
 @app.route("/materiaal/types/delete", methods=["POST"])
@@ -3278,18 +3188,18 @@ def materiaal_type_verwijderen():
     
     if not type_id:
         flash("Type ID ontbreekt.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     type_item = MaterialType.query.get(type_id)
     if not type_item:
         flash("Type niet gevonden.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     # Check if any materials use this type
     materials_using_type = Material.query.filter_by(type=type_item.name).count()
     if materials_using_type > 0:
         flash(f"Kan type '{type_item.name}' niet verwijderen omdat {materials_using_type} materiaal(len) dit type gebruiken.", "danger")
-        return redirect(url_for("materiaal_types"))
+        return redirect(url_for("materiaal.materiaal_types"))
     
     type_name = type_item.name
     
@@ -3315,7 +3225,7 @@ def materiaal_type_verwijderen():
     
     log_activity_db("materiaal type verwijderd", type_name, "")
     flash(f"Type '{type_name}' is verwijderd.", "success")
-    return redirect(url_for("materiaal_types"))
+    return redirect(url_for("materiaal.materiaal_types"))
 
 
 if __name__ == "__main__":

@@ -14,26 +14,29 @@
   </button>
 </div>
 
-<!-- Zoekbalk -->
-<form method="get" action="{{ url_for('materiaal_types') }}" class="mt-3 max-w-300">
+<!-- Zoekbalk met frontend filtering voor kleine datasets -->
+<form method="get" action="{{ url_for('materiaal.materiaal_types') }}" class="mt-3 max-w-300" id="searchForm">
   <div class="input-group input-group-sm">
     <span class="input-group-text">🔍</span>
     <input type="text" 
            name="q" 
+           id="searchInput"
            class="form-control" 
            placeholder="Zoek type..." 
            value="{{ search_q or '' }}"
            autocomplete="off">
     {% if search_q %}
-      <a href="{{ url_for('materiaal_types') }}" class="btn btn-outline-secondary" title="Wissen">✕</a>
+      <a href="{{ url_for('materiaal.materiaal_types') }}" class="btn btn-outline-secondary" title="Wissen">✕</a>
     {% endif %}
   </div>
 </form>
 
-<div class="row g-3 mt-2">
+<div class="row g-3 mt-2" id="typesContainer">
   {% if types %}
     {% for type_item in types %}
-      <div class="col-12 col-md-6 col-xl-4">
+      <div class="col-12 col-md-6 col-xl-4 type-card" 
+           data-name="{{ type_item.name|lower }}" 
+           data-description="{{ (type_item.description or '')|lower }}">
         <div class="card h-100 card-rounded">
           {% if type_item.type_image %}
             <div class="card-img-160">
@@ -93,7 +96,7 @@
       </div>
 
       <form method="post"
-            action="{{ url_for('materiaal_type_toevoegen') }}"
+            action="{{ url_for('materiaal.materiaal_type_toevoegen') }}"
             enctype="multipart/form-data">
         <div class="modal-body">
           <div class="row g-3">
@@ -156,7 +159,7 @@
       </div>
 
       <form method="post"
-            action="{{ url_for('materiaal_type_bewerken') }}"
+            action="{{ url_for('materiaal.materiaal_type_bewerken') }}"
             enctype="multipart/form-data">
         <input type="hidden" name="type_id" id="edit-type-id">
         <div class="modal-body">
@@ -217,7 +220,7 @@
 <div class="modal fade" id="deleteTypeModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <form method="post" action="{{ url_for('materiaal_type_verwijderen') }}">
+      <form method="post" action="{{ url_for('materiaal.materiaal_type_verwijderen') }}">
         <div class="modal-header">
           <h5 class="modal-title">Type verwijderen</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
@@ -270,6 +273,70 @@
 </div>
 
 <script>
+// Frontend filtering voor kleine datasets (< 100 items)
+document.addEventListener('DOMContentLoaded', function () {
+  const searchInput = document.getElementById('searchInput');
+  const typesContainer = document.getElementById('typesContainer');
+  const typeCards = document.querySelectorAll('.type-card');
+  const totalTypes = typeCards.length;
+  
+  // Alleen frontend filtering als er minder dan 100 types zijn
+  if (totalTypes > 0 && totalTypes < 100 && searchInput) {
+    searchInput.addEventListener('input', function(e) {
+      const searchTerm = e.target.value.toLowerCase().trim();
+      let visibleCount = 0;
+      
+      typeCards.forEach(function(card) {
+        const name = card.getAttribute('data-name') || '';
+        const description = card.getAttribute('data-description') || '';
+        
+        if (!searchTerm || name.includes(searchTerm) || description.includes(searchTerm)) {
+          card.style.display = '';
+          visibleCount++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+      
+      // Toon "geen resultaten" bericht als nodig
+      let noResultsMsg = document.getElementById('noResultsMsg');
+      if (visibleCount === 0 && searchTerm) {
+        if (!noResultsMsg) {
+          noResultsMsg = document.createElement('div');
+          noResultsMsg.id = 'noResultsMsg';
+          noResultsMsg.className = 'col-12';
+          noResultsMsg.innerHTML = '<div class="card panel"><div class="panel-title">Geen resultaten</div><div class="panel-sub">Geen types gevonden voor "' + escapeHtml(searchTerm) + '"</div></div>';
+          typesContainer.appendChild(noResultsMsg);
+        }
+        noResultsMsg.style.display = '';
+      } else if (noResultsMsg) {
+        noResultsMsg.style.display = 'none';
+      }
+    });
+    
+    // Voorkom form submit bij Enter (gebruik frontend filtering)
+    const searchForm = document.getElementById('searchForm');
+    if (searchForm) {
+      searchForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        // Frontend filtering gebeurt al via input event
+      });
+    }
+  }
+  
+  function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+  }
+});
+
 document.addEventListener('DOMContentLoaded', function () {
   const deleteModal = document.getElementById('deleteTypeModal');
   if (deleteModal) {

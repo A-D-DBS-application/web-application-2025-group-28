@@ -81,7 +81,7 @@ def materiaal_toevoegen():
     MATERIALS.insert(0, new_item)  # bovenaan tonen
 
     # terug naar de lijst (filters blijven behouden als je wilt)
-    return redirect(url_for("materiaal"))
+    return redirect(url_for("materiaal.materiaal"))
 
 # --- Keuringen dummy (zodat je menu niet breekt) ---
 @app.route("/keuringen")

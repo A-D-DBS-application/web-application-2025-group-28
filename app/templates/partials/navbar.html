@@ -4,7 +4,7 @@
     <span class="mobile-nav-icon">📊</span>
     <span class="mobile-nav-label">Dashboard</span>
   </a>
-  <a href="{{ url_for('materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal' %}active{% endif %}">
+  <a href="{{ url_for('materiaal.materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}">
     <span class="mobile-nav-icon">📦</span>
     <span class="mobile-nav-label">Materiaal</span>
   </a>
@@ -44,8 +44,8 @@
       </a>
 
       <a
-        class="menu-item {% if request.endpoint=='materiaal' %}active{% endif %}"
-        href="{{ url_for('materiaal') }}"
+        class="menu-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}"
+        href="{{ url_for('materiaal.materiaal') }}"
       >
         Materiaal
       </a>

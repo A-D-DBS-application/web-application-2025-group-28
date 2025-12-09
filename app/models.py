@@ -224,7 +224,12 @@ class Document(db.Model):
     id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
-    document_type = db.Column("document_type", db.String, nullable=False)
+    document_type = db.Column("document_type", db.String, nullable=False)  # Legacy: behouden voor backward compatibility
+    document_type_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("document_types.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     file_path = db.Column("file_path", db.Text, nullable=False)
     file_name = db.Column("file_name", db.Text, nullable=False)
     file_size = db.Column("file_size", db.BigInteger, nullable=True)
@@ -267,3 +272,20 @@ class MaterialType(db.Model):
     inspection_validity_days = db.Column(db.Integer, nullable=True)
     type_image = db.Column(db.Text, nullable=True)  # Pad naar type afbeelding
     safety_sheet = db.Column(db.Text, nullable=True)  # Pad naar veiligheidsfiche
+
+
+class DocumentType(db.Model):
+    """
+    Referentietabel voor document types
+    Kolommen: id, created_at, name, description, is_active
+    """
+    __tablename__ = "document_types"
+    
+    id = db.Column(db.BigInteger, primary_key=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
+    name = db.Column(db.String, nullable=False, unique=True)  # Bijv. "Aankoopfactuur", "Veiligheidsfiche"
+    description = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    
+    # Relatie met Document
+    documents = db.relationship("Document", backref="type_ref", foreign_keys="Document.document_type_id")

@@ -15,7 +15,7 @@
       <span class="fs-5 lh-1">+</span>
       <span>Gebruik materiaal</span>
     </button>
-    <a href="{{ url_for('materiaal_types') }}" 
+    <a href="{{ url_for('materiaal.materiaal_types') }}" 
        class="btn btn-outline-dark d-inline-flex align-items-center gap-2">
       <span>Types materiaal</span>
     </a>
@@ -266,11 +266,11 @@
       Materiaal in het systeem
       <div class="panel-sub">Alle geregistreerde items</div>
     </div>
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('materiaal') }}">Herstel filters</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('materiaal.materiaal') }}">Herstel filters</a>
   </div>
 
   <!-- Filterbalk -->
-  <form class="row g-2 align-items-center" method="get" action="{{ url_for('materiaal') }}">
+  <form class="row g-2 align-items-center" method="get" action="{{ url_for('materiaal.materiaal') }}">
     <div class="col-12 col-md-6">
       <div class="input-group">
         <span class="input-group-text">🔎</span>
@@ -409,7 +409,7 @@
                 {% endif %}
               </select>
               {% if not all_material_types %}
-                <small class="text-muted">Geen materiaaltypes beschikbaar. <a href="{{ url_for('materiaal_types') }}">Voeg eerst een type toe</a>.</small>
+                <small class="text-muted">Geen materiaaltypes beschikbaar. <a href="{{ url_for('materiaal.materiaal_types') }}">Voeg eerst een type toe</a>.</small>
               {% endif %}
             </div>
 
@@ -475,7 +475,7 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-primary" type="button" id="submitMaterieelBtn" {% if not all_material_types %}disabled{% endif %}>Materieel Toevoegen</button>
+          <button class="btn btn-primary" type="submit" id="submitMaterieelBtn" {% if not all_material_types %}disabled{% endif %}>Materieel Toevoegen</button>
         </div>
       </form>
     </div>
@@ -657,7 +657,7 @@
                 {% endif %}
               </select>
               {% if not all_material_types %}
-                <small class="text-muted">Geen materiaaltypes beschikbaar. <a href="{{ url_for('materiaal_types') }}">Voeg eerst een type toe</a>.</small>
+                <small class="text-muted">Geen materiaaltypes beschikbaar. <a href="{{ url_for('materiaal.materiaal_types') }}">Voeg eerst een type toe</a>.</small>
               {% endif %}
             </div>
 
@@ -786,11 +786,14 @@ document.addEventListener('DOMContentLoaded', function () {
     const nieuwModal = document.getElementById('nieuwMaterieelModal');
     if (nieuwModal) {
       nieuwModal.addEventListener('show.bs.modal', function() {
-        // Reset selection and check if submit should be disabled
-        if (typeSelect.value === '' || typeSelect.options[typeSelect.selectedIndex].disabled) {
-          submitBtn.disabled = true;
-        } else {
-          submitBtn.disabled = false;
+        // Reset form and check if submit should be disabled
+        nieuwMaterieelForm.reset();
+        if (typeSelect && submitBtn) {
+          if (typeSelect.value === '' || (typeSelect.options[typeSelect.selectedIndex] && typeSelect.options[typeSelect.selectedIndex].disabled)) {
+            submitBtn.disabled = true;
+          } else {
+            submitBtn.disabled = false;
+          }
         }
       });
     }
@@ -843,16 +846,33 @@ document.addEventListener('DOMContentLoaded', function () {
   const isAdmin = {{ 'true' if current_user and current_user.is_admin else 'false' }};
   const accessDeniedModal = new bootstrap.Modal(document.getElementById('accessDeniedModal'));
 
-  if (submitBtn && nieuwMaterieelForm) {
-    submitBtn.addEventListener('click', function(e) {
-      e.preventDefault();
-      if (isAdmin) {
-        // Admin: direct formulier versturen
-        nieuwMaterieelForm.submit();
-      } else {
+  if (nieuwMaterieelForm) {
+    nieuwMaterieelForm.addEventListener('submit', function(e) {
+      // Check if user is admin
+      if (!isAdmin) {
+        e.preventDefault();
+        console.log('User is not admin, preventing submit');
         // Geen admin: toon melding
         accessDeniedModal.show();
+        return false;
       }
+      
+      // Check if button is disabled (shouldn't happen with type="submit" but check anyway)
+      if (submitBtn && submitBtn.disabled) {
+        e.preventDefault();
+        console.log('Button is disabled, preventing submit');
+        const typeSelect = document.getElementById('type');
+        if (typeSelect && !typeSelect.value) {
+          alert('Selecteer eerst een type materiaal.');
+          typeSelect.focus();
+        }
+        return false;
+      }
+      
+      // Let native HTML5 validation handle required fields
+      // If form is invalid, browser will prevent submit automatically
+      console.log('Form submitting...');
+      return true;
     });
   }
 
