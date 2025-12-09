@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+<div class="section-header">
   <div>
     <h2 class="h-title">Geschiedenis</h2>
     <div class="h-sub">Overzicht van alle activiteiten in het systeem</div>
@@ -14,7 +14,7 @@
 </div>
 
 <!-- Filters -->
-<div class="card panel" style="margin-top:16px;">
+<div class="card panel mt-3">
   <form method="get" action="{{ url_for('geschiedenis') }}" class="row g-3 align-items-end">
     <!-- Zoeken -->
     <div class="col-12 col-md-4">
@@ -60,28 +60,28 @@
 <!-- Statistieken -->
 <div class="row g-3 mt-2">
   <div class="col-6 col-md-3">
-    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='all', user=filter_user, period=filter_period, q=search_q) }}'">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis', type='all', user=filter_user, period=filter_period, q=search_q) }}'">
       <div class="kpi-title">📊 Totaal</div>
       <div class="kpi-value">{{ all_count }}</div>
       <div class="kpi-sub">Alle activiteiten</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='materiaal', user=filter_user, period=filter_period, q=search_q) }}'">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis', type='materiaal', user=filter_user, period=filter_period, q=search_q) }}'">
       <div class="kpi-title">📦 Materiaal</div>
       <div class="kpi-value">{{ materiaal_count }}</div>
       <div class="kpi-sub">Toegevoegd/bewerkt/verwijderd</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='gebruik', user=filter_user, period=filter_period, q=search_q) }}'">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis', type='gebruik', user=filter_user, period=filter_period, q=search_q) }}'">
       <div class="kpi-title">🔧 Gebruik</div>
       <div class="kpi-value">{{ gebruik_count }}</div>
       <div class="kpi-sub">In/uit gebruik</div>
     </div>
   </div>
   <div class="col-6 col-md-3">
-    <div class="card kpi" style="cursor:pointer;" onclick="window.location='{{ url_for('geschiedenis', type='keuring', user=filter_user, period=filter_period, q=search_q) }}'">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis', type='keuring', user=filter_user, period=filter_period, q=search_q) }}'">
       <div class="kpi-title">✅ Keuringen</div>
       <div class="kpi-value">{{ keuring_count }}</div>
       <div class="kpi-sub">Keuring activiteiten</div>
@@ -90,7 +90,7 @@
 </div>
 
 <!-- Categorie tabs -->
-<div class="card panel" style="margin-top:16px;">
+<div class="card panel mt-3">
   <ul class="nav nav-tabs" role="tablist">
     <li class="nav-item">
       <a class="nav-link {% if filter_type == 'all' %}active{% endif %}" 
@@ -123,7 +123,7 @@
     <table class="table align-middle">
       <thead>
         <tr>
-          <th style="width:160px;">Datum & Tijd</th>
+          <th class="w-160">Datum & Tijd</th>
           <th>Actie</th>
           <th>Materiaal</th>
           <th>Serienummer</th>

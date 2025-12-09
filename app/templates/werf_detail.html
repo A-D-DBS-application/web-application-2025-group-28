@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+<div class="section-header">
   <div>
     <h2 class="h-title">{{ project.name or 'Werf ' ~ project.id }}</h2>
     <div class="h-sub">
@@ -27,7 +27,7 @@
             {% set image_url = get_file_url(project.image_url) or url_for('static', filename=project.image_url) %}
             <img src="{{ image_url }}"
                  alt="Werf afbeelding"
-                 style="width:100%;border-radius:12px;object-fit:cover;max-height:220px;">
+                 class="img-cover-rounded">
           </div>
         {% endif %}
 

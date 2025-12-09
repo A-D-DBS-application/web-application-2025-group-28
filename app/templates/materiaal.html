@@ -1,31 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
 
-<div class="section-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+<div class="section-header">
   <div>
     <h2 class="h-title">Materieelbeheer</h2>
     <div class="h-sub">Overzicht van beheer van al het bedrijfsmateriaal</div>
   </div>
 
   <!-- Knoppen rechts naast de paginatitel -->
-  <div style="display:flex;gap:8px;">
-    <button class="btn btn-dark"
+  <div class="d-flex gap-2">
+    <button class="btn btn-dark d-inline-flex align-items-center gap-2"
             data-bs-toggle="modal"
-            data-bs-target="#gebruikMaterieelModal"
-            style="display:inline-flex;align-items:center;gap:8px;">
-      <span style="font-size:18px;line-height:1;">+</span>
+            data-bs-target="#gebruikMaterieelModal">
+      <span class="fs-5 lh-1">+</span>
       <span>Gebruik materiaal</span>
     </button>
     <a href="{{ url_for('materiaal_types') }}" 
-       class="btn btn-outline-dark"
-       style="display:inline-flex;align-items:center;gap:8px;">
+       class="btn btn-outline-dark d-inline-flex align-items-center gap-2">
       <span>Types materiaal</span>
     </a>
   </div>
 </div>
 
 <!-- KPI's in één grid -->
-<div class="grid materiaal-grid" style="margin-top:16px;">
+<div class="grid materiaal-grid mt-3">
   <!-- KPI totaal -->
   <div class="card kpi kpi-with-plus">
     <div class="kpi-title">Totaal materiaal <span class="kpi-dot"></span></div>
@@ -51,7 +49,7 @@
 </div>
 
 <!-- BLOK: Materieel in gebruik – zelfde breedte als "Materiaal in het systeem" -->
-<div class="card panel usage-panel" style="margin-top:16px;">
+<div class="card panel usage-panel mt-3">
     <div class="panel-title">Materieel in gebruik</div>
     <div class="panel-sub">Overzicht van gebruikte items</div>
 

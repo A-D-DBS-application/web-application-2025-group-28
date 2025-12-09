@@ -1,0 +1,125 @@
+<!-- Mobiele onderbalk navigatie (alleen zichtbaar op kleine schermen) -->
+<nav class="mobile-nav d-md-none">
+  <a href="{{ url_for('dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard' %}active{% endif %}">
+    <span class="mobile-nav-icon">📊</span>
+    <span class="mobile-nav-label">Dashboard</span>
+  </a>
+  <a href="{{ url_for('materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal' %}active{% endif %}">
+    <span class="mobile-nav-icon">📦</span>
+    <span class="mobile-nav-label">Materiaal</span>
+  </a>
+  <a href="{{ url_for('werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven', 'werf_detail'] %}active{% endif %}">
+    <span class="mobile-nav-icon">🏗️</span>
+    <span class="mobile-nav-label">Werven</span>
+  </a>
+  <a href="{{ url_for('keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen' %}active{% endif %}">
+    <span class="mobile-nav-icon">✓</span>
+    <span class="mobile-nav-label">Keuringen</span>
+  </a>
+  <a href="{{ url_for('documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten' %}active{% endif %}">
+    <span class="mobile-nav-icon">📄</span>
+    <span class="mobile-nav-label">Docs</span>
+  </a>
+</nav>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-top">
+    <!-- Brand / Logo -->
+    <div class="brand">
+      <img
+        src="{{ url_for('static', filename='img/logo.png.png') }}"
+        alt="VT-Invest Group"
+        class="brand-logo"
+      >
+    </div>
+
+    <!-- Navigation -->
+    <nav class="menu">
+      <a
+        class="menu-item {% if request.endpoint=='dashboard' %}active{% endif %}"
+        href="{{ url_for('dashboard') }}"
+      >
+        Overzicht
+      </a>
+
+      <a
+        class="menu-item {% if request.endpoint=='materiaal' %}active{% endif %}"
+        href="{{ url_for('materiaal') }}"
+      >
+        Materiaal
+      </a>
+
+      <a
+        class="menu-item {% if request.endpoint in ['werven', 'werf_detail'] %}active{% endif %}"
+        href="{{ url_for('werven') }}"
+      >
+        Werven
+      </a>
+
+      <a
+        class="menu-item {% if request.endpoint=='keuringen' %}active{% endif %}"
+        href="{{ url_for('keuringen') }}"
+      >
+        Keuringen
+      </a>
+
+      <a
+        class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
+        href="{{ url_for('documenten') }}"
+      >
+        Documenten
+      </a>
+    </nav>
+  </div>
+
+  <!-- User info bottom -->
+  <div class="sidebar-bottom">
+    <div class="user-card">
+      <div class="avatar">
+        {% if current_user and current_user.Naam %}
+          {% set naam_delen = current_user.Naam.split() %}
+          {% if naam_delen|length >= 2 %}
+            {{ (naam_delen[0][0] + naam_delen[-1][0]) | upper }}
+          {% else %}
+          {{ current_user.Naam[:2] | upper }}
+          {% endif %}
+        {% else %}
+          VT
+        {% endif %}
+      </div>
+      <div>
+        <div class="user-name">
+          {{ current_user.Naam if current_user and current_user.Naam else 'Naam Gebruiker' }}
+        </div>
+        <div class="user-role">
+          {{ current_user.Functie if current_user and current_user.Functie else 'Functie' }}
+        </div>
+        <div class="mt-2">
+          {% if current_user %}
+            <a
+              href="{{ url_for('auth.logout') }}"
+              class="small text-decoration-none"
+            >
+              Uitloggen
+            </a>
+          {% else %}
+            <a
+              href="{{ url_for('auth.login') }}"
+              class="small text-decoration-none me-2"
+            >
+              Inloggen
+            </a>
+            <a
+              href="{{ url_for('auth.signup') }}"
+              class="small text-decoration-none"
+            >
+              Registreren
+            </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>
+
