@@ -26,7 +26,7 @@
   </div>
 
   <!-- Search Bar -->
-  <form method="get" action="{{ url_for('documenten') }}" class="mb-3">
+  <form method="get" action="{{ url_for('documenten.documenten') }}" class="mb-3">
     <div class="row g-2">
       <div class="col-12 col-md-8">
         <div class="input-group">
@@ -49,44 +49,16 @@
   <!-- Document Type Filters -->
   <div class="mb-3">
     <div class="btn-group flex-wrap" role="group">
-      <a href="{{ url_for('documenten', q=search_query, type='alle') }}" 
+      <a href="{{ url_for('documenten.documenten', q=search_query, type='alle') }}" 
          class="btn btn-sm {% if not selected_type or selected_type == 'alle' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
         Alle
       </a>
-      {% if document_types %}
-        {% for doc_type in document_types %}
-          <a href="{{ url_for('documenten', q=search_query, type=doc_type.name) }}" 
-             class="btn btn-sm {% if selected_type|lower == doc_type.name|lower %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-            {{ doc_type.name }}
-          </a>
-        {% endfor %}
-      {% else %}
-        {# Fallback naar hardcoded types als document_types niet beschikbaar is #}
-        <a href="{{ url_for('documenten', q=search_query, type='Aankoopfactuur') }}" 
-           class="btn btn-sm {% if selected_type == 'Aankoopfactuur' or selected_type == 'aankoopfactuur' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-          Aankoopfactuur
+      {% for doc_type in document_types %}
+        <a href="{{ url_for('documenten.documenten', q=search_query, type=doc_type) }}" 
+           class="btn btn-sm {% if selected_type|lower == doc_type|lower %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+          {{ doc_type }}
         </a>
-        <a href="{{ url_for('documenten', q=search_query, type='Keuringstatus') }}" 
-           class="btn btn-sm {% if selected_type == 'Keuringstatus' or selected_type == 'keuringscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-          Keuringstatus
-        </a>
-        <a href="{{ url_for('documenten', q=search_query, type='Verkoopfactuur') }}" 
-           class="btn btn-sm {% if selected_type == 'Verkoopfactuur' or selected_type == 'verkoopfactuur' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-          Verkoopfactuur
-        </a>
-        <a href="{{ url_for('documenten', q=search_query, type='Veiligheidsfiche') }}" 
-           class="btn btn-sm {% if selected_type == 'Veiligheidsfiche' or selected_type == 'veiligheidsfiche' or selected_type == 'veiligheidscertificaat' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-          Veiligheidsfiche
-        </a>
-        <a href="{{ url_for('documenten', q=search_query, type='handleiding') }}" 
-           class="btn btn-sm {% if selected_type == 'handleiding' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-          Handleiding
-        </a>
-        <a href="{{ url_for('documenten', q=search_query, type='overige') }}" 
-           class="btn btn-sm {% if selected_type == 'overige' %}btn-dark{% else %}btn-outline-secondary{% endif %}">
-          Overige
-        </a>
-      {% endif %}
+      {% endfor %}
     </div>
   </div>
 
@@ -166,7 +138,7 @@
         <h5 class="modal-title" id="uploadDocumentModalLabel">Document toevoegen</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <form method="post" action="{{ url_for('documenten_upload') }}" enctype="multipart/form-data">
+      <form method="post" action="{{ url_for('documenten.documenten_upload') }}" enctype="multipart/form-data">
         <div class="modal-body">
           <div class="mb-3">
             <label for="document_file" class="form-label">Bestand <span class="text-danger">*</span></label>
@@ -178,23 +150,13 @@
             <label for="document_type" class="form-label">Document type <span class="text-danger">*</span></label>
             <select class="form-select" id="document_type" name="document_type" required>
               <option value="">Selecteer type...</option>
-              {% if document_types %}
-                {% for doc_type in document_types %}
-                  <option value="{{ doc_type.name }}">{{ doc_type.name }}</option>
-                {% endfor %}
-              {% else %}
-                {# Fallback naar hardcoded types #}
-                <option value="Aankoopfactuur">Aankoopfactuur</option>
-                <option value="Keuringstatus">Keuringstatus</option>
-                <option value="Verkoopfactuur">Verkoopfactuur</option>
-                <option value="Veiligheidsfiche">Veiligheidsfiche</option>
-                <option value="Handleiding">Handleiding</option>
-                <option value="Overige">Overige</option>
-              {% endif %}
+              {% for doc_type in document_types %}
+                <option value="{{ doc_type }}">{{ doc_type }}</option>
+              {% endfor %}
             </select>
           </div>
 
-          <div class="mb-3" id="material_select_container" style="display: none;">
+          <div class="mb-3 hidden" id="material_select_container">
             <label for="material_id" class="form-label">Materieel <span class="text-danger">*</span></label>
             <select class="form-select" id="material_id" name="material_id">
               <option value="">Selecteer materieel...</option>
@@ -205,7 +167,7 @@
             <small class="form-text text-muted">Verplicht voor aankoopfactuur, Keuringstatus en verkoopfactuur</small>
           </div>
 
-          <div class="mb-3" id="material_type_select_container" style="display: none;">
+          <div class="mb-3 hidden" id="material_type_select_container">
             <label for="material_type" class="form-label">Materiaal Type <span class="text-danger">*</span></label>
             <input 
               type="text" 

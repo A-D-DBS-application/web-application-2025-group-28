@@ -137,4 +137,11 @@
   border-radius: 8px;
 }
 
+/* Hidden utility class */
+.hidden {
+  display: none;
+}
+
+
+
 

@@ -3,6 +3,7 @@ Service layer for business logic - separates business rules from route handlers.
 Routes should call these functions instead of containing business logic directly.
 """
 from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 from models import (
     db, Material, MaterialUsage, Project, Keuringstatus, 
     KeuringHistoriek, MaterialType, Activity
@@ -427,6 +428,257 @@ class MaterialUsageRepository:
             .all()
         )
         return {row[0] for row in active_ids}
+
+
+class KeuringService:
+    """Service for keuring-related business logic and filtering"""
+    
+    @staticmethod
+    def get_priority_counts(today: datetime.date) -> dict:
+        """Get priority counts for keuringen cards"""
+        te_laat_count = db.session.query(Keuringstatus, Material).join(
+            Material, Material.keuring_id == Keuringstatus.id
+        ).filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle < today,
+            Keuringstatus.laatste_controle.is_(None)
+        ).count()
+        
+        vandaag_count = db.session.query(Keuringstatus, Material).join(
+            Material, Material.keuring_id == Keuringstatus.id
+        ).filter(
+            Keuringstatus.volgende_controle == today,
+            Keuringstatus.laatste_controle.is_(None)
+        ).count()
+        
+        binnen_30_dagen_count = db.session.query(Keuringstatus, Material).join(
+            Material, Material.keuring_id == Keuringstatus.id
+        ).filter(
+            Keuringstatus.volgende_controle.isnot(None),
+            Keuringstatus.volgende_controle > today,
+            Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
+            Keuringstatus.laatste_controle.is_(None)
+        ).count()
+        
+        return {
+            "te_laat": te_laat_count,
+            "vandaag": vandaag_count,
+            "binnen_30_dagen": binnen_30_dagen_count
+        }
+    
+    @staticmethod
+    def get_filtered_keuringen(
+        today: datetime.date,
+        search_q: str = "",
+        status_filter: str = "",
+        werf_filter: str = "",
+        type_filter: str = "",
+        performer_filter: str = "",
+        date_from: str = "",
+        date_to: str = "",
+        priority_filter: str = "",
+        sort_by: str = "volgende_controle",
+        sort_order: str = "asc",
+        page: int = 1,
+        per_page: int = 25
+    ) -> tuple:
+        """
+        Get filtered and paginated keuringen.
+        Returns (inspection_list, pagination, total_items, filter_options)
+        """
+        from dateutil.relativedelta import relativedelta
+        
+        # Build base query
+        query = db.session.query(Keuringstatus, Material).join(
+            Material, Material.keuring_id == Keuringstatus.id
+        )
+        
+        # Apply priority filter
+        if priority_filter == "te_laat":
+            query = query.filter(
+                Keuringstatus.volgende_controle.isnot(None),
+                Keuringstatus.volgende_controle < today,
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        elif priority_filter == "vandaag":
+            query = query.filter(
+                Keuringstatus.volgende_controle == today,
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        elif priority_filter == "binnen_30":
+            query = query.filter(
+                Keuringstatus.volgende_controle.isnot(None),
+                Keuringstatus.volgende_controle > today,
+                Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
+                Keuringstatus.laatste_controle.is_(None)
+            )
+        
+        # Text search
+        if search_q:
+            like = f"%{search_q}%"
+            query = query.filter(
+                or_(
+                    Material.name.ilike(like),
+                    Material.serial.ilike(like)
+                )
+            )
+        
+        # Status filter
+        if status_filter:
+            if status_filter == "te_laat":
+                query = query.filter(
+                    Keuringstatus.volgende_controle.isnot(None),
+                    Keuringstatus.volgende_controle < today,
+                    Keuringstatus.laatste_controle.is_(None)
+                )
+            elif status_filter == "gepland":
+                query = query.filter(
+                    Keuringstatus.volgende_controle.isnot(None),
+                    Keuringstatus.volgende_controle > today,
+                    Keuringstatus.laatste_controle.is_(None)
+                )
+            elif status_filter == "goedgekeurd":
+                query = query.filter(Material.inspection_status == "goedgekeurd")
+            elif status_filter == "afgekeurd":
+                query = query.filter(Material.inspection_status == "afgekeurd")
+        
+        # Werf filter
+        if werf_filter:
+            query = query.filter(
+                or_(
+                    Material.site.ilike(f"%{werf_filter}%"),
+                    Material.project_id == int(werf_filter) if werf_filter.isdigit() else None
+                )
+            )
+        
+        # Type filter
+        if type_filter:
+            query = query.filter(Material.type.ilike(f"%{type_filter}%"))
+        
+        # Performer filter
+        if performer_filter:
+            query = query.filter(Keuringstatus.uitgevoerd_door.ilike(f"%{performer_filter}%"))
+        
+        # Date range filter
+        if date_from:
+            try:
+                date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").date()
+                query = query.filter(Keuringstatus.volgende_controle >= date_from_obj)
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").date()
+                query = query.filter(Keuringstatus.volgende_controle <= date_to_obj)
+            except ValueError:
+                pass
+        
+        # Sorting
+        if sort_by == "materieel":
+            if sort_order == "desc":
+                query = query.order_by(Material.name.desc())
+            else:
+                query = query.order_by(Material.name.asc())
+        elif sort_by == "laatste_keuring":
+            if sort_order == "desc":
+                query = query.order_by(Keuringstatus.laatste_controle.desc().nulls_last())
+            else:
+                query = query.order_by(Keuringstatus.laatste_controle.asc().nulls_last())
+        elif sort_by == "volgende_keuring":
+            if sort_order == "desc":
+                query = query.order_by(Keuringstatus.volgende_controle.desc().nulls_last())
+            else:
+                query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+        elif sort_by == "resultaat":
+            if sort_order == "desc":
+                query = query.order_by(Material.inspection_status.desc().nulls_last())
+            else:
+                query = query.order_by(Material.inspection_status.asc().nulls_last())
+        else:
+            query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+        
+        # Pagination
+        total_items = query.count()
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        inspection_items = pagination.items
+        
+        # Build inspection list with computed status
+        inspection_list = []
+        for keuring, material in inspection_items:
+            status_badge = "gepland"
+            status_class = "secondary"
+            dagen_verschil = None
+            
+            if keuring.laatste_controle:
+                if material.inspection_status == "goedgekeurd":
+                    status_badge = "goedgekeurd"
+                    status_class = "success"
+                elif material.inspection_status == "afgekeurd":
+                    status_badge = "afgekeurd"
+                    status_class = "danger"
+                else:
+                    status_badge = "gepland"
+                    status_class = "secondary"
+            else:
+                if keuring.volgende_controle:
+                    if keuring.volgende_controle < today:
+                        status_badge = "te laat"
+                        status_class = "danger"
+                        dagen_verschil = (today - keuring.volgende_controle).days
+                    elif keuring.volgende_controle == today:
+                        status_badge = "vandaag"
+                        status_class = "warning"
+                        dagen_verschil = 0
+                    elif keuring.volgende_controle <= (today + relativedelta(days=30)):
+                        status_badge = "binnenkort"
+                        status_class = "warning"
+                        dagen_verschil = (keuring.volgende_controle - today).days
+                    else:
+                        status_badge = "gepland"
+                        status_class = "secondary"
+                        dagen_verschil = (keuring.volgende_controle - today).days
+            
+            # Check certificate
+            has_certificate = False
+            latest_history = KeuringHistoriek.query.filter_by(
+                material_id=material.id
+            ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
+            if latest_history and latest_history.certificaat_path:
+                has_certificate = True
+            
+            inspection_list.append({
+                'keuring': keuring,
+                'material': material,
+                'status_badge': status_badge,
+                'status_class': status_class,
+                'dagen_verschil': dagen_verschil,
+                'has_certificate': has_certificate,
+            })
+        
+        # Get filter options
+        all_projects = Project.query.filter_by(is_deleted=False).order_by(Project.name).all()
+        unique_types = db.session.query(Material.type).filter(
+            Material.type.isnot(None),
+            Material.type != ""
+        ).distinct().order_by(Material.type).all()
+        types_list = [t[0] for t in unique_types if t[0]]
+        
+        unique_performers = db.session.query(Keuringstatus.uitgevoerd_door).filter(
+            Keuringstatus.uitgevoerd_door.isnot(None),
+            Keuringstatus.uitgevoerd_door != ""
+        ).distinct().order_by(Keuringstatus.uitgevoerd_door).all()
+        performers_list = [p[0] for p in unique_performers if p[0]]
+        
+        all_materials = Material.query.order_by(Material.name).all()
+        
+        filter_options = {
+            "all_projects": all_projects,
+            "types_list": types_list,
+            "performers_list": performers_list,
+            "all_materials": all_materials,
+        }
+        
+        return inspection_list, pagination, total_items, filter_options
 
 
 class KeuringRepository:

@@ -1,9 +1,230 @@
 """
 Shared helper functions used across multiple blueprints
 """
-from flask import g, session, redirect, url_for, request
+from flask import g, session, redirect, url_for, request, current_app
 from models import db, Gebruiker, Activity
 from datetime import datetime
+from werkzeug.utils import secure_filename
+import os
+
+# Supabase Storage
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+
+# Global supabase client - will be initialized by app
+_supabase_client: Client | None = None
+
+def init_supabase_client(supabase_client: Client | None):
+    """Initialize the supabase client for file uploads"""
+    global _supabase_client
+    _supabase_client = supabase_client
+
+
+def upload_folder_from_bucket(bucket_name: str) -> str:
+    """Map bucket naam naar lokale upload folder (voor fallback)."""
+    bucket_to_folder = {
+        "docs": current_app.config["DOC_UPLOAD_FOLDER"],
+        "safety": current_app.config["SAFETY_UPLOAD_FOLDER"],
+        "projects": current_app.config["PROJECT_UPLOAD_FOLDER"],
+        "certificates": current_app.config["CERTIFICATE_UPLOAD_FOLDER"],
+        "type-images": current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"],
+    }
+    return bucket_to_folder.get(bucket_name, current_app.config["DOC_UPLOAD_FOLDER"])
+
+
+def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
+    """
+    Fallback: Sla een geüpload bestand lokaal op (oude methode).
+    Gebruikt alleen als Supabase niet beschikbaar is.
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+
+    filename = secure_filename(file_storage.filename)
+    final_filename = f"{prefix}_{filename}"
+
+    full_path = os.path.join(upload_folder, final_filename)
+    file_storage.save(full_path)
+
+    if upload_folder == current_app.config["DOC_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/docs"
+    elif upload_folder == current_app.config["SAFETY_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/safety"
+    elif upload_folder == current_app.config["CERTIFICATE_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/certificates"
+    elif upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
+        relative_folder = "uploads/type_images"
+    else:
+        relative_folder = "uploads"
+
+    return f"{relative_folder}/{final_filename}"
+
+
+def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix: str) -> str | None:
+    """
+    Upload een bestand naar Supabase Storage.
+    Retourneert het pad in de bucket (bijv. 'docs/BOOR123_doc_20250101_120000_foto.pdf').
+    """
+    if not file_storage or not file_storage.filename:
+        return None
+    
+    if not _supabase_client:
+        # Fallback naar lokale storage als Supabase niet beschikbaar is
+        print("Warning: Supabase not available, falling back to local storage")
+        return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
+    
+    # Genereer unieke bestandsnaam
+    filename = secure_filename(file_storage.filename)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    final_filename = f"{prefix}_{timestamp}_{filename}"
+    
+    # Pad in bucket (bijv. "docs/BOOR123_doc_20250101_120000_foto.pdf")
+    file_path = f"{folder}/{final_filename}" if folder else final_filename
+    
+    # Lees bestand
+    file_content = file_storage.read()
+    file_storage.seek(0)  # Reset file pointer
+    
+    try:
+        # Upload naar Supabase Storage
+        response = _supabase_client.storage.from_(bucket_name).upload(
+            path=file_path,
+            file=file_content,
+            file_options={"content-type": file_storage.content_type or "application/octet-stream", "upsert": "true"}
+        )
+        
+        # Retourneer het pad (wordt opgeslagen in database)
+        return file_path
+        
+    except Exception as e:
+        print(f"Error uploading to Supabase Storage: {e}")
+        # Fallback naar lokale storage bij error
+        return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
+
+
+def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
+    """
+    Upload een bestand (gebruikt Supabase Storage of fallback naar lokaal).
+    Bepaalt automatisch de juiste bucket op basis van upload_folder.
+    """
+    # Bepaal bucket en folder op basis van upload_folder
+    if upload_folder == current_app.config["DOC_UPLOAD_FOLDER"]:
+        bucket = "docs"
+        folder = ""
+    elif upload_folder == current_app.config["SAFETY_UPLOAD_FOLDER"]:
+        bucket = "safety"
+        folder = ""
+    elif upload_folder == current_app.config["CERTIFICATE_UPLOAD_FOLDER"]:
+        bucket = "certificates"
+        folder = ""
+    elif upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
+        bucket = "type-images"
+        folder = ""
+    else:
+        bucket = "docs"  # default
+        folder = ""
+    
+    return save_upload_to_supabase(file_storage, bucket, folder, prefix)
+
+
+def save_project_image(file_storage, prefix: str) -> str | None:
+    """
+    Upload een werf-afbeelding naar Supabase Storage (bucket: projects).
+    Retourneert pad met "projects/" prefix voor consistentie.
+    """
+    result = save_upload_to_supabase(
+        file_storage,
+        bucket_name="projects",
+        folder="",
+        prefix=prefix
+    )
+    # Zorg dat het pad begint met "projects/" voor consistentie
+    if result and not result.startswith("projects/"):
+        return f"projects/{result}"
+    return result
+
+
+def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
+    """
+    Haal publieke URL op voor een bestand in Supabase Storage.
+    Retourneert None als Supabase niet beschikbaar is of bestand niet bestaat.
+    """
+    if not _supabase_client:
+        # Fallback: als het een lokaal pad is (begint met "uploads/")
+        if file_path and file_path.startswith("uploads/"):
+            return url_for('static', filename=file_path)
+        return None
+    
+    try:
+        # Als file_path al een volledige URL is, retourneer die
+        if file_path.startswith("http://") or file_path.startswith("https://"):
+            return file_path
+        
+        # Verwijder bucket prefix als die er al in zit (bijv. "projects/filename.jpg" -> "filename.jpg")
+        # Supabase get_public_url verwacht alleen het pad binnen de bucket
+        clean_path = file_path
+        if file_path.startswith(f"{bucket_name}/"):
+            clean_path = file_path[len(f"{bucket_name}/"):]
+        
+        # Haal publieke URL op van Supabase
+        response = _supabase_client.storage.from_(bucket_name).get_public_url(clean_path)
+        print(f"Generated Supabase URL for {bucket_name}/{clean_path}: {response}")
+        return response
+    except Exception as e:
+        print(f"Error getting Supabase file URL for {bucket_name}/{file_path}: {e}")
+        # Fallback naar lokaal pad
+        if file_path and file_path.startswith("uploads/"):
+            return url_for('static', filename=file_path)
+        return None
+
+
+def get_file_url_from_path(file_path: str) -> str | None:
+    """
+    Bepaal automatisch de juiste URL voor een bestandspad.
+    Detecteert automatisch de bucket op basis van het pad.
+    """
+    if not file_path:
+        return None
+    
+    # Als het al een URL is, retourneer die
+    if file_path.startswith("http://") or file_path.startswith("https://"):
+        return file_path
+    
+    # Bepaal bucket op basis van pad
+    if file_path.startswith("docs/") or file_path.startswith("uploads/docs/"):
+        bucket = "docs"
+        # Verwijder "uploads/" prefix als die er is
+        clean_path = file_path.replace("uploads/docs/", "docs/") if "uploads/docs/" in file_path else file_path
+    elif file_path.startswith("safety/") or file_path.startswith("uploads/safety/"):
+        bucket = "safety"
+        clean_path = file_path.replace("uploads/safety/", "safety/") if "uploads/safety/" in file_path else file_path
+    elif file_path.startswith("projects/") or file_path.startswith("uploads/projects/"):
+        bucket = "projects"
+        clean_path = file_path.replace("uploads/projects/", "projects/") if "uploads/projects/" in file_path else file_path
+    elif file_path.startswith("certificates/") or file_path.startswith("uploads/certificates/"):
+        bucket = "certificates"
+        clean_path = file_path.replace("uploads/certificates/", "certificates/") if "uploads/certificates/" in file_path else file_path
+    elif file_path.startswith("type-images/") or file_path.startswith("type_images/") or file_path.startswith("uploads/type_images/"):
+        bucket = "type-images"
+        clean_path = file_path.replace("uploads/type_images/", "type-images/").replace("type_images/", "type-images/")
+    else:
+        # Als het pad geen prefix heeft, probeer te detecteren op basis van bestandstype of probeer als project image
+        # Dit is voor backward compatibility met oude bestanden
+        if file_path.startswith("uploads/"):
+            return url_for('static', filename=file_path)
+        # Als het alleen een bestandsnaam is zonder prefix, probeer als project image (meest waarschijnlijk)
+        # Dit werkt voor nieuwe uploads die alleen de bestandsnaam hebben
+        if "/" not in file_path and not file_path.startswith("uploads/"):
+            # Probeer als project image (verwijder "projects/" als die er al in zit)
+            bucket = "projects"
+            clean_path = file_path.replace("projects/", "") if file_path.startswith("projects/") else file_path
+        else:
+            return None
+    
+    return get_supabase_file_url(bucket, clean_path)
 
 
 def login_required(view):

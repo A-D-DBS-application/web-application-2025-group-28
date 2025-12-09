@@ -90,7 +90,7 @@
 
         <div class="auth-buttons">
           <button class="btn btn-register" type="submit">Registreer</button>
-          <a class="btn-login" href="{{ url_for('login', email=request.args.get('email','')) }}">Ik heb al een account</a>
+          <a class="btn-login" href="{{ url_for('auth.login', email=request.args.get('email','')) }}">Ik heb al een account</a>
         </div>
       </form>
     </div>

@@ -33,7 +33,7 @@
       <h3 class="auth-title">Inloggen</h3>
       <p class="auth-subtitle">Log in met je e-mailadres en wachtwoord.</p>
 
-      <form method="POST" action="{{ url_for('login', next=request.args.get('next')) }}">
+      <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}">
         <div class="mb-3">
           <label class="form-label">E-mail</label>
           <input
@@ -59,7 +59,7 @@
 
         <div class="auth-buttons">
           <button class="btn btn-login" type="submit">Inloggen</button>
-          <a class="btn-register" href="{{ url_for('signup', email=prefill_email or '') }}">Registreer</a>
+          <a class="btn-register" href="{{ url_for('auth.signup', email=prefill_email or '') }}">Registreer</a>
         </div>
       </form>
     </div>

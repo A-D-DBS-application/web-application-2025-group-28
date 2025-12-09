@@ -141,7 +141,8 @@ def materiaal_types():
 @login_required
 def materiaal_type_toevoegen():
     """Voeg een nieuw materiaal type toe."""
-    from app import app, save_upload
+    from flask import current_app
+    from helpers import save_upload
     
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip()
@@ -180,7 +181,7 @@ def materiaal_type_toevoegen():
             return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
-        type_image_path = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+        type_image_path = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
     safety_sheet_path = None
     if safety_sheet_file and safety_sheet_file.filename:
@@ -191,7 +192,7 @@ def materiaal_type_toevoegen():
             return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
-        safety_sheet_path = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        safety_sheet_path = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
     
     new_type = MaterialType(
         name=name,
@@ -213,7 +214,8 @@ def materiaal_type_toevoegen():
 @login_required
 def materiaal_type_bewerken():
     """Bewerk een bestaand materiaal type."""
-    from app import app, save_upload
+    from flask import current_app
+    from helpers import save_upload
     
     type_id = request.form.get("type_id")
     name = (request.form.get("name") or "").strip()
@@ -263,7 +265,7 @@ def materiaal_type_bewerken():
             return redirect(url_for("materiaal.materiaal_types"))
         
         if type_item.type_image:
-            old_path = os.path.join(app.root_path, "static", type_item.type_image)
+            old_path = os.path.join(current_app.root_path, "static", type_item.type_image)
             if os.path.exists(old_path):
                 try:
                     os.remove(old_path)
@@ -271,7 +273,7 @@ def materiaal_type_bewerken():
                     pass
         
         prefix = secure_filename(name)
-        type_item.type_image = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+        type_item.type_image = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
     if safety_sheet_file and safety_sheet_file.filename:
         filename = secure_filename(safety_sheet_file.filename)
@@ -281,7 +283,7 @@ def materiaal_type_bewerken():
             return redirect(url_for("materiaal.materiaal_types"))
         
         if type_item.safety_sheet:
-            old_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+            old_path = os.path.join(current_app.root_path, "static", type_item.safety_sheet)
             if os.path.exists(old_path):
                 try:
                     os.remove(old_path)
@@ -289,7 +291,7 @@ def materiaal_type_bewerken():
                     pass
         
         prefix = secure_filename(name)
-        type_item.safety_sheet = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        type_item.safety_sheet = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
     
     type_item.name = name
     type_item.description = description if description else None
@@ -306,7 +308,7 @@ def materiaal_type_bewerken():
 @login_required
 def materiaal_type_verwijderen():
     """Verwijder een materiaal type."""
-    from app import app
+    from flask import current_app
     
     type_id = request.form.get("type_id")
     

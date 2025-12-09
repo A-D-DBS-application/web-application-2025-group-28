@@ -8,15 +8,15 @@
     <span class="mobile-nav-icon">📦</span>
     <span class="mobile-nav-label">Materiaal</span>
   </a>
-  <a href="{{ url_for('werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven', 'werf_detail'] %}active{% endif %}">
+  <a href="{{ url_for('werven.werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}">
     <span class="mobile-nav-icon">🏗️</span>
     <span class="mobile-nav-label">Werven</span>
   </a>
-  <a href="{{ url_for('keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen' %}active{% endif %}">
+  <a href="{{ url_for('keuringen.keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}">
     <span class="mobile-nav-icon">✓</span>
     <span class="mobile-nav-label">Keuringen</span>
   </a>
-  <a href="{{ url_for('documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten' %}active{% endif %}">
+  <a href="{{ url_for('documenten.documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}">
     <span class="mobile-nav-icon">📄</span>
     <span class="mobile-nav-label">Docs</span>
   </a>
@@ -51,22 +51,22 @@
       </a>
 
       <a
-        class="menu-item {% if request.endpoint in ['werven', 'werf_detail'] %}active{% endif %}"
-        href="{{ url_for('werven') }}"
+        class="menu-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}"
+        href="{{ url_for('werven.werven') }}"
       >
         Werven
       </a>
 
       <a
-        class="menu-item {% if request.endpoint=='keuringen' %}active{% endif %}"
-        href="{{ url_for('keuringen') }}"
+        class="menu-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}"
+        href="{{ url_for('keuringen.keuringen') }}"
       >
         Keuringen
       </a>
 
       <a
-        class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
-        href="{{ url_for('documenten') }}"
+        class="menu-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}"
+        href="{{ url_for('documenten.documenten') }}"
       >
         Documenten
       </a>

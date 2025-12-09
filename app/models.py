@@ -293,12 +293,7 @@ class Document(db.Model):
     id = db.Column(db.BigInteger, primary_key=True)
     created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
     
-    document_type = db.Column("document_type", db.String, nullable=False)  # Legacy: behouden voor backward compatibility
-    document_type_id = db.Column(
-        db.BigInteger,
-        db.ForeignKey("document_types.id", ondelete="SET NULL"),
-        nullable=True,
-    )
+    document_type = db.Column("document_type", db.String, nullable=False)  # Document type as string (e.g., "Aankoopfactuur", "Veiligheidsfiche")
     file_path = db.Column("file_path", db.Text, nullable=False)
     file_name = db.Column("file_name", db.Text, nullable=False)
     file_size = db.Column("file_size", db.BigInteger, nullable=True)
@@ -309,7 +304,16 @@ class Document(db.Model):
         nullable=True,
     )
     
-    # material_type kolom - voeg deze toe aan database met: ALTER TABLE documenten ADD COLUMN material_type TEXT;
+    # Link to MaterialType (proper FK instead of string)
+    # Can link to EITHER a specific Material (via material_id) OR a MaterialType (via material_type_id)
+    material_type_id = db.Column(
+        db.BigInteger,
+        db.ForeignKey("material_types.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    
+    # Legacy: keep material_type as string for backward compatibility during migration
+    # Can be removed after migrating existing data to material_type_id
     material_type = db.Column("material_type", db.String, nullable=True)
     
     uploaded_by = db.Column("uploaded_by", db.String, nullable=True)
@@ -322,14 +326,29 @@ class Document(db.Model):
     note = db.Column("note", db.Text, nullable=True)
     
     # Relationships with optimized lazy loading
-    material = db.relationship("Material", backref="documenten", lazy="select")
-    user = db.relationship("Gebruiker", backref="documenten", lazy="select")
-    document_type_ref = db.relationship(
-        "DocumentType",
-        backref="documents",
-        foreign_keys=[document_type_id],
-        lazy="select",
-    )
+    material = db.relationship("Material", backref="documents", lazy="select")
+    material_type_ref = db.relationship("MaterialType", backref="documents", lazy="select", foreign_keys=[material_type_id])
+    user = db.relationship("Gebruiker", backref="documents", lazy="select")
+    
+    @property
+    def linked_entity(self):
+        """Return the linked entity (Material or MaterialType)"""
+        if self.material_id:
+            return self.material
+        elif self.material_type_id:
+            return self.material_type_ref
+        return None
+    
+    @property
+    def linked_entity_name(self):
+        """Return the name of the linked entity"""
+        if self.material_id and self.material:
+            return self.material.name
+        elif self.material_type_id and self.material_type_ref:
+            return self.material_type_ref.name
+        elif self.material_type:  # Fallback to legacy string field
+            return self.material_type
+        return None
 
 
 class MaterialType(db.Model):
@@ -350,20 +369,3 @@ class MaterialType(db.Model):
     
     # Relationship with Material (backref defined in Material model)
     # Materials can reference MaterialType via material_type_id FK
-
-
-class DocumentType(db.Model):
-    """
-    Referentietabel voor document types
-    Kolommen: id, created_at, name, description, is_active
-    """
-    __tablename__ = "document_types"
-    
-    id = db.Column(db.BigInteger, primary_key=True)
-    created_at = db.Column(db.DateTime(timezone=True), default=datetime.utcnow)
-    name = db.Column(db.String, nullable=False, unique=True)  # Bijv. "Aankoopfactuur", "Veiligheidsfiche"
-    description = db.Column(db.Text, nullable=True)
-    is_active = db.Column(db.Boolean, default=True, nullable=False)
-    
-    # Relationship with Document (already defined in Document model)
-    # documents backref is defined in Document.document_type_ref
