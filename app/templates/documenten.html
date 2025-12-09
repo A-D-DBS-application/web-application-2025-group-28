@@ -116,7 +116,11 @@
               <span class="badge bg-secondary">{{ doc.type }}</span>
             </td>
             <td class="text-end">
-              {% if doc.path %}
+              {% if doc.url %}
+                <a href="{{ doc.url }}" class="btn btn-sm btn-outline-secondary" target="_blank" download>
+                  ⬇ Downloaden
+                </a>
+              {% elif doc.path %}
                 <a href="{{ url_for('static', filename=doc.path) }}" class="btn btn-sm btn-outline-secondary" download>
                   ⬇ Downloaden
                 </a>

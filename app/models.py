@@ -235,6 +235,7 @@ class Document(db.Model):
         nullable=True,
     )
     
+    # material_type kolom - voeg deze toe aan database met: ALTER TABLE documenten ADD COLUMN material_type TEXT;
     material_type = db.Column("material_type", db.String, nullable=True)
     
     uploaded_by = db.Column("uploaded_by", db.String, nullable=True)

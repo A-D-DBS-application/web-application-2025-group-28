@@ -17,9 +17,17 @@ from dateutil.relativedelta import relativedelta
 
 from config import Config
 from models import db, Gebruiker, Material, Activity, MaterialUsage, Project, Keuringstatus, KeuringHistoriek, MaterialType, Document
-from sqlalchemy import or_, func, and_
+from sqlalchemy import or_, func, and_, text
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
+
+# Supabase Storage
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    SUPABASE_AVAILABLE = False
+    print("Warning: supabase package not installed. Run: pip install supabase")
 
 app = Flask(__name__)
 app.secret_key = "dev"  # voor flash() + sessies
@@ -27,6 +35,21 @@ app.config.from_object(Config)
 
 # SQLAlchemy koppelen aan app (Supabase/Postgres)
 db.init_app(app)
+
+# Supabase Storage client initialiseren
+supabase_client: Client | None = None
+if SUPABASE_AVAILABLE and app.config.get("SUPABASE_URL") and app.config.get("SUPABASE_SERVICE_KEY"):
+    try:
+        supabase_client = create_client(
+            app.config["SUPABASE_URL"],
+            app.config["SUPABASE_SERVICE_KEY"]
+        )
+        print("✓ Supabase Storage client initialized")
+    except Exception as e:
+        print(f"Warning: Could not initialize Supabase client: {e}")
+        supabase_client = None
+else:
+    print("Warning: Supabase credentials not configured. Check config.py")
 
 # -----------------------------------------------------
 # HELPERS
@@ -62,7 +85,10 @@ def load_current_user():
 @app.context_processor
 def inject_user():
     # in templates beschikbaar als {{ current_user }}
-    return {"current_user": g.user}
+    return {
+        "current_user": g.user,
+        "get_file_url": get_file_url_from_path,  # Helper functie voor file URLs
+    }
 
 
 def log_activity_db(action: str, name: str, serial: str):
@@ -576,14 +602,65 @@ app.config["CERTIFICATE_UPLOAD_FOLDER"] = CERTIFICATE_UPLOAD_FOLDER
 app.config["TYPE_IMAGE_UPLOAD_FOLDER"] = TYPE_IMAGE_UPLOAD_FOLDER
 
 
-def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
+def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix: str) -> str | None:
     """
-    Sla een geüpload bestand op en geef het relatieve pad terug.
-    (bv. 'uploads/docs/BOOR123_foto.pdf')
-    Retourneert None wanneer er geen geldig bestand werd meegegeven.
+    Upload een bestand naar Supabase Storage.
+    Retourneert het pad in de bucket (bijv. 'docs/BOOR123_doc_20250101_120000_foto.pdf').
     """
+    if not file_storage or not file_storage.filename:
+        return None
+    
+    if not supabase_client:
+        # Fallback naar lokale storage als Supabase niet beschikbaar is
+        print("Warning: Supabase not available, falling back to local storage")
+        return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
+    
+    # Genereer unieke bestandsnaam
+    filename = secure_filename(file_storage.filename)
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    final_filename = f"{prefix}_{timestamp}_{filename}"
+    
+    # Pad in bucket (bijv. "docs/BOOR123_doc_20250101_120000_foto.pdf")
+    file_path = f"{folder}/{final_filename}" if folder else final_filename
+    
+    # Lees bestand
+    file_content = file_storage.read()
+    file_storage.seek(0)  # Reset file pointer
+    
+    try:
+        # Upload naar Supabase Storage
+        response = supabase_client.storage.from_(bucket_name).upload(
+            path=file_path,
+            file=file_content,
+            file_options={"content-type": file_storage.content_type or "application/octet-stream", "upsert": "true"}
+        )
+        
+        # Retourneer het pad (wordt opgeslagen in database)
+        return file_path
+        
+    except Exception as e:
+        print(f"Error uploading to Supabase Storage: {e}")
+        # Fallback naar lokale storage bij error
+        return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
 
-    # Geen bestand → niets opslaan
+
+def upload_folder_from_bucket(bucket_name: str) -> str:
+    """Map bucket naam naar lokale upload folder (voor fallback)."""
+    bucket_to_folder = {
+        "docs": app.config["DOC_UPLOAD_FOLDER"],
+        "safety": app.config["SAFETY_UPLOAD_FOLDER"],
+        "projects": app.config["PROJECT_UPLOAD_FOLDER"],
+        "certificates": app.config["CERTIFICATE_UPLOAD_FOLDER"],
+        "type-images": app.config["TYPE_IMAGE_UPLOAD_FOLDER"],
+    }
+    return bucket_to_folder.get(bucket_name, app.config["DOC_UPLOAD_FOLDER"])
+
+
+def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
+    """
+    Fallback: Sla een geüpload bestand lokaal op (oude methode).
+    Gebruikt alleen als Supabase niet beschikbaar is.
+    """
     if not file_storage or not file_storage.filename:
         return None
 
@@ -607,21 +684,126 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
     return f"{relative_folder}/{final_filename}"
 
 
+def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
+    """
+    Upload een bestand (gebruikt Supabase Storage of fallback naar lokaal).
+    Bepaalt automatisch de juiste bucket op basis van upload_folder.
+    """
+    # Bepaal bucket en folder op basis van upload_folder
+    if upload_folder == app.config["DOC_UPLOAD_FOLDER"]:
+        bucket = "docs"
+        folder = ""
+    elif upload_folder == app.config["SAFETY_UPLOAD_FOLDER"]:
+        bucket = "safety"
+        folder = ""
+    elif upload_folder == app.config["CERTIFICATE_UPLOAD_FOLDER"]:
+        bucket = "certificates"
+        folder = ""
+    elif upload_folder == app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
+        bucket = "type-images"
+        folder = ""
+    else:
+        bucket = "docs"  # default
+        folder = ""
+    
+    return save_upload_to_supabase(file_storage, bucket, folder, prefix)
+
+
 def save_project_image(file_storage, prefix: str) -> str | None:
     """
-    Sla een werf-afbeelding op in static/uploads/projects
-    en geef het relatieve pad terug (bv. 'uploads/projects/werf1_foto.jpg').
+    Upload een werf-afbeelding naar Supabase Storage (bucket: projects).
+    Retourneert pad met "projects/" prefix voor consistentie.
     """
-    if not file_storage or not file_storage.filename:
+    result = save_upload_to_supabase(
+        file_storage,
+        bucket_name="projects",
+        folder="",
+        prefix=prefix
+    )
+    # Zorg dat het pad begint met "projects/" voor consistentie
+    if result and not result.startswith("projects/"):
+        return f"projects/{result}"
+    return result
+
+
+def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
+    """
+    Haal publieke URL op voor een bestand in Supabase Storage.
+    Retourneert None als Supabase niet beschikbaar is of bestand niet bestaat.
+    """
+    if not supabase_client:
+        # Fallback: als het een lokaal pad is (begint met "uploads/")
+        if file_path and file_path.startswith("uploads/"):
+            return url_for('static', filename=file_path)
+        return None
+    
+    try:
+        # Als file_path al een volledige URL is, retourneer die
+        if file_path.startswith("http://") or file_path.startswith("https://"):
+            return file_path
+        
+        # Verwijder bucket prefix als die er al in zit (bijv. "projects/filename.jpg" -> "filename.jpg")
+        # Supabase get_public_url verwacht alleen het pad binnen de bucket
+        clean_path = file_path
+        if file_path.startswith(f"{bucket_name}/"):
+            clean_path = file_path[len(f"{bucket_name}/"):]
+        
+        # Haal publieke URL op van Supabase
+        response = supabase_client.storage.from_(bucket_name).get_public_url(clean_path)
+        print(f"Generated Supabase URL for {bucket_name}/{clean_path}: {response}")
+        return response
+    except Exception as e:
+        print(f"Error getting Supabase file URL for {bucket_name}/{file_path}: {e}")
+        # Fallback naar lokaal pad
+        if file_path and file_path.startswith("uploads/"):
+            return url_for('static', filename=file_path)
         return None
 
-    filename = secure_filename(file_storage.filename)
-    final_filename = f"{prefix}_{filename}"
 
-    full_path = os.path.join(app.config["PROJECT_UPLOAD_FOLDER"], final_filename)
-    file_storage.save(full_path)
-
-    return f"uploads/projects/{final_filename}"
+def get_file_url_from_path(file_path: str) -> str | None:
+    """
+    Bepaal automatisch de juiste URL voor een bestandspad.
+    Detecteert automatisch de bucket op basis van het pad.
+    """
+    if not file_path:
+        return None
+    
+    # Als het al een URL is, retourneer die
+    if file_path.startswith("http://") or file_path.startswith("https://"):
+        return file_path
+    
+    # Bepaal bucket op basis van pad
+    if file_path.startswith("docs/") or file_path.startswith("uploads/docs/"):
+        bucket = "docs"
+        # Verwijder "uploads/" prefix als die er is
+        clean_path = file_path.replace("uploads/docs/", "docs/") if "uploads/docs/" in file_path else file_path
+    elif file_path.startswith("safety/") or file_path.startswith("uploads/safety/"):
+        bucket = "safety"
+        clean_path = file_path.replace("uploads/safety/", "safety/") if "uploads/safety/" in file_path else file_path
+    elif file_path.startswith("projects/") or file_path.startswith("uploads/projects/"):
+        bucket = "projects"
+        clean_path = file_path.replace("uploads/projects/", "projects/") if "uploads/projects/" in file_path else file_path
+    elif file_path.startswith("certificates/") or file_path.startswith("uploads/certificates/"):
+        bucket = "certificates"
+        clean_path = file_path.replace("uploads/certificates/", "certificates/") if "uploads/certificates/" in file_path else file_path
+    elif file_path.startswith("type-images/") or file_path.startswith("type_images/") or file_path.startswith("uploads/type_images/"):
+        bucket = "type-images"
+        clean_path = file_path.replace("uploads/type_images/", "type-images/").replace("type_images/", "type-images/")
+    else:
+        # Als het pad geen prefix heeft, probeer te detecteren op basis van bestandstype of probeer als project image
+        # Dit is voor backward compatibility met oude bestanden
+        if file_path.startswith("uploads/"):
+            return url_for('static', filename=file_path)
+        # Als het alleen een bestandsnaam is zonder prefix, probeer als project image (meest waarschijnlijk)
+        # Dit werkt voor nieuwe uploads die alleen de bestandsnaam hebben
+        if "/" not in file_path and not file_path.startswith("uploads/"):
+            # Probeer als project image (verwijder "projects/" als die er al in zit)
+            bucket = "projects"
+            clean_path = file_path.replace("projects/", "") if file_path.startswith("projects/") else file_path
+        else:
+            return None
+    
+    return get_supabase_file_url(bucket, clean_path)
 
 
 # -----------------------------------------------------
@@ -1349,6 +1531,12 @@ def werf_verwijderen():
 def werf_detail(project_id):
     project = Project.query.filter_by(id=project_id, is_deleted=False).first_or_404()
     today = datetime.utcnow().date()
+
+    # Debug: print image_url info
+    if project.image_url:
+        image_url_result = get_file_url_from_path(project.image_url)
+        print(f"DEBUG: Project {project_id} - image_url in DB: {project.image_url}")
+        print(f"DEBUG: Generated URL: {image_url_result}")
 
     # alle materialen
     all_materials = Material.query.all()
@@ -2661,6 +2849,75 @@ def documenten():
     all_materials = Material.query.all()
     documents = []
     
+    # Haal Document records uit database op
+    # Gebruik raw SQL query om material_type kolom over te slaan als deze niet bestaat
+    all_documents = []
+    try:
+        # Probeer eerst normale query
+        all_documents = Document.query.order_by(Document.created_at.desc()).all()
+    except Exception as e:
+        # Als material_type kolom niet bestaat, gebruik raw SQL
+        print(f"Error querying documents (material_type column missing): {e}")
+        print("Using raw SQL query without material_type column...")
+        try:
+            result = db.session.execute(
+                text("""
+                    SELECT id, created_at, document_type, file_path, file_name, file_size, 
+                           material_id, uploaded_by, user_id, note
+                    FROM documenten
+                    ORDER BY created_at DESC
+                """)
+            )
+            for row in result:
+                # Maak een Document-achtig object
+                doc_obj = type('DocumentObj', (), {
+                    'id': row.id,
+                    'created_at': row.created_at,
+                    'document_type': row.document_type,
+                    'file_path': row.file_path,
+                    'file_name': row.file_name,
+                    'file_size': row.file_size,
+                    'material_id': row.material_id,
+                    'uploaded_by': row.uploaded_by,
+                    'user_id': row.user_id,
+                    'note': row.note,
+                    'material': Material.query.get(row.material_id) if row.material_id else None,
+                    'material_type': None  # Kolom bestaat niet in database
+                })()
+                all_documents.append(doc_obj)
+        except Exception as e2:
+            print(f"Error with raw SQL query: {e2}")
+            all_documents = []
+    
+    for doc in all_documents:
+        material = doc.material if hasattr(doc, 'material') else None
+        # Bepaal bucket op basis van document type
+        if doc.document_type == "Veiligheidsfiche":
+            bucket = "safety"
+        else:
+            bucket = "docs"
+        
+        file_url = get_file_url_from_path(doc.file_path) if doc.file_path else None
+        
+        # Probeer material_type te krijgen, maar gebruik fallback als het niet bestaat
+        material_type_value = None
+        if hasattr(doc, 'material_type') and doc.material_type:
+            material_type_value = doc.material_type
+        
+        documents.append({
+            "type": doc.document_type or "Overige",
+            "name": doc.file_name or "Onbekend",
+            "material": material.name if material else (material_type_value or "Onbekend"),
+            "material_serial": material.serial if material else "",
+            "date": doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "",
+            "size": f"{doc.file_size / 1024:.1f} KB" if doc.file_size else "Onbekend",
+            "uploaded_by": doc.uploaded_by or "Onbekend",
+            "path": doc.file_path,
+            "url": file_url,  # Supabase URL
+            "status": doc.document_type or "Overige",
+        })
+    
+    # Oude documenten van Material records (voor backward compatibility)
     for material in all_materials:
         if material.documentation_path:
             doc_name = _os.path.basename(material.documentation_path)
@@ -2670,6 +2927,8 @@ def documenten():
                 or "manual" in doc_name.lower()
                 else "Overige"
             )
+            
+            file_url = get_file_url_from_path(material.documentation_path)
 
             documents.append(
                 {
@@ -2683,12 +2942,15 @@ def documenten():
                     "size": "2.3 MB",
                 "uploaded_by": material.assigned_to or "Systeem",
                 "path": material.documentation_path,
+                "url": file_url,  # Supabase URL
                     "status": doc_type_from_name,
                 }
             )
         
         if material.safety_sheet_path:
             doc_name = _os.path.basename(material.safety_sheet_path)
+            file_url = get_file_url_from_path(material.safety_sheet_path)
+            
             documents.append(
                 {
                 "type": "Veiligheidscertificaat",
@@ -2701,23 +2963,10 @@ def documenten():
                     "size": "456 KB",
                 "uploaded_by": material.assigned_to or "Systeem",
                 "path": material.safety_sheet_path,
+                "url": file_url,  # Supabase URL
                     "status": "Veiligheidscertificaat",
                 }
             )
-    
-    documents.append(
-        {
-        "type": "Servicerapport",
-        "name": "Service-Rapport-Augustus-2024.pdf",
-        "material": "Compressor Atlas Copco",
-        "material_serial": "CP-2022-112",
-        "date": "2024-08-01",
-        "size": "1.1 MB",
-        "uploaded_by": "Atlas Copco",
-        "path": None,
-            "status": "Servicerapport",
-        }
-    )
 
     if q:
         documents = [
