@@ -1519,10 +1519,73 @@ def werf_verwijderen():
         flash("Werf niet gevonden.", "danger")
         return redirect(url_for("werven"))
 
+    project_id_int = int(project_id)
+    project_name = project.name or f"Werf {project_id_int}"
+
+    # 1. Stop alle actieve MaterialUsage records die aan deze werf gekoppeld zijn
+    active_usages = MaterialUsage.query.filter_by(
+        project_id=project_id_int,
+        is_active=True
+    ).all()
+    
+    materials_to_update = set()  # Verzamel alle material IDs die moeten worden geüpdatet
+    
+    for usage in active_usages:
+        usage.is_active = False
+        usage.end_time = datetime.utcnow()
+        usage.project_id = None
+        materials_to_update.add(usage.material_id)
+        
+        # Log activiteit
+        mat = Material.query.get(usage.material_id)
+        if mat:
+            log_activity_db(
+                f"Gebruik gestopt (werf verwijderd: {project_name})",
+                mat.name or "",
+                mat.serial or ""
+            )
+
+    # 2. Update alle Material records die aan deze werf gekoppeld zijn
+    materials = Material.query.filter_by(project_id=project_id_int).all()
+    
+    for mat in materials:
+        mat.project_id = None
+        mat.site = None
+        
+        # Als het materiaal "in gebruik" was, zet status op "niet in gebruik"
+        # Maar controleer eerst of er nog andere actieve usages zijn
+        other_active_usages = MaterialUsage.query.filter_by(
+            material_id=mat.id,
+            is_active=True
+        ).count()
+        
+        if mat.status == "in gebruik" and other_active_usages == 0:
+            mat.status = "niet in gebruik"
+        
+        materials_to_update.add(mat.id)
+        
+        # Log activiteit
+        log_activity_db(
+            f"Ontkoppeld van werf: {project_name}",
+            mat.name or "",
+            mat.serial or ""
+        )
+
+    # 3. Soft delete de werf
     project.is_deleted = True
+    
     db.session.commit()
 
-    flash("Werf werd verwijderd (soft delete).", "success")
+    # Tel hoeveel materialen zijn geüpdatet
+    materials_count = len(materials_to_update)
+    if materials_count > 0:
+        flash(
+            f"Werf '{project_name}' werd verwijderd. {materials_count} materiaal(en) zijn niet meer in gebruik.",
+            "success"
+        )
+    else:
+        flash(f"Werf '{project_name}' werd verwijderd.", "success")
+    
     return redirect(url_for("werven"))
 
 
