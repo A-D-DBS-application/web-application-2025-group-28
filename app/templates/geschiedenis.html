@@ -15,7 +15,7 @@
 
 <!-- Filters -->
 <div class="card panel mt-3">
-  <form method="get" action="{{ url_for('geschiedenis') }}" class="row g-3 align-items-end">
+  <form method="get" action="{{ url_for('geschiedenis.geschiedenis') }}" class="row g-3 align-items-end">
     <!-- Zoeken -->
     <div class="col-12 col-md-4">
       <label class="form-label">Zoeken</label>
@@ -31,10 +31,9 @@
     <div class="col-6 col-md-2">
       <label class="form-label">Periode</label>
       <select name="period" class="form-select">
-        <option value="all" {% if filter_period == 'all' %}selected{% endif %}>Alle tijd</option>
-        <option value="today" {% if filter_period == 'today' %}selected{% endif %}>Vandaag</option>
-        <option value="week" {% if filter_period == 'week' %}selected{% endif %}>Afgelopen week</option>
-        <option value="month" {% if filter_period == 'month' %}selected{% endif %}>Afgelopen maand</option>
+        {% for key, p in period_filters.items() %}
+          <option value="{{ p.value }}" {% if filter_period == p.value %}selected{% endif %}>{{ p.label }}</option>
+        {% endfor %}
       </select>
     </div>
 
@@ -52,7 +51,7 @@
     <!-- Knoppen -->
     <div class="col-12 col-md-3">
       <button type="submit" class="btn btn-primary">Filteren</button>
-      <a href="{{ url_for('geschiedenis') }}" class="btn btn-outline-secondary">Reset</a>
+      <a href="{{ url_for('geschiedenis.geschiedenis') }}" class="btn btn-outline-secondary">Reset</a>
     </div>
   </form>
 </div>

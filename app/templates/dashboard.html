@@ -60,7 +60,7 @@
         <div class="panel-title">Recente Activiteit</div>
         <div class="panel-sub">Laatste wijzigingen in het systeem</div>
       </div>
-      <a href="{{ url_for('geschiedenis') }}" class="btn btn-sm btn-outline-primary">
+      <a href="{{ url_for('geschiedenis.geschiedenis') }}" class="btn btn-sm btn-outline-primary">
         📜 Geschiedenis
       </a>
     </div>
@@ -144,7 +144,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('materiaal_bewerken') }}" enctype="multipart/form-data">
+      <form method="post" action="{{ url_for('materiaal.materiaal_bewerken') }}" enctype="multipart/form-data">
         <div class="modal-body">
           <input type="hidden" name="original_serial" id="edit-original-serial">
 

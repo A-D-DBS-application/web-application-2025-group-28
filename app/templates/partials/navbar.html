@@ -1,6 +1,6 @@
 <!-- Mobiele onderbalk navigatie (alleen zichtbaar op kleine schermen) -->
 <nav class="mobile-nav d-md-none">
-  <a href="{{ url_for('dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard' %}active{% endif %}">
+  <a href="{{ url_for('dashboard.dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}">
     <span class="mobile-nav-icon">📊</span>
     <span class="mobile-nav-label">Dashboard</span>
   </a>
@@ -37,8 +37,8 @@
     <!-- Navigation -->
     <nav class="menu">
       <a
-        class="menu-item {% if request.endpoint=='dashboard' %}active{% endif %}"
-        href="{{ url_for('dashboard') }}"
+        class="menu-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}"
+        href="{{ url_for('dashboard.dashboard') }}"
       >
         Overzicht
       </a>

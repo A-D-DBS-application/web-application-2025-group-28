@@ -371,7 +371,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('keuring_toevoegen') }}" id="nieuweKeuringForm">
+      <form method="post" action="{{ url_for('keuringen.keuring_toevoegen') }}" id="nieuweKeuringForm">
         <div class="modal-body">
           <div id="nieuweKeuringErrors" class="alert alert-danger error-container"></div>
           <div class="row g-3">
@@ -441,7 +441,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('keuring_bewerken') }}" id="bewerkKeuringForm">
+      <form method="post" action="{{ url_for('keuringen.keuring_bewerken') }}" id="bewerkKeuringForm">
         <input type="hidden" name="keuring_id" id="edit-keuring-id">
         <div class="modal-body">
           <div id="bewerkKeuringErrors" class="alert alert-danger error-container"></div>
@@ -504,7 +504,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
+      <form method="post" action="{{ url_for('keuringen.keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
         <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
         <div class="modal-body">
           <div id="keuringResultaatErrors" class="alert alert-danger error-container"></div>

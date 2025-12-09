@@ -103,4 +103,20 @@ KEURING_STATUS_FILTERS = {
 # Valid keuring status filter values
 VALID_KEURING_STATUS_FILTERS = list(KEURING_STATUS_FILTERS.keys())
 
+# Period Filter Options (for geschiedenis page)
+PERIOD_FILTERS = {
+    "all": {"value": "all", "label": "Alle tijd"},
+    "today": {"value": "today", "label": "Vandaag"},
+    "week": {"value": "week", "label": "Afgelopen week"},
+    "month": {"value": "month", "label": "Afgelopen maand"}
+}
+
+# Document Types
+DOCUMENT_TYPES = [
+    "Aankoopfactuur",
+    "Keuringstatus",
+    "Veiligheidsfiche",
+    "Verkoopfactuur"
+]
+
 

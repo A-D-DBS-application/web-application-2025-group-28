@@ -97,13 +97,13 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <div class="action-buttons-group">
+                      <div class="flex-end">
                         <button type="button"
                                 class="btn btn-sm btn-outline-dark"
                                 onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
                           Bekijk en bewerk
                         </button>
-                        <form method="post" action="{{ url_for('materiaal_stop_gebruik') }}" class="d-inline" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+                        <form method="post" action="{{ url_for('materiaal.materiaal_stop_gebruik') }}" class="d-inline" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
                           <input type="hidden" name="usage_id" value="{{ u.id }}">
                           <button type="submit" class="btn btn-sm btn-outline-secondary">
                             Niet meer gebruiken
@@ -151,7 +151,7 @@
                       {% endif %}
                     </td>
                     <td class="text-end">
-                      <div class="action-buttons-group">
+                      <div class="flex-end">
                         <button type="button"
                                 class="btn btn-sm btn-outline-dark"
                                 onclick="showMaterialDetails('{{ u.serial }}', '{{ u.id }}')">
@@ -159,7 +159,7 @@
                         </button>
                         {% if current_user and current_user.is_admin %}
                         <form method="post"
-                              action="{{ url_for('materiaal_stop_gebruik') }}"
+                              action="{{ url_for('materiaal.materiaal_stop_gebruik') }}"
                               class="d-inline"
                               onsubmit="return confirm('Materiaal van {{ u.used_by }} niet meer in gebruik zetten?');">
                           <input type="hidden" name="usage_id" value="{{ u.id }}">
@@ -185,9 +185,9 @@
 
 <!-- Materiaal in gebruik zonder werf -->
 {% if usages_without_project %}
-<div class="card panel panel-warning panel-spacing-sm">
+<div class="card panel mt-16 border-warning-left">
   <div class="panel-title d-flex align-items-center">
-    <span class="panel-warning-icon">⚠️</span>
+    <span class="text-warning-custom">⚠️</span>
     Materiaal in gebruik zonder werf
   </div>
   <div class="panel-sub">Dit materiaal is in gebruik maar niet gekoppeld aan een werf</div>
@@ -228,7 +228,7 @@
                   Koppel aan werf
                 </button>
                 <form method="post"
-                      action="{{ url_for('materiaal_stop_gebruik') }}"
+                      action="{{ url_for('materiaal.materiaal_stop_gebruik') }}"
                       class="d-inline"
                       onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
                   <input type="hidden" name="usage_id" value="{{ u.id }}">
@@ -260,7 +260,7 @@
 </div>
 
 <!-- Materiaallijst / overzicht -->
-<div class="card panel panel-spacing-sm">
+<div class="card panel mt-16">
   <div class="panel-title d-flex align-items-center justify-content-between">
     <div>
       Materiaal in het systeem
@@ -290,8 +290,9 @@
     <div class="col-6 col-md-3">
       <select name="status" class="form-select">
         <option value="">Alle statussen</option>
-        <option value="in gebruik" {% if request.args.get('status')=='in gebruik' %}selected{% endif %}>In gebruik</option>
-        <option value="niet in gebruik" {% if request.args.get('status')=='niet in gebruik' %}selected{% endif %}>Niet in gebruik</option>
+        {% for key, status in usage_statuses.items() %}
+          <option value="{{ status.value }}" {% if request.args.get('status')==status.value %}selected{% endif %}>{{ status.label }}</option>
+        {% endfor %}
       </select>
     </div>
 
@@ -316,8 +317,10 @@
       <tbody>
         {% if items %}
           {% for it in items %}
-          <tr class="table-row-clickable" 
-              onclick="showMaterialDetails('{{ it.serial }}', null)">
+          <tr class="cursor-pointer" 
+              onclick="showMaterialDetails('{{ it.serial }}', null)"
+              onmouseover="this.style.backgroundColor='#f8f9fa'" 
+              onmouseout="this.style.backgroundColor=''">
             <td>{{ it.serial }}</td>
             <td>{{ it.name }}</td>
             <td>{{ it.type|title if it.type else '' }}</td>
@@ -332,13 +335,18 @@
             <td>
               {# Keuring status: altijd gebaseerd op inspection_status, of status als fallback (maar alleen geldige keuringswaardes) #}
               {% set keuring_status = it.inspection_status if it.inspection_status else it.status %}
-              {% if keuring_status in inspection_statuses %}
-                {% set status_data = inspection_statuses[keuring_status] %}
-                <span class="badge {{ status_data.badge_class }}">{{ status_data.label }}</span>
-              {% elif keuring_status in usage_statuses or not keuring_status %}
-                <span class="badge badge-outline-secondary">Geen keuring</span>
+              {% if keuring_status == "goedgekeurd" %}
+                <span class="badge badge-keuring-goed">Goedgekeurd</span>
+              {% elif keuring_status == "afgekeurd" %}
+                <span class="badge badge-keuring-fout">Afgekeurd</span>
+              {% elif keuring_status == "keuring verlopen" %}
+                <span class="badge badge-keuring-waarschuwing">Keuring verlopen</span>
+              {% elif keuring_status == "keuring gepland" %}
+                <span class="badge badge-keuring-gepland">Keuring gepland</span>
+              {% elif keuring_status in ["in gebruik", "niet in gebruik"] or not keuring_status %}
+                <span class="badge badge-keuring-onbekend">Geen keuring</span>
               {% else %}
-                <span class="badge badge-outline-secondary">{{ keuring_status|title }}</span>
+                <span class="badge badge-keuring-onbekend">{{ keuring_status|title }}</span>
               {% endif %}
             </td>
             <td class="text-end" onclick="event.stopPropagation();">
@@ -372,7 +380,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('materiaal_toevoegen') }}" enctype="multipart/form-data" id="nieuwMaterieelForm">
+      <form method="post" action="{{ url_for('materiaal.materiaal_toevoegen') }}" enctype="multipart/form-data" id="nieuwMaterieelForm">
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
@@ -414,8 +422,8 @@
             <div class="col-md-6">
               <label class="form-label">Status*</label>
               <select name="status" class="form-select" required>
-                {% for status_key, status_data in inspection_statuses.items() %}
-                <option value="{{ status_data.value }}">{{ status_data.label }}</option>
+                {% for key, status in inspection_statuses.items() %}
+                  <option value="{{ status.value }}">{{ status.label }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -496,7 +504,7 @@
 <div class="modal fade" id="deleteMaterieelModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <form method="post" action="{{ url_for('materiaal_verwijderen') }}">
+      <form method="post" action="{{ url_for('materiaal.materiaal_verwijderen') }}">
         <div class="modal-header">
           <h5 class="modal-title">Materieel verwijderen</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
@@ -535,7 +543,7 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
-        <form method="post" action="{{ url_for('materiaal_stop_gebruik') }}" id="stop-gebruik-form" class="d-inline form-hidden" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+        <form method="post" action="{{ url_for('materiaal.materiaal_stop_gebruik') }}" id="stop-gebruik-form" class="d-inline hidden-important" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
           <input type="hidden" name="usage_id" id="stop-usage-id">
           <button type="submit" class="btn btn-outline-secondary" id="details-stop-btn">Niet meer gebruiken</button>
         </form>
@@ -546,7 +554,67 @@
 </div>
 
 <!-- Modal: Gebruik Materieel -->
-{% include 'partials/modals/gebruik_materieel.html' %}
+<div class="modal fade" id="gebruikMaterieelModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-end modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Materiaal in gebruik nemen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
+      </div>
+
+      <form method="post" action="{{ url_for('materiaal.materiaal_gebruiken') }}">
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Naam*</label>
+              <input name="name"
+                     id="use-name"
+                     list="materiaal-namen"
+                     class="form-control"
+                     placeholder="Kies of typ een naam">
+              <datalist id="materiaal-namen">
+                {% for m in all_materials %}
+                  {% if m.name %}
+                    <option value="{{ m.name }}">{{ m.name }}</option>
+                  {% endif %}
+                {% endfor %}
+              </datalist>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Gebruikt door</label>
+              <input name="assigned_to"
+                     id="use-assigned_to"
+                     class="form-control"
+                     value="{{ current_user.Naam if current_user else '' }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Werf (project)</label>
+              <select name="project_id" class="form-select">
+                <option value="">Geen specifieke werf</option>
+                {% for p in projects %}
+                  {% set is_future = p.start_date and p.start_date > today %}
+                  <option value="{{ p.id }}">
+                    {{ p.name or 'Werf ' ~ p.id }}
+                    {% if is_future and p.start_date %}
+                      (start {{ p.start_date.strftime('%Y-%m-%d') }})
+                    {% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+              <small class="text-muted">De gekozen werf wordt gelinkt aan dit gebruik.</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-primary" type="submit">Materieel gebruiken</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: Bewerken -->
 <div class="modal fade" id="editMaterieelModal" tabindex="-1" aria-hidden="true">
@@ -557,7 +625,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>
       </div>
 
-      <form method="post" action="{{ url_for('materiaal_bewerken') }}" enctype="multipart/form-data">
+      <form method="post" action="{{ url_for('materiaal.materiaal_bewerken') }}" enctype="multipart/form-data">
         <div class="modal-body">
           <input type="hidden" name="original_serial" id="edit-original-serial">
 
@@ -616,8 +684,8 @@
             <div class="col-md-6">
               <label class="form-label">Keuring*</label>
               <select name="status" id="edit-status" class="form-select" required>
-                {% for status_key, status_data in inspection_statuses.items() %}
-                <option value="{{ status_data.value }}">{{ status_data.label }}</option>
+                {% for key, status in inspection_statuses.items() %}
+                  <option value="{{ status.value }}">{{ status.label }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -834,7 +902,7 @@ document.addEventListener('DOMContentLoaded', function () {
     
     // Initially hide stop button, will be shown based on status from API
     const stopForm = document.getElementById('stop-gebruik-form');
-    if (stopForm) stopForm.style.display = 'none';
+    if (stopForm) stopForm.classList.add('hidden-important');
     
     modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
     modalTitle.textContent = 'Materieel Details';
@@ -886,21 +954,21 @@ document.addEventListener('DOMContentLoaded', function () {
             keuringText = 'Keuring gepland';
           }
           
-          // Create badge HTML for keuring status using CSS classes
+          // Create badge HTML for keuring status (white background with colored border and black text)
           let keuringBadgeHtml = '';
           let badgeClass = '';
           
           if (keuringStatus === 'goedgekeurd') {
-            badgeClass = 'badge-keuring-goedgekeurd';
+            badgeClass = 'badge-keuring-goed';
           } else if (keuringStatus === 'afgekeurd') {
-            badgeClass = 'badge-keuring-afgekeurd';
+            badgeClass = 'badge-keuring-fout';
           } else if (keuringStatus === 'keuring verlopen') {
-            badgeClass = 'badge-keuring-verlopen';
+            badgeClass = 'badge-keuring-waarschuwing';
           } else if (keuringStatus === 'keuring gepland') {
             badgeClass = 'badge-keuring-gepland';
           } else {
             // Geen keuring - grijs
-            badgeClass = 'badge-keuring-none';
+            badgeClass = 'badge-keuring-onbekend';
           }
           
           if (item.keuring_gepland) {
@@ -958,13 +1026,13 @@ document.addEventListener('DOMContentLoaded', function () {
               ${item.documentation_path ? `
                 <div class="mb-3">
                   <strong>Documentatie:</strong><br>
-                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  <a href="/static/${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
                     📄 Bekijk documentatie
                   </a>
-                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
+                  <a href="/static/${escapeHtml(item.documentation_path)}" download class="btn btn-sm btn-outline-secondary me-2">
                     ⬇️ Download
                   </a>
-                  <form method="post" action="{{ url_for('materiaal_document_verwijderen') }}" class="d-inline" onsubmit="return confirm('Weet je zeker dat je dit document wilt verwijderen?');">
+                  <form method="post" action="{{ url_for('materiaal.materiaal_document_verwijderen') }}" class="d-inline" onsubmit="return confirm('Weet je zeker dat je dit document wilt verwijderen?');">
                     <input type="hidden" name="serial" value="${escapeHtml(item.serial)}">
                     <input type="hidden" name="doc_type" value="documentation">
                     <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -976,13 +1044,13 @@ document.addEventListener('DOMContentLoaded', function () {
               ${item.safety_sheet_path ? `
                 <div class="mb-3">
                   <strong>Veiligheidsfiche:</strong><br>
-                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
+                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
                     📄 Bekijk veiligheidsfiche
                   </a>
-                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
+                  <a href="/static/${escapeHtml(item.safety_sheet_path)}" download class="btn btn-sm btn-outline-secondary me-2">
                     ⬇️ Download
                   </a>
-                  <form method="post" action="{{ url_for('materiaal_document_verwijderen') }}" class="d-inline" onsubmit="return confirm('Weet je zeker dat je dit document wilt verwijderen?');">
+                  <form method="post" action="{{ url_for('materiaal.materiaal_document_verwijderen') }}" class="d-inline" onsubmit="return confirm('Weet je zeker dat je dit document wilt verwijderen?');">
                     <input type="hidden" name="serial" value="${escapeHtml(item.serial)}">
                     <input type="hidden" name="doc_type" value="safety">
                     <button type="submit" class="btn btn-sm btn-outline-danger">
@@ -1000,16 +1068,17 @@ document.addEventListener('DOMContentLoaded', function () {
           
           // Always hide first, then show if in use
           if (stopForm) {
-            stopForm.style.setProperty('display', 'none', 'important');
+            stopForm.classList.add('hidden-important');
           }
           if (stopBtn) {
-            stopBtn.style.setProperty('display', 'none', 'important');
+            stopBtn.classList.add('hidden-important');
           }
           
           if (isInUse) {
             // Material is in use - show "Niet meer gebruiken" button
             if (stopForm) {
-              stopForm.style.setProperty('display', 'inline-block', 'important');
+              stopForm.classList.remove('hidden-important');
+              stopForm.classList.add('show-inline-block');
             }
             // Set usage_id if available (from usageId parameter)
             if (usageId && document.getElementById('stop-usage-id')) {
@@ -1080,7 +1149,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="modal fade" id="assignToProjectModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <form method="post" action="{{ url_for('materiaal_assign_to_project') }}">
+      <form method="post" action="{{ url_for('materiaal.materiaal_assign_to_project') }}">
         <div class="modal-header">
           <h5 class="modal-title">Materiaal koppelen aan werf</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Sluiten"></button>

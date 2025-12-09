@@ -142,6 +142,117 @@
   display: none;
 }
 
+.hidden-important {
+  display: none !important;
+}
+
+.show-inline-block {
+  display: inline-block !important;
+}
+
+/* ================== UTILITY CLASSES ================== */
+
+/* Flex utilities */
+.flex-end {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Margin utilities */
+.mt-16 {
+  margin-top: 16px;
+}
+
+/* Border utilities */
+.border-warning-left {
+  border-left: 4px solid #ffc107;
+}
+
+/* Text utilities */
+.text-warning-custom {
+  color: #ffc107;
+  margin-right: 8px;
+}
+
+/* Cursor utility */
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* ================== BADGE STYLES ================== */
+
+.badge-keuring-goed {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #198754;
+}
+
+.badge-keuring-fout {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #dc3545;
+}
+
+.badge-keuring-waarschuwing {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #ffc107;
+}
+
+.badge-keuring-gepland {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #a855f7;
+}
+
+.badge-keuring-onbekend {
+  background-color: white;
+  color: #212529;
+  border: 1px solid #6c757d;
+}
+
+/* ================== MATERIAAL SPECIFIC STYLES ================== */
+
+.materiaal-grid {
+  display: grid;
+  /* Flexibel aantal kolommen voor KPI-/actiekaarten */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-auto-rows: minmax(0, auto);
+  gap: 16px;
+}
+
+.usage-panel {
+  /* Losse kaart onder de KPI-grid, volledige breedte van de content */
+}
+
+.kpi-with-plus {
+  position: relative;
+}
+
+.kpi-plus-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #000;
+  color: #fff;
+  font-size: 18px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.kpi-plus-btn:hover {
+  opacity: 0.85;
+}
+
 
 
 

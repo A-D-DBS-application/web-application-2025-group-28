@@ -16,23 +16,145 @@
     rel="stylesheet"
     href="{{ url_for('static', filename='css/style.css') }}?v=32"
   >
-  <!-- Component styles -->
-  <link
-    rel="stylesheet"
-    href="{{ url_for('static', filename='css/components.css') }}?v=1"
-  >
-  <!-- Main consolidated styles (extracted from inline styles) -->
-  <link
-    rel="stylesheet"
-    href="{{ url_for('static', filename='css/main.css') }}?v=1"
-  >
 </head>
 <body>
-  {% include 'partials/navbar.html' %}
+  <!-- Mobiele onderbalk navigatie (alleen zichtbaar op kleine schermen) -->
+  <nav class="mobile-nav d-md-none">
+    <a href="{{ url_for('dashboard.dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}">
+      <span class="mobile-nav-icon">📊</span>
+      <span class="mobile-nav-label">Dashboard</span>
+    </a>
+    <a href="{{ url_for('materiaal.materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}">
+      <span class="mobile-nav-icon">📦</span>
+      <span class="mobile-nav-label">Materiaal</span>
+    </a>
+    <a href="{{ url_for('werven.werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}">
+      <span class="mobile-nav-icon">🏗️</span>
+      <span class="mobile-nav-label">Werven</span>
+    </a>
+    <a href="{{ url_for('keuringen.keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}">
+      <span class="mobile-nav-icon">✓</span>
+      <span class="mobile-nav-label">Keuringen</span>
+    </a>
+    <a href="{{ url_for('documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten' %}active{% endif %}">
+      <span class="mobile-nav-icon">📄</span>
+      <span class="mobile-nav-label">Docs</span>
+    </a>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <!-- Brand / Logo -->
+      <div class="brand">
+        <img
+          src="{{ url_for('static', filename='img/logo.png.png') }}"
+          alt="VT-Invest Group"
+          class="brand-logo"
+        >
+      </div>
+
+      <!-- Navigation -->
+      <nav class="menu">
+        <a
+          class="menu-item {% if request.endpoint=='dashboard' %}active{% endif %}"
+          href="{{ url_for('dashboard.dashboard') }}"
+        >
+          Overzicht
+        </a>
+
+        <a
+          class="menu-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}"
+          href="{{ url_for('materiaal.materiaal') }}"
+        >
+          Materiaal
+        </a>
+
+        <a
+          class="menu-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}"
+          href="{{ url_for('werven.werven') }}"
+        >
+          Werven
+        </a>
+
+        <a
+          class="menu-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}"
+          href="{{ url_for('keuringen.keuringen') }}"
+        >
+          Keuringen
+        </a>
+
+        <a
+          class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
+          href="{{ url_for('documenten') }}"
+        >
+          Documenten
+        </a>
+      </nav>
+    </div>
+
+    <!-- User info bottom -->
+    <div class="sidebar-bottom">
+      <div class="user-card">
+        <div class="avatar">
+          {% if current_user and current_user.Naam %}
+            {% set naam_delen = current_user.Naam.split() %}
+            {% if naam_delen|length >= 2 %}
+              {{ (naam_delen[0][0] + naam_delen[-1][0]) | upper }}
+            {% else %}
+            {{ current_user.Naam[:2] | upper }}
+            {% endif %}
+          {% else %}
+            VT
+          {% endif %}
+        </div>
+        <div>
+          <div class="user-name">
+            {{ current_user.Naam if current_user and current_user.Naam else 'Naam Gebruiker' }}
+          </div>
+          <div class="user-role">
+            {{ current_user.Functie if current_user and current_user.Functie else 'Functie' }}
+          </div>
+          <div class="mt-2">
+            {% if current_user %}
+              <a
+                href="{{ url_for('auth.logout') }}"
+                class="small text-decoration-none"
+              >
+                Uitloggen
+              </a>
+            {% else %}
+              <a
+                href="{{ url_for('login') }}"
+                class="small text-decoration-none me-2"
+              >
+                Inloggen
+              </a>
+              <a
+                href="{{ url_for('signup') }}"
+                class="small text-decoration-none"
+              >
+                Registreren
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
 
   <!-- Main content -->
   <main class="main">
-    {% include 'partials/header.html' %}
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="app-title">Fleet 360</div>
+      <!-- Mobiel logo rechtsboven (zichtbaar op kleine schermen) -->
+      <img
+        src="{{ url_for('static', filename='img/logo.png.png') }}"
+        alt="VT-Invest Group"
+        class="topbar-logo-mobile d-md-none"
+      >
+    </header>
 
     <!-- Flash messages -->
     <div class="container mt-3">
@@ -52,6 +174,8 @@
       {% block content %}{% endblock %}
     </section>
   </main>
+
+  {% include 'partials/footer.html' %}
 
   <!-- Bootstrap JS -->
   <script
