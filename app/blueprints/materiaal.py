@@ -7,7 +7,7 @@ from helpers import login_required, log_activity_db, save_upload
 from services import MaterialService, MaterialUsageService
 from constants import DEFAULT_INSPECTION_STATUS
 from datetime import datetime
-from sqlalchemy import or_, func, case
+from sqlalchemy import or_, func, case, text
 from werkzeug.utils import secure_filename
 import os
 
@@ -51,7 +51,9 @@ def materiaal():
     type_filter = (request.args.get("type") or "").strip().lower()
     status = (request.args.get("status") or "").strip().lower()
 
-    query = Material.query
+    query = Material.query.filter(
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    )
 
     if q:
         like = f"%{q}%"
@@ -68,19 +70,26 @@ def materiaal():
         elif status == "niet in gebruik":
             query = query.filter(Material.status != "in gebruik")
 
-    total_items = Material.query.count()
+    total_items = Material.query.filter(
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).count()
     in_use = (
         db.session.query(func.count(MaterialUsage.id))
+        .join(Material, MaterialUsage.material_id == Material.id)
         .filter(MaterialUsage.is_active.is_(True))
+        .filter(or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None)))
         .scalar()
     ) or 0
 
-    all_materials = Material.query.all()
+    all_materials = Material.query.filter(
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).all()
     
     active_usages = (
         db.session.query(MaterialUsage, Material)
         .join(Material, MaterialUsage.material_id == Material.id)
         .filter(MaterialUsage.is_active.is_(True))
+        .filter(or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None)))
         .order_by(MaterialUsage.start_time.desc())
         .all()
     )
@@ -195,7 +204,10 @@ def materiaal_types():
     
     # Tel aantal materialen per type
     for type_item in types:
-        type_item.material_count = Material.query.filter_by(type=type_item.name).count()
+        type_item.material_count = Material.query.filter(
+            Material.type == type_item.name,
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+        ).count()
     
     return render_template(
         "materiaal_types.html",
@@ -208,8 +220,6 @@ def materiaal_types():
 @login_required
 def materiaal_type_toevoegen():
     """Voeg een nieuw materiaal type toe."""
-    from app import app, save_upload
-    
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip()
     inspection_validity_days = request.form.get("inspection_validity_days")
@@ -247,7 +257,7 @@ def materiaal_type_toevoegen():
             return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
-        type_image_path = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+        type_image_path = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
     safety_sheet_path = None
     if safety_sheet_file and safety_sheet_file.filename:
@@ -258,7 +268,7 @@ def materiaal_type_toevoegen():
             return redirect(url_for("materiaal.materiaal_types"))
         
         prefix = secure_filename(name)
-        safety_sheet_path = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        safety_sheet_path = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
     
     new_type = MaterialType(
         name=name,
@@ -280,8 +290,6 @@ def materiaal_type_toevoegen():
 @login_required
 def materiaal_type_bewerken():
     """Bewerk een bestaand materiaal type."""
-    from app import app, save_upload
-    
     type_id = request.form.get("type_id")
     name = (request.form.get("name") or "").strip()
     description = (request.form.get("description") or "").strip()
@@ -330,7 +338,7 @@ def materiaal_type_bewerken():
             return redirect(url_for("materiaal.materiaal_types"))
         
         if type_item.type_image:
-            old_path = os.path.join(app.root_path, "static", type_item.type_image)
+            old_path = os.path.join(current_app.root_path, "static", type_item.type_image)
             if os.path.exists(old_path):
                 try:
                     os.remove(old_path)
@@ -338,7 +346,7 @@ def materiaal_type_bewerken():
                     pass
         
         prefix = secure_filename(name)
-        type_item.type_image = save_upload(type_image_file, app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
+        type_item.type_image = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
     if safety_sheet_file and safety_sheet_file.filename:
         filename = secure_filename(safety_sheet_file.filename)
@@ -348,7 +356,7 @@ def materiaal_type_bewerken():
             return redirect(url_for("materiaal.materiaal_types"))
         
         if type_item.safety_sheet:
-            old_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+            old_path = os.path.join(current_app.root_path, "static", type_item.safety_sheet)
             if os.path.exists(old_path):
                 try:
                     os.remove(old_path)
@@ -356,7 +364,7 @@ def materiaal_type_bewerken():
                     pass
         
         prefix = secure_filename(name)
-        type_item.safety_sheet = save_upload(safety_sheet_file, app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        type_item.safety_sheet = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
     
     type_item.name = name
     type_item.description = description if description else None
@@ -373,8 +381,6 @@ def materiaal_type_bewerken():
 @login_required
 def materiaal_type_verwijderen():
     """Verwijder een materiaal type."""
-    from app import app
-    
     type_id = request.form.get("type_id")
     
     if not type_id:
@@ -387,14 +393,17 @@ def materiaal_type_verwijderen():
         return redirect(url_for("materiaal.materiaal_types"))
     
     # Check if any materials use this type
-    materials_using_type = Material.query.filter_by(type=type_item.name).count()
+    materials_using_type = Material.query.filter(
+        Material.type == type_item.name,
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).count()
     if materials_using_type > 0:
         flash(f"Kan type '{type_item.name}' niet verwijderen: {materials_using_type} materiaal(en) gebruiken dit type.", "danger")
         return redirect(url_for("materiaal.materiaal_types"))
     
     # Delete associated files
     if type_item.type_image:
-        old_path = os.path.join(app.root_path, "static", type_item.type_image)
+        old_path = os.path.join(current_app.root_path, "static", type_item.type_image)
         if os.path.exists(old_path):
             try:
                 os.remove(old_path)
@@ -402,7 +411,7 @@ def materiaal_type_verwijderen():
                 pass
     
     if type_item.safety_sheet:
-        old_path = os.path.join(app.root_path, "static", type_item.safety_sheet)
+        old_path = os.path.join(current_app.root_path, "static", type_item.safety_sheet)
         if os.path.exists(old_path):
             try:
                 os.remove(old_path)
@@ -410,8 +419,28 @@ def materiaal_type_verwijderen():
                 pass
     
     type_name = type_item.name
-    db.session.delete(type_item)
-    db.session.commit()
+    
+    # Use no_autoflush to prevent SQLAlchemy from querying related tables (like documenten)
+    # that might not exist in the database
+    try:
+        with db.session.no_autoflush:
+            db.session.delete(type_item)
+        db.session.commit()
+    except Exception as e:
+        # If there's an error (e.g., documenten table doesn't exist), 
+        # try a direct SQL delete to bypass relationship loading
+        db.session.rollback()
+        try:
+            # Use raw SQL delete to bypass relationship loading
+            db.session.execute(
+                text("DELETE FROM materiaal_types WHERE id = :id"),
+                {"id": int(type_id)}
+            )
+            db.session.commit()
+        except Exception as e2:
+            db.session.rollback()
+            flash(f"Fout bij verwijderen type: {str(e2)}", "danger")
+            return redirect(url_for("materiaal.materiaal_types"))
     
     log_activity_db("materiaal type verwijderd", type_name, "")
     flash(f"Type '{type_name}' is verwijderd.", "success")
@@ -444,8 +473,14 @@ def materiaal_toevoegen():
     project_id_str = (f.get("project_id") or "").strip()
     assigned_to = (f.get("assigned_to") or "").strip()
     note = (f.get("note") or "").strip()
-    status = (f.get("status") or DEFAULT_INSPECTION_STATUS).strip()
-    inspection_status = (f.get("inspection_status") or "").strip()
+    keuring_status = (f.get("keuring_status") or DEFAULT_INSPECTION_STATUS).strip()
+    laatste_keuring_str = (f.get("laatste_keuring") or "").strip()
+    datum_geplande_keuring_str = (f.get("datum_geplande_keuring") or "").strip()
+
+    # Validate: if keuring_status is "keuring gepland", datum_geplande_keuring is required
+    if keuring_status == "keuring gepland" and not datum_geplande_keuring_str:
+        flash("Datum geplande keuring is verplicht wanneer 'Keuring gepland' is geselecteerd.", "danger")
+        return redirect(url_for("materiaal.materiaal"))
 
     # Get project if project_id is provided
     project_id = int(project_id_str) if project_id_str else None
@@ -457,7 +492,6 @@ def materiaal_toevoegen():
             site = project.name
 
     documentation_file = request.files.get("documentation")
-    safety_file = request.files.get("safety_sheet")
 
     if not name or not serial:
         flash("Naam en serienummer zijn verplicht.", "danger")
@@ -472,9 +506,6 @@ def materiaal_toevoegen():
     documentation_path = save_upload(
         documentation_file, current_app.config["DOC_UPLOAD_FOLDER"], f"{serial}_doc"
     )
-    safety_sheet_path = save_upload(
-        safety_file, current_app.config["SAFETY_UPLOAD_FOLDER"], f"{serial}_safety"
-    )
 
     item = Material(
         name=name,
@@ -484,10 +515,9 @@ def materiaal_toevoegen():
         site=site if site else None,
         project_id=project_id,
         note=note if note else None,
-        status=status,
+        status=DEFAULT_INSPECTION_STATUS,  # Keep status for backward compatibility
         nummer_op_materieel=nummer if nummer else None,
         documentation_path=documentation_path,
-        safety_sheet_path=safety_sheet_path,
     )
 
     if purchase_date_str:
@@ -496,19 +526,55 @@ def materiaal_toevoegen():
         except ValueError:
             pass
 
-    # optioneel inspection_status als kolom bestaat
+    # Set material_type_id if type is provided
+    if type_:
+        material_type = MaterialType.query.filter_by(name=type_).first()
+        if material_type:
+            item.material_type_id = material_type.id
+    
+    # Set inspection_status (keuring_status) and laatste_keuring
     if hasattr(item, "inspection_status"):
-        setattr(
-            item,
-            "inspection_status",
-            inspection_status if inspection_status else None,
-        )
+        item.inspection_status = keuring_status
+    
+    if laatste_keuring_str:
+        try:
+            item.laatste_keuring = datetime.strptime(laatste_keuring_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    # Note: No fallback to purchase_date - expiry calculation only uses laatste_keuring
 
     db.session.add(item)
+    db.session.flush()  # Flush to get the item.id before creating related records
+    
+    # Check if inspection is expired based on laatste_keuring + keuring_geldigheid_dagen
+    # This MUST override user-selected status
+    if item.laatste_keuring and MaterialService.check_inspection_expiry(item):
+        item.inspection_status = "keuring verlopen"
+        keuring_status = "keuring verlopen"  # Update for Keuringstatus record creation
+
+    # If keuring_status is "keuring gepland" and datum_geplande_keuring is provided, create Keuringstatus record
+    if keuring_status == "keuring gepland" and datum_geplande_keuring_str:
+        try:
+            volgende_controle_date = datetime.strptime(datum_geplande_keuring_str, "%Y-%m-%d").date()
+            user_id = g.user.gebruiker_id if getattr(g, "user", None) and hasattr(g.user, "gebruiker_id") else None
+            
+            keuring_record = Keuringstatus(
+                serienummer=serial,
+                laatste_controle=None,
+                volgende_controle=volgende_controle_date,
+                uitgevoerd_door=None,
+                opmerkingen=None,
+                updated_by=user_id,
+            )
+            db.session.add(keuring_record)
+        except ValueError:
+            # Invalid date format, skip creating keuring record
+            pass
+
     db.session.commit()
 
     log_activity_db("Toegevoegd", item.name or "", item.serial or "")
-    flash("Nieuw materieel is toegevoegd aan Supabase.", "success")
+    flash("Nieuw materiaal is succesvol toegevoegd", "success")
     return redirect(url_for("materiaal.materiaal"))
 
 
@@ -533,7 +599,14 @@ def materiaal_bewerken():
 
     item.serial = new_serial
     item.name = (f.get("name") or "").strip()
-    item.type = (f.get("type") or "").strip()
+    type_ = (f.get("type") or "").strip()
+    item.type = type_
+
+    # Update material_type_id if type is provided
+    if type_:
+        material_type = MaterialType.query.filter_by(name=type_).first()
+        if material_type:
+            item.material_type_id = material_type.id
 
     purchase_date = (f.get("purchase_date") or "").strip()
     if purchase_date:
@@ -541,6 +614,15 @@ def materiaal_bewerken():
             item.purchase_date = datetime.strptime(purchase_date, "%Y-%m-%d").date()
         except ValueError:
             pass
+
+    # Update laatste_keuring if provided
+    laatste_keuring_str = (f.get("laatste_keuring") or "").strip()
+    if laatste_keuring_str:
+        try:
+            item.laatste_keuring = datetime.strptime(laatste_keuring_str, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+    # Note: No fallback to purchase_date - expiry calculation only uses laatste_keuring
 
     item.assigned_to = (f.get("assigned_to") or "").strip()
     item.site = (f.get("site") or "").strip()
@@ -555,19 +637,18 @@ def materiaal_bewerken():
     # inspection_status kolom: de keuringstatus
     item.inspection_status = keuring_status
     
+    # Check if inspection is expired based on laatste_keuring + keuring_geldigheid_dagen
+    # This MUST override user-selected status
+    if item.laatste_keuring and MaterialService.check_inspection_expiry(item):
+        item.inspection_status = "keuring verlopen"
+    
     item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
 
     documentation_file = request.files.get("documentation")
-    safety_file = request.files.get("safety_sheet")
 
     if documentation_file and documentation_file.filename:
         item.documentation_path = save_upload(
             documentation_file, current_app.config["DOC_UPLOAD_FOLDER"], f"{item.serial}_doc"
-        )
-
-    if safety_file and safety_file.filename:
-        item.safety_sheet_path = save_upload(
-            safety_file, current_app.config["SAFETY_UPLOAD_FOLDER"], f"{item.serial}_safety"
         )
 
     db.session.commit()
@@ -586,44 +667,23 @@ def materiaal_verwijderen():
         return redirect(url_for("materiaal.materiaal"))
 
     serial = (request.form.get("serial") or "").strip()
-    item = MaterialService.find_by_serial(serial)
-    if not item:
-        flash("Item niet gevonden.", "danger")
-        return redirect(url_for("materiaal.materiaal"))
-
-    # -------------------------------------------------
-    # 1) Alle gekoppelde gebruiksregistraties verwijderen
-    #    (material_usage heeft een NOT NULL constraint op material_id)
-    # -------------------------------------------------
-    MaterialUsage.query.filter_by(material_id=item.id).delete()
-
-    # Sla keuring_id op voor later controle
-    keuring_id_to_check = item.keuring_id
     
-    # Controleer eerst of andere materialen dezelfde keuringstatus gebruiken
-    # (exclusief het huidige materiaal dat we gaan verwijderen)
-    should_delete_keuring = False
-    if keuring_id_to_check:
-        # Tel hoeveel materialen deze keuringstatus gebruiken, exclusief het huidige item
-        other_materials_with_keuring = (
-            Material.query
-            .filter_by(keuring_id=keuring_id_to_check)
-            .filter(Material.id != item.id)
-            .count()
+    # Use session.no_autoflush to prevent SQLAlchemy from querying related tables (like documenten)
+    # that might not exist
+    with db.session.no_autoflush:
+        item = MaterialService.find_by_serial(serial)
+        if not item:
+            flash("Item niet gevonden.", "danger")
+            return redirect(url_for("materiaal.materiaal"))
+
+        # Soft delete: mark as deleted instead of actually deleting
+        item.is_deleted = True
+        
+        # Stop all active usages for this material
+        MaterialUsage.query.filter_by(material_id=item.id, is_active=True).update(
+            {'is_active': False, 'end_time': datetime.utcnow()},
+            synchronize_session=False
         )
-        should_delete_keuring = (other_materials_with_keuring == 0)
-    
-    # Verwijder de referentie naar keuringstatus van dit materiaal
-    item.keuring_id = None
-    
-    # Verwijder het materiaal
-    db.session.delete(item)
-    
-    # Verwijder de keuringstatus alleen als geen andere materialen het meer gebruiken
-    if should_delete_keuring and keuring_id_to_check:
-        keuring = Keuringstatus.query.filter_by(id=keuring_id_to_check).first()
-        if keuring:
-            db.session.delete(keuring)
 
     db.session.commit()
 
@@ -655,9 +715,6 @@ def materiaal_document_verwijderen():
     if doc_type == "documentation":
         file_path = item.documentation_path
         field_name = "documentation_path"
-    elif doc_type == "safety":
-        file_path = item.safety_sheet_path
-        field_name = "safety_sheet_path"
     else:
         flash("Ongeldig document type.", "danger")
         return redirect(url_for("materiaal.materiaal"))
@@ -676,7 +733,7 @@ def materiaal_document_verwijderen():
     setattr(item, field_name, None)
     db.session.commit()
     
-    doc_name = "Documentatie" if doc_type == "documentation" else "Veiligheidsfiche"
+    doc_name = "Documentatie"
     log_activity_db(f"{doc_name} verwijderd", item.name or "", item.serial or "")
     flash(f"{doc_name} verwijderd.", "success")
     return redirect(url_for("materiaal.materiaal"))

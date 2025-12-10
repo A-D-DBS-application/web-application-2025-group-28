@@ -20,21 +20,30 @@ class MaterialService:
     
     @staticmethod
     def find_by_serial(serial: str) -> Material | None:
-        """Find material by serial number"""
+        """Find material by serial number (excludes deleted materials)"""
         if not serial:
             return None
         # SQLAlchemy mapt automatisch de Python attribuut 'serial' naar de database kolom 'serienummer'
         # Gebruik filter() met == voor betere compatibiliteit
-        return Material.query.filter(Material.serial == serial).first()
+        return Material.query.filter(
+            Material.serial == serial,
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+        ).first()
     
     @staticmethod
     def find_by_name_or_number(name: str, nummer: str | None) -> Material | None:
-        """Find material by nummer_op_materieel first, then by name"""
+        """Find material by nummer_op_materieel first, then by name (excludes deleted materials)"""
         item = None
         if nummer:
-            item = Material.query.filter_by(nummer_op_materieel=nummer).first()
+            item = Material.query.filter(
+                Material.nummer_op_materieel == nummer,
+                or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+            ).first()
         if not item and name:
-            item = Material.query.filter_by(name=name).first()
+            item = Material.query.filter(
+                Material.name == name,
+                or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+            ).first()
         return item
     
     @staticmethod
@@ -63,48 +72,126 @@ class MaterialService:
         return keuring_verlopen + keuring_gepland
     
     @staticmethod
+    def check_inspection_expiry(material: Material) -> bool:
+        """
+        Check if a material's inspection is expired based on laatste_keuring + keuring_geldigheid_dagen.
+        Only uses laatste_keuring (no fallback to purchase_date).
+        Returns True if expired, False otherwise.
+        """
+        # Must have laatste_keuring (no fallback to purchase_date)
+        if not material.laatste_keuring:
+            return False
+        
+        # Must have material_type with validity days
+        if not material.material_type_id or not material.material_type:
+            return False
+        
+        validity_days = material.material_type.inspection_validity_days
+        if not validity_days or validity_days <= 0:
+            return False
+        
+        # Calculate expiry date: verloopdatum = laatste_keuring + keuring_geldigheid_dagen
+        today = datetime.utcnow().date()
+        expiry_date = material.laatste_keuring + timedelta(days=validity_days)
+        
+        # Check if expired: today > verloopdatum
+        return today > expiry_date
+    
+    @staticmethod
     def update_expired_inspections() -> int:
         """
         Automatically update materials with expired inspections.
-        Optimized to avoid N+1 queries by using a single bulk update query.
+        For each material with laatste_keuring and material_type:
+        - Calculate verloopdatum = laatste_keuring + materiaal_type.keuring_geldigheid_dagen
+        - If today > verloopdatum, set keuring_status = "keuring verlopen"
+        This status overrides any manually set status (except if already "keuring verlopen").
+        Optimized to avoid N+1 queries.
         Returns count of updated materials.
         """
         today = datetime.utcnow().date()
+        updated_count = 0
         
-        # Get keuringen with expired dates
+        # PART 1: Get keuringen with expired dates (existing logic)
         keuringen_met_verlopen_datum = Keuringstatus.query.filter(
             Keuringstatus.volgende_controle.isnot(None),
             Keuringstatus.volgende_controle < today,
             Keuringstatus.laatste_controle.is_(None)
         ).all()
         
-        if not keuringen_met_verlopen_datum:
-            return 0
-        
-        # Collect all serial numbers for batch lookup
-        serials = [k.serienummer for k in keuringen_met_verlopen_datum if k.serienummer]
-        if not serials:
-            return 0
-        
-        # Single query to get all materials by serial numbers
-        materials = Material.query.filter(
-            Material.serial.in_(serials),
-            ~Material.inspection_status.in_(["keuring verlopen", "keuring gepland"])
-        ).all()
-        
-        # Create a map of serial -> material for O(1) lookup
-        material_map = {m.serial: m for m in materials}
-        
-        # Update materials that need updating
-        updated_count = 0
-        for keuring in keuringen_met_verlopen_datum:
-            if not keuring.serienummer:
-                continue
+        if keuringen_met_verlopen_datum:
+            # Collect all serial numbers for batch lookup
+            serials = [k.serienummer for k in keuringen_met_verlopen_datum if k.serienummer]
             
-            material = material_map.get(keuring.serienummer)
-            if material:
-                material.inspection_status = "keuring verlopen"
-                updated_count += 1
+            if serials:
+                # Single query to get all materials by serial numbers
+                # Only update if status is NOT already "keuring verlopen"
+                materials = Material.query.filter(
+                    Material.serial.in_(serials),
+                    Material.inspection_status != "keuring verlopen"
+                ).all()
+                
+                # Create a map of serial -> material for O(1) lookup
+                material_map = {m.serial: m for m in materials}
+                
+                # Update materials that need updating
+                for keuring in keuringen_met_verlopen_datum:
+                    if not keuring.serienummer:
+                        continue
+                    
+                    material = material_map.get(keuring.serienummer)
+                    if material:
+                        material.inspection_status = "keuring verlopen"
+                        updated_count += 1
+        
+        # PART 2: Check materials with laatste_keuring + keuring_geldigheid_dagen
+        # Get all materials with laatste_keuring (NOT purchase_date) and material_type_id
+        # Only check materials that are NOT already "keuring verlopen"
+        materials_to_check = (
+            Material.query
+            .filter(
+                Material.laatste_keuring.isnot(None),  # Only use laatste_keuring, no purchase_date fallback
+                Material.material_type_id.isnot(None),
+                Material.inspection_status != "keuring verlopen",  # Only update if not already expired
+                or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+            )
+            .all()
+        )
+        
+        # Eager load material_type relationships to avoid N+1 queries
+        material_type_ids = {m.material_type_id for m in materials_to_check if m.material_type_id}
+        if material_type_ids:
+            # Pre-load all material types with validity days > 0
+            material_types = MaterialType.query.filter(
+                MaterialType.id.in_(material_type_ids),
+                MaterialType.inspection_validity_days.isnot(None),
+                MaterialType.inspection_validity_days > 0
+            ).all()
+            material_type_map = {mt.id: mt for mt in material_types}
+            
+            # Check each material
+            for material in materials_to_check:
+                # Skip if material_type_id is missing
+                if not material.material_type_id:
+                    continue
+                
+                # Skip if material_type is missing or has no validity days
+                material_type = material_type_map.get(material.material_type_id)
+                if not material_type or not material_type.inspection_validity_days or material_type.inspection_validity_days <= 0:
+                    continue
+                
+                # Skip if laatste_keuring is NULL (shouldn't happen due to filter, but double-check)
+                if not material.laatste_keuring:
+                    continue
+                
+                # Calculate verloopdatum = laatste_keuring + keuring_geldigheid_dagen
+                expiry_date = material.laatste_keuring + timedelta(days=material_type.inspection_validity_days)
+                
+                # If today > verloopdatum, set keuring_status = "keuring verlopen"
+                if today > expiry_date:
+                    # Only update if current status is NOT already "keuring verlopen" (idempotent check)
+                    if material.inspection_status != "keuring verlopen":
+                        material.inspection_status = "keuring verlopen"
+                        updated_count += 1
         
         if updated_count > 0:
             db.session.commit()
@@ -375,11 +462,12 @@ class MaterialUsageRepository:
         Get active usages grouped by user using ORM queries.
         Returns (my_usages, other_usages, usages_without_project)
         """
-        # Base query with joins
+        # Base query with joins - exclude deleted materials
         query = (
             db.session.query(MaterialUsage, Material)
             .join(Material, MaterialUsage.material_id == Material.id)
             .filter(MaterialUsage.is_active.is_(True))
+            .filter(or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None)))
             .order_by(MaterialUsage.start_time.desc())
         )
         

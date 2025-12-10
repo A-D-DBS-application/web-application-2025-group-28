@@ -25,10 +25,10 @@ def api_search():
         
         like = f"%{q}%"
         
-        # Optimized query - removed eager loading to avoid potential issues with NULL keuring_id
-        # We'll query keuring separately if needed
+        # Optimized query - eager load material_type to get inspection_validity_days
         items = (
             Material.query
+            .options(joinedload(Material.material_type))
             .filter(or_(Material.name.ilike(like), Material.serial.ilike(like)))
             .limit(10)
             .all()
@@ -140,9 +140,8 @@ def api_search():
                         except (AttributeError, ValueError):
                             laatste_keuring = None
                 
-                # Build URLs for documentation and safety sheets using storage helper
+                # Build URLs for documentation using storage helper
                 documentation_url = ""
-                safety_sheet_url = ""
                 try:
                     if item.documentation_path:
                         documentation_url = get_file_url_from_path(item.documentation_path) or ""
@@ -150,12 +149,8 @@ def api_search():
                     print(f"Warning: Could not generate documentation URL for {item.serial}: {doc_url_error}")
                     documentation_url = ""
                 
-                try:
-                    if item.safety_sheet_path:
-                        safety_sheet_url = get_file_url_from_path(item.safety_sheet_path) or ""
-                except Exception as safety_url_error:
-                    print(f"Warning: Could not generate safety sheet URL for {item.serial}: {safety_url_error}")
-                    safety_sheet_url = ""
+                # Safety sheets are now stored via MaterialType, not Material
+                safety_sheet_url = None
                 
                 # Get documents for this material
                 material_docs = documents_by_material.get(item.id, [])
@@ -187,6 +182,35 @@ def api_search():
                     print(f"Warning: Could not format purchase_date for {item.serial}: {date_error}")
                     purchase_date_str = ""
                 
+                # Format laatste_keuring from material (not from keuring_info)
+                # Use purchase_date as fallback if laatste_keuring is not set (for display purposes)
+                laatste_keuring_material_str = None
+                try:
+                    inspection_date = item.laatste_keuring or item.purchase_date
+                    if inspection_date:
+                        laatste_keuring_material_str = inspection_date.strftime("%Y-%m-%d")
+                except (AttributeError, ValueError, TypeError) as date_error:
+                    print(f"Warning: Could not format laatste_keuring for {item.serial}: {date_error}")
+                    laatste_keuring_material_str = None
+                
+                # Format raw laatste_keuring value (without fallback) for editing purposes
+                laatste_keuring_raw_str = None
+                try:
+                    if item.laatste_keuring:
+                        laatste_keuring_raw_str = item.laatste_keuring.strftime("%Y-%m-%d")
+                except (AttributeError, ValueError, TypeError) as date_error:
+                    print(f"Warning: Could not format raw laatste_keuring for {item.serial}: {date_error}")
+                    laatste_keuring_raw_str = None
+                
+                # Get inspection_validity_days from material_type
+                inspection_validity_days = None
+                try:
+                    if item.material_type_id and item.material_type:
+                        inspection_validity_days = item.material_type.inspection_validity_days
+                except Exception as type_error:
+                    print(f"Warning: Could not get inspection_validity_days for {item.serial}: {type_error}")
+                    inspection_validity_days = None
+                
                 results.append(
                     {
                     "serial": str(item.serial) if item.serial else "",
@@ -201,11 +225,14 @@ def api_search():
                     "nummer_op_materieel": str(item.nummer_op_materieel) if item.nummer_op_materieel else "",
                     "documentation_path": str(item.documentation_path) if item.documentation_path else "",
                     "documentation_url": str(documentation_url) if documentation_url else "",
-                    "safety_sheet_path": str(item.safety_sheet_path) if item.safety_sheet_path else "",
-                    "safety_sheet_url": str(safety_sheet_url) if safety_sheet_url else "",
-                    "inspection_status": str(item.inspection_status) if item.inspection_status else "",
+                    "safety_sheet_path": None,
+                    "safety_sheet_url": None,
+                    "inspection_status": str(item.inspection_status).strip() if item.inspection_status and str(item.inspection_status).strip() else None,
                     "keuring_gepland": str(keuring_gepland) if keuring_gepland else None,
-                    "laatste_keuring": str(laatste_keuring) if laatste_keuring else None,
+                    "laatste_keuring": str(laatste_keuring) if laatste_keuring else None,  # From keuring_info
+                    "laatste_keuring_material": laatste_keuring_material_str,  # From material.laatste_keuring (with purchase_date fallback for display)
+                    "laatste_keuring_raw": laatste_keuring_raw_str,  # Raw laatste_keuring value (no fallback) for editing
+                    "inspection_validity_days": int(inspection_validity_days) if inspection_validity_days else None,
                     "documents": documents_list,
                     }
                 )

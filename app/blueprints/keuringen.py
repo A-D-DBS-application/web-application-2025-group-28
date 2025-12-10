@@ -265,7 +265,16 @@ def keuring_resultaat():
     if hasattr(keuring, 'opmerkingen'):
         keuring.opmerkingen = opmerking if opmerking else None
     
+    # Update material.laatste_keuring to the keuring date
+    material.laatste_keuring = keuring_datum
     material.inspection_status = resultaat
+    
+    # Check if inspection is expired based on laatste_keuring + keuring_geldigheid_dagen
+    # This MUST override any manually set status (except "afgekeurd" which should remain)
+    # Note: Since we just set laatste_keuring to today, it typically won't be expired,
+    # but we check for consistency and edge cases (e.g., if validity days is 0 or negative)
+    if resultaat != "afgekeurd" and MaterialService.check_inspection_expiry(material):
+        material.inspection_status = "keuring verlopen"
     
     db.session.commit()
     
@@ -509,6 +518,7 @@ def api_keuring_historiek(material_id):
         "dagen_verschil": dagen_verschil,
         "historiek": historiek_list
     })
+
 
 
 

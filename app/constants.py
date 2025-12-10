@@ -32,6 +32,33 @@ INSPECTION_STATUSES = {
         "badge_class": "badge-outline-purple",
         "badge_style": "background-color: white; color: #212529; border: 1px solid #a855f7;",
         "bootstrap_class": "bg-purple"
+    },
+    "onder voorbehoud": {
+        "value": "onder voorbehoud",
+        "label": "Onder voorbehoud",
+        "badge_class": "badge-outline-warning",
+        "badge_style": "background-color: white; color: #212529; border: 1px solid #ffc107;",
+        "bootstrap_class": "bg-warning"
+    }
+}
+
+# Keuring Status Options for form dropdown (used in "Nieuw Materiaal" modal)
+KEURING_STATUS_OPTIONS = {
+    "goedgekeurd": {
+        "value": "goedgekeurd",
+        "label": "Goedgekeurd"
+    },
+    "afgekeurd": {
+        "value": "afgekeurd",
+        "label": "Afgekeurd"
+    },
+    "onder voorbehoud": {
+        "value": "onder voorbehoud",
+        "label": "Onder voorbehoud"
+    },
+    "keuring gepland": {
+        "value": "keuring gepland",
+        "label": "Keuring gepland"
     }
 }
 

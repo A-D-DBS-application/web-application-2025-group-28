@@ -286,33 +286,63 @@ body.auth-page {
 /* ================== JAVASCRIPT GENERATED STYLES ================== */
 /* Badge styles for dynamic content */
 .badge-keuring-goedgekeurd {
-  background-color: white;
-  color: #212529;
-  border: 1px solid #198754;
+  background-color: #0d4f2c;
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
 }
 
 .badge-keuring-afgekeurd {
-  background-color: white;
-  color: #212529;
-  border: 1px solid #dc3545;
+  background-color: #8b1a1a;
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
 }
 
 .badge-keuring-verlopen {
-  background-color: white;
-  color: #212529;
-  border: 1px solid #ffc107;
+  background-color: #7c5a00;
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
 }
 
 .badge-keuring-gepland {
-  background-color: white;
-  color: #212529;
-  border: 1px solid #a855f7;
+  background-color: #5a2d7a;
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
+}
+
+.badge-keuring-onder-voorbehoud {
+  background-color: #7c5a00;
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
 }
 
 .badge-keuring-none {
-  background-color: white;
-  color: #212529;
-  border: 1px solid #6c757d;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 500;
+  display: inline-block;
 }
 
 /* List group scrollable */

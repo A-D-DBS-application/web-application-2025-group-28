@@ -93,7 +93,7 @@ def load_current_user():
 @app.context_processor
 def inject_user():
     # in templates beschikbaar als {{ current_user }}
-    from constants import INSPECTION_STATUSES, USAGE_STATUSES, KEURING_RESULTATEN, KEURING_STATUS_FILTERS, PERIOD_FILTERS, DOCUMENT_TYPES
+    from constants import INSPECTION_STATUSES, USAGE_STATUSES, KEURING_RESULTATEN, KEURING_STATUS_FILTERS, PERIOD_FILTERS, DOCUMENT_TYPES, KEURING_STATUS_OPTIONS
     return {
         "current_user": g.user,
         "get_file_url": get_file_url_from_path,  # Helper functie voor file URLs
@@ -103,6 +103,7 @@ def inject_user():
         "keuring_status_filters": KEURING_STATUS_FILTERS,  # For keuringen page filter dropdown
         "period_filters": PERIOD_FILTERS,  # For geschiedenis page period filter dropdown
         "document_types": DOCUMENT_TYPES,  # For documenten page document types
+        "keuring_status_options": KEURING_STATUS_OPTIONS,  # For "Nieuw Materiaal" modal keuring status dropdown
     }
 
 
@@ -121,7 +122,7 @@ def inject_user():
 
 
 # -----------------------------------------------------
-# UPLOAD CONFIGURATIE – documentatie & veiligheidsfiches
+# UPLOAD CONFIGURATIE – documentatie
 # -----------------------------------------------------
 
 BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")

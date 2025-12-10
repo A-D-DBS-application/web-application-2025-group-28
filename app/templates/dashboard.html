@@ -172,6 +172,11 @@
             </div>
 
             <div class="col-md-6">
+              <label class="form-label">Laatste keuring (optioneel)</label>
+              <input name="laatste_keuring" id="edit-laatste_keuring" type="date" class="form-control">
+            </div>
+
+            <div class="col-md-6">
               <label class="form-label">Werf (optioneel, vrije tekst)</label>
               <input name="site" id="edit-site" class="form-control">
             </div>
@@ -303,17 +308,18 @@
           const statusClass = isInUse ? 'bg-success' : 'bg-danger';
           const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
           
-          // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
-          let keuringStatus = item.inspection_status || item.status;
-          const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
+          // Keuring: altijd gebaseerd op inspection_status (keuring_status in database)
+          let keuringStatus = (item.inspection_status || '').toString().trim();
           
-          // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
-          if (!validKeuringStatuses.includes(keuringStatus)) {
-            keuringStatus = null;
+          // Normalize keuring status values
+          if (keuringStatus) {
+            keuringStatus = keuringStatus.toLowerCase();
+          } else {
+            keuringStatus = '';
           }
           
           // Determine badge text based on keuring status
-          let keuringText = 'Geen keuring';
+          let keuringText = '';
           
           if (keuringStatus === 'goedgekeurd') {
             keuringText = 'Goedgekeurd';
@@ -323,6 +329,13 @@
             keuringText = 'Keuring verlopen';
           } else if (keuringStatus === 'keuring gepland') {
             keuringText = 'Keuring gepland';
+          } else if (keuringStatus === 'onder voorbehoud') {
+            keuringText = 'Onder voorbehoud';
+          } else if (keuringStatus) {
+            // If there's a value but not recognized, use it as-is (capitalize first letter)
+            keuringText = keuringStatus.charAt(0).toUpperCase() + keuringStatus.slice(1);
+          } else {
+            keuringText = 'Niet van toepassing';
           }
           
           // Create badge HTML for keuring status using CSS classes
@@ -337,11 +350,14 @@
             badgeClass = 'badge-keuring-verlopen';
           } else if (keuringStatus === 'keuring gepland') {
             badgeClass = 'badge-keuring-gepland';
+          } else if (keuringStatus === 'onder voorbehoud') {
+            badgeClass = 'badge-keuring-onder-voorbehoud';
           } else {
             // Geen keuring - grijs
             badgeClass = 'badge-keuring-none';
           }
           
+          // Always show badge, even if status is empty
           if (item.keuring_gepland) {
             keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
           } else {
@@ -395,6 +411,18 @@
                     <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
                   ` : ''}
                 </div>
+                ${item.laatste_keuring_material ? `
+                <div class="col-md-6">
+                  <strong>Laatste keuring:</strong><br>
+                  <span>${escapeHtml(item.laatste_keuring_material)}</span>
+                </div>
+                ` : ''}
+                ${item.inspection_validity_days ? `
+                <div class="col-md-6">
+                  <strong>Keuring geldig (dagen):</strong><br>
+                  <span>${escapeHtml(item.inspection_validity_days)} dagen</span>
+                </div>
+                ` : ''}
                 <div class="col-md-6">
                   <strong>Toegewezen aan:</strong><br>
                   ${displayValue(item.assigned_to)}
@@ -542,17 +570,18 @@ document.addEventListener('DOMContentLoaded', function() {
             const statusClass = isInUse ? 'bg-success' : 'bg-danger';
             const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
             
-            // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
-            let keuringStatus = item.inspection_status || item.status;
-            const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
+            // Keuring: altijd gebaseerd op inspection_status (keuring_status in database)
+            let keuringStatus = (item.inspection_status || '').toString().trim();
             
-            // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
-            if (!validKeuringStatuses.includes(keuringStatus)) {
-              keuringStatus = null;
+            // Normalize keuring status values
+            if (keuringStatus) {
+              keuringStatus = keuringStatus.toLowerCase();
+            } else {
+              keuringStatus = '';
             }
             
             // Determine badge text based on keuring status
-            let keuringText = 'Geen keuring';
+            let keuringText = '';
             
             if (keuringStatus === 'goedgekeurd') {
               keuringText = 'Goedgekeurd';
@@ -562,6 +591,13 @@ document.addEventListener('DOMContentLoaded', function() {
               keuringText = 'Keuring verlopen';
             } else if (keuringStatus === 'keuring gepland') {
               keuringText = 'Keuring gepland';
+            } else if (keuringStatus === 'onder voorbehoud') {
+              keuringText = 'Onder voorbehoud';
+            } else if (keuringStatus) {
+              // If there's a value but not recognized, use it as-is (capitalize first letter)
+              keuringText = keuringStatus.charAt(0).toUpperCase() + keuringStatus.slice(1);
+            } else {
+              keuringText = 'Niet van toepassing';
             }
             
             // Create badge HTML for keuring status using CSS classes
@@ -576,11 +612,14 @@ document.addEventListener('DOMContentLoaded', function() {
               badgeClass = 'badge-keuring-verlopen';
             } else if (keuringStatus === 'keuring gepland') {
               badgeClass = 'badge-keuring-gepland';
+            } else if (keuringStatus === 'onder voorbehoud') {
+              badgeClass = 'badge-keuring-onder-voorbehoud';
             } else {
               // Geen keuring - grijs
               badgeClass = 'badge-keuring-none';
             }
             
+            // Always show badge, even if status is empty
             if (item.keuring_gepland) {
               keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
             } else {
@@ -620,6 +659,18 @@ document.addEventListener('DOMContentLoaded', function() {
                       <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
                     ` : ''}
                   </div>
+                  ${item.laatste_keuring_material ? `
+                  <div class="col-md-6">
+                    <strong>Laatste keuring:</strong><br>
+                    <span>${escapeHtml(item.laatste_keuring_material)}</span>
+                  </div>
+                  ` : ''}
+                  ${item.inspection_validity_days ? `
+                  <div class="col-md-6">
+                    <strong>Keuring geldig (dagen):</strong><br>
+                    <span>${escapeHtml(item.inspection_validity_days)} dagen</span>
+                  </div>
+                  ` : ''}
                   <div class="col-md-6">
                     <strong>Toegewezen aan:</strong><br>
                     ${displayValue(item.assigned_to)}
@@ -838,6 +889,7 @@ document.addEventListener('DOMContentLoaded', function() {
           document.getElementById('edit-name').value = item.name || '';
           document.getElementById('edit-type').value = item.type || '';
           document.getElementById('edit-purchase_date').value = item.purchase_date || '';
+          document.getElementById('edit-laatste_keuring').value = item.laatste_keuring_raw || item.laatste_keuring_material || '';
           document.getElementById('edit-assigned_to').value = item.assigned_to || '';
           document.getElementById('edit-site').value = item.site || '';
           document.getElementById('edit-note').value = item.note || '';

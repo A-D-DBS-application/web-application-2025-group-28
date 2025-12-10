@@ -154,10 +154,11 @@ class Material(db.Model):
     note = db.Column("opmerking", db.String, nullable=True)
 
     documentation_path = db.Column("documentatie_pad", db.Text, nullable=True)
-    safety_sheet_path = db.Column("veiligheidsfiche_pad", db.Text, nullable=True)
 
     nummer_op_materieel = db.Column("nummer_op_materieel", db.String, nullable=True)
     inspection_status = db.Column("keuring_status", db.String, nullable=True)
+    laatste_keuring = db.Column("laatste_keuring", db.Date, nullable=True)
+    is_deleted = db.Column("is_verwijderd", db.Boolean, default=False, nullable=False)
 
     # Relationships with optimized lazy loading
     project = db.relationship(
@@ -316,6 +317,7 @@ class Keuringstatus(db.Model):
     serienummer = db.Column("serienummer", db.String, nullable=True)
     uitgevoerd_door = db.Column("uitgevoerd_door", db.String, nullable=True)
     opmerkingen = db.Column("opmerkingen", db.Text, nullable=True)
+    updated_by = db.Column("updated_by", db.BigInteger, nullable=True)
     
     # Relationships
     # Note: Material relationship is via keuring_id FK in Material model
