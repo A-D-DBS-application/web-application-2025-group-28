@@ -113,47 +113,29 @@ body {
   font-weight: 600;
 }
 
+/* Menu items gebruiken nu allemaal .menu-item-icon, dus ::before is niet meer nodig */
 .menu-item::before {
-  content: "";
+  display: none;
+}
+
+.menu-item-icon {
   width: 20px;
   height: 20px;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  margin-right: 0;
 }
 
-.menu-item[href*="dashboard"]::before {
-  content: "\f479"; /* bi-list - hamburger menu icon */
-  font-family: "bootstrap-icons";
+.menu-item-icon i {
   font-size: 16px;
   line-height: 1;
 }
 
-.menu-item[href*="materiaal"]::before {
-  content: "\f5c3"; /* bi-box-seam - same as on material page */
-  font-family: "bootstrap-icons";
-  font-size: 16px;
-  line-height: 1;
-}
-
-.menu-item[href*="werven"]::before {
-  content: "\f3e8"; /* bi-geo-alt - location pin icon */
-  font-family: "bootstrap-icons";
-  font-size: 16px;
-  line-height: 1;
-}
-
-.menu-item[href*="keuringen"]::before {
-  content: "\f26b"; /* bi-check-circle */
-  font-family: "bootstrap-icons";
-  font-size: 16px;
-  line-height: 1;
-}
-
-.menu-item[href*="documenten"]::before {
-  content: "\f55d"; /* bi-file-earmark-text - same as certificate icon on keuringen page */
-  font-family: "bootstrap-icons";
-  font-size: 16px;
-  line-height: 1;
+.menu-item-icon svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* Sidebar bottom / user */
@@ -255,6 +237,14 @@ body {
 .mobile-nav-icon {
   font-size: 18px;
   line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-nav-icon svg {
+  width: 18px;
+  height: 18px;
 }
 
 .mobile-nav-item.active {
@@ -474,7 +464,8 @@ body {
 }
 
 /* Uniform icon sizing - 24px × 24px */
-.kpi-title i {
+.kpi-title i,
+.kpi-title svg {
   width: 24px;
   height: 24px;
   font-size: 24px;
@@ -483,6 +474,10 @@ body {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+}
+
+.kpi-title svg {
+  color: currentColor;
 }
 
 .materiaal-grid .kpi-title {
@@ -859,6 +854,15 @@ body {
 
 .placeholder-icon {
   font-size: 48px;
+  color: #dee2e6;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.placeholder-icon svg {
+  width: 48px;
+  height: 48px;
   color: #dee2e6;
 }
 

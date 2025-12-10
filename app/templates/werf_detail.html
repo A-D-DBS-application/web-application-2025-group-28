@@ -101,8 +101,9 @@
           <div class="panel-sub">Actieve sessies gelinkt aan dit project</div>
         </div>
         {% if active_usages %}
-        <a href="{{ url_for('werven.werf_export_materiaal', project_id=project.id) }}" class="btn btn-sm btn-outline-primary">
-          📥 Export CSV
+        <a href="{{ url_for('werven.werf_export_materiaal', project_id=project.id) }}" class="btn btn-sm btn-outline-primary d-inline-flex align-items-center gap-2">
+          {% include 'partials/export_icon.html' with context %}
+          <span>Export CSV</span>
         </a>
         {% endif %}
       </div>

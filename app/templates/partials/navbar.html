@@ -5,7 +5,7 @@
     <span class="mobile-nav-label">Dashboard</span>
   </a>
   <a href="{{ url_for('materiaal.materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}">
-    <span class="mobile-nav-icon"><i class="bi bi-box"></i></span>
+    <span class="mobile-nav-icon">{% include 'partials/material_icon.html' with context %}</span>
     <span class="mobile-nav-label">Materiaal</span>
   </a>
   <a href="{{ url_for('werven.werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}">
@@ -17,7 +17,7 @@
     <span class="mobile-nav-label">Keuringen</span>
   </a>
   <a href="{{ url_for('documenten.documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}">
-    <span class="mobile-nav-icon"><i class="bi bi-file-earmark"></i></span>
+    <span class="mobile-nav-icon">{% include 'partials/documenten_icon.html' with context %}</span>
     <span class="mobile-nav-label">Docs</span>
   </a>
 </nav>
@@ -40,6 +40,7 @@
         class="menu-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}"
         href="{{ url_for('dashboard.dashboard') }}"
       >
+        <span class="menu-item-icon"><i class="bi bi-list"></i></span>
         Overzicht
       </a>
 
@@ -47,6 +48,7 @@
         class="menu-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}"
         href="{{ url_for('materiaal.materiaal') }}"
       >
+        <span class="menu-item-icon">{% include 'partials/material_icon.html' with context %}</span>
         Materiaal
       </a>
 
@@ -54,6 +56,7 @@
         class="menu-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}"
         href="{{ url_for('werven.werven') }}"
       >
+        <span class="menu-item-icon"><i class="bi bi-geo-alt"></i></span>
         Werven
       </a>
 
@@ -61,6 +64,7 @@
         class="menu-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}"
         href="{{ url_for('keuringen.keuringen') }}"
       >
+        <span class="menu-item-icon"><i class="bi bi-check-circle"></i></span>
         Keuringen
       </a>
 
@@ -68,6 +72,7 @@
         class="menu-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}"
         href="{{ url_for('documenten.documenten') }}"
       >
+        <span class="menu-item-icon">{% include 'partials/documenten_icon.html' with context %}</span>
         Documenten
       </a>
     </nav>

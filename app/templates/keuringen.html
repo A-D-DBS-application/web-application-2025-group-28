@@ -136,8 +136,9 @@
         <button type="submit" class="btn btn-primary keuringen-filter-btn">Filteren</button>
         <a href="{{ url_for('keuringen.keuringen') }}" class="btn btn-outline-secondary keuringen-filter-btn">Reset</a>
         <a href="{{ url_for('keuringen.keuringen_export', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to, priority=priority_filter) }}" 
-           class="btn btn-outline-primary keuringen-filter-btn">
-          📥 Export CSV
+           class="btn btn-outline-primary keuringen-filter-btn d-inline-flex align-items-center gap-2">
+          {% include 'partials/export_icon.html' with context %}
+          <span>Export CSV</span>
         </a>
       </div>
     </div>

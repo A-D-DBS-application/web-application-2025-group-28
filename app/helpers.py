@@ -109,6 +109,7 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
     """
     Upload een bestand (gebruikt Supabase Storage of fallback naar lokaal).
     Bepaalt automatisch de juiste bucket op basis van upload_folder.
+    Retourneert pad met bucket prefix (bijv. "type-images/filename.jpg").
     """
     # Bepaal bucket en folder op basis van upload_folder
     if upload_folder == current_app.config["DOC_UPLOAD_FOLDER"]:
@@ -122,12 +123,19 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
         folder = ""
     elif upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
         bucket = "type-images"
-        folder = ""
+        folder = ""  # Folder is leeg, maar we voegen bucket prefix toe aan het pad
     else:
         bucket = "docs"  # default
         folder = ""
     
-    return save_upload_to_supabase(file_storage, bucket, folder, prefix)
+    result = save_upload_to_supabase(file_storage, bucket, folder, prefix)
+    
+    # Voor type-images: voeg bucket prefix toe aan het pad voor consistentie
+    if upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"] and result:
+        if not result.startswith("type-images/"):
+            return f"type-images/{result}"
+    
+    return result
 
 
 def save_project_image(file_storage, prefix: str) -> str | None:
@@ -163,7 +171,7 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         if file_path.startswith("http://") or file_path.startswith("https://"):
             return file_path
         
-        # Verwijder bucket prefix als die er al in zit (bijv. "projects/filename.jpg" -> "filename.jpg")
+        # Verwijder bucket prefix als die er al in zit (bijv. "type-images/filename.jpg" -> "filename.jpg")
         # Supabase get_public_url verwacht alleen het pad binnen de bucket
         clean_path = file_path
         if file_path.startswith(f"{bucket_name}/"):
@@ -171,7 +179,7 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         
         # Haal publieke URL op van Supabase
         response = _supabase_client.storage.from_(bucket_name).get_public_url(clean_path)
-        print(f"Generated Supabase URL for {bucket_name}/{clean_path}: {response}")
+        print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, path={clean_path}, full_path={file_path}, URL={response}")
         return response
     except Exception as e:
         print(f"Error getting Supabase file URL for {bucket_name}/{file_path}: {e}")
@@ -211,16 +219,22 @@ def get_file_url_from_path(file_path: str) -> str | None:
         bucket = "type-images"
         clean_path = file_path.replace("uploads/type_images/", "type-images/").replace("type_images/", "type-images/")
     else:
-        # Als het pad geen prefix heeft, probeer te detecteren op basis van bestandstype of probeer als project image
+        # Als het pad geen prefix heeft, probeer te detecteren op basis van bestandstype
         # Dit is voor backward compatibility met oude bestanden
         if file_path.startswith("uploads/"):
             return url_for('static', filename=file_path)
-        # Als het alleen een bestandsnaam is zonder prefix, probeer als project image (meest waarschijnlijk)
-        # Dit werkt voor nieuwe uploads die alleen de bestandsnaam hebben
+        # Als het alleen een bestandsnaam is zonder prefix, probeer als type-image eerst
+        # (omdat dit vaak voorkomt bij materiaal types)
         if "/" not in file_path and not file_path.startswith("uploads/"):
-            # Probeer als project image (verwijder "projects/" als die er al in zit)
-            bucket = "projects"
-            clean_path = file_path.replace("projects/", "") if file_path.startswith("projects/") else file_path
+            # Check of het een image extensie heeft (jpg, jpeg, png) - dan is het waarschijnlijk een type-image
+            image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+            if any(file_path.lower().endswith(ext) for ext in image_extensions):
+                bucket = "type-images"
+                clean_path = file_path
+            else:
+                # Anders probeer als project image (verwijder "projects/" als die er al in zit)
+                bucket = "projects"
+                clean_path = file_path.replace("projects/", "") if file_path.startswith("projects/") else file_path
         else:
             return None
     

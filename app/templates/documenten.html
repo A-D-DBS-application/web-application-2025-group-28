@@ -20,8 +20,9 @@
       <div class="panel-title">Documentenoverzicht</div>
       <div class="panel-sub">Zoek en filter documenten</div>
     </div>
-    <button class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-download me-1"></i>Exporteren
+    <button class="btn btn-outline-secondary btn-sm d-inline-flex align-items-center gap-2">
+      {% include 'partials/export_icon.html' with context %}
+      <span>Exporteren</span>
     </button>
   </div>
 

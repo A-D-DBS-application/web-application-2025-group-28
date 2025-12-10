@@ -7,11 +7,17 @@
     <div class="h-sub">Overzicht van alle materiaaltypes</div>
   </div>
 
-  <button class="btn btn-dark"
-          data-bs-toggle="modal"
-          data-bs-target="#nieuwTypeModal">
-    + Type toevoegen
-  </button>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('materiaal.materiaal') }}" 
+       class="btn btn-outline-secondary">
+      ← Terug
+    </a>
+    <button class="btn btn-dark"
+            data-bs-toggle="modal"
+            data-bs-target="#nieuwTypeModal">
+      + Type toevoegen
+    </button>
+  </div>
 </div>
 
 <!-- Zoekbalk met frontend filtering voor kleine datasets -->
@@ -39,10 +45,16 @@
            data-description="{{ (type_item.description or '')|lower }}">
         <div class="card h-100 card-rounded">
           {% if type_item.type_image %}
+            {% set image_url = get_file_url(type_item.type_image) %}
             <div class="card-img-160">
-              <img src="{{ get_file_url(type_item.type_image) or url_for('static', filename=type_item.type_image) }}"
-                   alt="{{ type_item.name }}"
-                   class="card-img-cover">
+              {% if image_url %}
+                <img src="{{ image_url }}"
+                     alt="{{ type_item.name }}"
+                     class="card-img-cover"
+                     onerror="this.parentElement.innerHTML='<span class=\'placeholder-icon\'><i class=\'bi bi-box-seam\'></i></span>'">
+              {% else %}
+                <span class="placeholder-icon"><i class="bi bi-box-seam"></i></span>
+              {% endif %}
             </div>
           {% else %}
             <div class="card-img-160 d-flex align-items-center justify-content-center">
@@ -66,9 +78,19 @@
             </div>
 
             <div class="d-flex justify-content-center mt-2">
+              {% set type_image_url = get_file_url(type_item.type_image) if type_item.type_image else '' %}
+              {% set safety_sheet_url = get_file_url(type_item.safety_sheet) if type_item.safety_sheet else '' %}
               <button type="button"
                       class="btn btn-sm btn-outline-dark"
-                      onclick="showTypeDetails({{ type_item.id }}, '{{ type_item.name|replace("'", "\\'") }}', '{{ (type_item.description or '')|replace("'", "\\'") }}', {{ type_item.inspection_validity_days }}, '{{ (get_file_url(type_item.type_image) or (type_item.type_image and url_for("static", filename=type_item.type_image)) or "")|replace("'", "\\'") }}', '{{ (get_file_url(type_item.safety_sheet) or (type_item.safety_sheet and url_for("static", filename=type_item.safety_sheet)) or "")|replace("'", "\\'") }}', '{{ type_item.type_image or '' }}', '{{ type_item.safety_sheet or '' }}')">
+                      data-type-id="{{ type_item.id }}"
+                      data-type-name="{{ type_item.name|replace("'", "\\'") }}"
+                      data-type-description="{{ (type_item.description or '')|replace("'", "\\'") }}"
+                      data-type-validity="{{ type_item.inspection_validity_days }}"
+                      data-type-image-url="{{ type_image_url|replace("'", "\\'") }}"
+                      data-type-image-path="{{ type_item.type_image or '' }}"
+                      data-type-safety-url="{{ safety_sheet_url|replace("'", "\\'") }}"
+                      data-type-safety-path="{{ type_item.safety_sheet or '' }}"
+                      onclick="showTypeDetails({{ type_item.id }}, '{{ type_item.name|replace("'", "\\'") }}', '{{ (type_item.description or '')|replace("'", "\\'") }}', {{ type_item.inspection_validity_days }}, '{{ type_image_url|replace("'", "\\'") }}', '{{ safety_sheet_url|replace("'", "\\'") }}', '{{ type_item.type_image or '' }}', '{{ type_item.safety_sheet or '' }}')">
                 Details bekijken
               </button>
             </div>
@@ -365,22 +387,20 @@ document.addEventListener('DOMContentLoaded', function () {
       const name = button.getAttribute('data-type-name') || '';
       const description = button.getAttribute('data-type-description') || '';
       const validity = button.getAttribute('data-type-validity') || '180';
-      const imagePath = button.getAttribute('data-type-image') || '';
-      const safetyPath = button.getAttribute('data-type-safety') || '';
+      const imageUrl = button.getAttribute('data-type-image-url') || '';
+      const imagePath = button.getAttribute('data-type-image-path') || '';
+      const safetyUrl = button.getAttribute('data-type-safety-url') || '';
+      const safetyPath = button.getAttribute('data-type-safety-path') || '';
 
       document.getElementById('edit-type-id').value = id;
       document.getElementById('edit-type-name').value = name;
       document.getElementById('edit-type-description').value = description;
       document.getElementById('edit-type-validity').value = validity;
 
-      // Show current image if exists - convert path to URL
+      // Show current image if exists - the imageUrl is already passed from the template
       const currentImageDiv = document.getElementById('edit-current-image');
-      if (imagePath) {
-        // Convert path to URL - if it's a Supabase path, we need to construct the URL
-        // For now, use static as fallback, but ideally we'd use get_file_url helper
-        const imageUrl = imagePath.startsWith('type-images/') || imagePath.startsWith('uploads/type_images/')
-          ? `/static/${imagePath.replace('type-images/', 'uploads/type_images/').replace('uploads/type_images/', 'uploads/type_images/')}`
-          : `/static/${imagePath}`;
+      if (imagePath && imageUrl) {
+        // Use the URL that was already converted by the template helper
         currentImageDiv.innerHTML = `
           <small class="text-muted">Huidige foto:</small><br>
           <img src="${escapeHtml(imageUrl)}" class="image-preview-small" alt="Huidige foto" onerror="this.style.display='none'">
@@ -389,12 +409,10 @@ document.addEventListener('DOMContentLoaded', function () {
         currentImageDiv.innerHTML = '';
       }
 
-      // Show current safety sheet if exists
+      // Show current safety sheet if exists - the safetyUrl is already passed from the template
       const currentSafetyDiv = document.getElementById('edit-current-safety');
-      if (safetyPath) {
-        const safetyUrl = safetyPath.startsWith('safety/') || safetyPath.startsWith('uploads/safety/')
-          ? `/static/${safetyPath.replace('safety/', 'uploads/safety/').replace('uploads/safety/', 'uploads/safety/')}`
-          : `/static/${safetyPath}`;
+      if (safetyPath && safetyUrl) {
+        // Use the URL that was already converted by the template helper
         currentSafetyDiv.innerHTML = `
           <small class="text-muted">Huidige veiligheidsfiche:</small><br>
           <a href="${escapeHtml(safetyUrl)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
