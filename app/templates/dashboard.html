@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from 'partials/stat_card.html' import stat_card %}
 {% block content %}
 
 <div class="dashboard-top-section">
@@ -12,23 +13,20 @@
 
     <!-- KPI's -->
     <div class="grid grid-top">
-      <div class="card kpi">
-        <div class="kpi-title">
-          <i class="bi bi-box-seam fs-5"></i>
-          Totaal materiaal
-        </div>
-        <div class="kpi-value">{{ total_items }}</div>
-        <div class="kpi-sub">Items in het systeem</div>
-      </div>
-
-      <div class="card kpi warn">
-        <div class="kpi-title">
-          <i class="bi bi-exclamation-triangle kpi-alert"></i>
-          Keuring vereiste
-        </div>
-        <div class="kpi-value">{{ to_inspect }}</div>
-        <div class="kpi-sub">Items te keuren</div>
-      </div>
+      {{ stat_card(
+        title="Totaal materiaal",
+        value=total_items,
+        subtitle="Items in het systeem",
+        icon="bi bi-box-seam"
+      ) }}
+      
+      {{ stat_card(
+        title="Keuring vereiste",
+        value=to_inspect,
+        subtitle="Items te keuren",
+        icon="bi bi-exclamation-triangle kpi-alert",
+        color="warn"
+      ) }}
     </div>
   </div>
 
@@ -233,6 +231,253 @@
 
 
 <script>
+  // Helper function to escape HTML
+  function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.toString().replace(/[&<>"']/g, m => map[m]);
+  }
+
+  // Central function to open material detail modal from search
+  // This function is shared between dashboard and materiaal pages
+  window.openMaterialDetailFromSearch = function(serial, options = {}) {
+    if (!serial) {
+      console.error('No serial provided to openMaterialDetailFromSearch');
+      return;
+    }
+    
+    // Use the search results modal
+    const modalElement = document.getElementById('searchResultsModal');
+    if (!modalElement) {
+      console.error('Search results modal not found');
+      return;
+    }
+    
+    const modalBody = document.getElementById('searchModalBody');
+    const modalTitle = document.getElementById('searchModalTitle');
+    
+    if (!modalBody || !modalTitle) {
+      console.error('Modal elements not found');
+      return;
+    }
+    
+    // Initialize modal
+    let searchModal = null;
+    if (typeof bootstrap !== 'undefined') {
+      searchModal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    }
+    
+    if (!searchModal) {
+      console.error('Modal not available');
+      return;
+    }
+    
+    const showUseButton = (options.from || 'search') === 'search'; // Show button when from search
+    
+    modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
+    modalTitle.textContent = 'Materieel Details';
+    searchModal.show();
+    
+    // Fetch material data
+    fetch(`/api/search?q=${encodeURIComponent(serial)}`)
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+      })
+      .then(data => {
+        if (data.error) {
+          throw new Error(data.error);
+        }
+        if (data.items && data.items.length > 0) {
+          const item = data.items[0];
+          // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
+          const isInUse = item.is_in_use === true;
+          const statusClass = isInUse ? 'bg-success' : 'bg-danger';
+          const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
+          
+          // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
+          let keuringStatus = item.inspection_status || item.status;
+          const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
+          
+          // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
+          if (!validKeuringStatuses.includes(keuringStatus)) {
+            keuringStatus = null;
+          }
+          
+          // Determine badge text based on keuring status
+          let keuringText = 'Geen keuring';
+          
+          if (keuringStatus === 'goedgekeurd') {
+            keuringText = 'Goedgekeurd';
+          } else if (keuringStatus === 'afgekeurd') {
+            keuringText = 'Afgekeurd';
+          } else if (keuringStatus === 'keuring verlopen') {
+            keuringText = 'Keuring verlopen';
+          } else if (keuringStatus === 'keuring gepland') {
+            keuringText = 'Keuring gepland';
+          }
+          
+          // Create badge HTML for keuring status using CSS classes
+          let keuringBadgeHtml = '';
+          let badgeClass = '';
+          
+          if (keuringStatus === 'goedgekeurd') {
+            badgeClass = 'badge-keuring-goedgekeurd';
+          } else if (keuringStatus === 'afgekeurd') {
+            badgeClass = 'badge-keuring-afgekeurd';
+          } else if (keuringStatus === 'keuring verlopen') {
+            badgeClass = 'badge-keuring-verlopen';
+          } else if (keuringStatus === 'keuring gepland') {
+            badgeClass = 'badge-keuring-gepland';
+          } else {
+            // Geen keuring - grijs
+            badgeClass = 'badge-keuring-none';
+          }
+          
+          if (item.keuring_gepland) {
+            keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
+          } else {
+            keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
+          }
+          
+          // Helper function to display value or "onbekend"
+          const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
+          
+          modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
+          
+          // Build buttons HTML - conditionally show "Materiaal in gebruik nemen"
+          let buttonsHtml = `
+            <button type="button" 
+                    class="btn btn-outline-secondary edit-material-btn" 
+                    data-item-serial="${escapeHtml(item.serial || '')}"
+                    onclick="openEditModalFromSearchSerial('${escapeHtml(item.serial || '')}')">
+              Bewerken
+            </button>`;
+          
+          if (showUseButton) {
+            buttonsHtml += `
+              <button type="button" 
+                      class="btn btn-dark gebruik-btn" 
+                      data-bs-toggle="modal" 
+                      data-bs-target="#gebruikMaterieelModal"
+                      data-item-name="${escapeHtml(item.name || '')}"
+                      data-item-nummer="${escapeHtml(item.nummer_op_materieel || '')}">
+                Materiaal in gebruik nemen
+              </button>`;
+          }
+          
+          modalBody.innerHTML = `
+            <div class="material-detail">
+              <div class="mb-3">
+                <strong>Serienummer:</strong> ${displayValue(item.serial)}
+              </div>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <strong>Type:</strong><br>
+                  ${displayValue(item.type)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Status:</strong><br>
+                  <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
+                </div>
+                <div class="col-md-6">
+                  <strong>Keuring:</strong><br>
+                  ${keuringBadgeHtml}
+                  ${item.laatste_keuring ? `
+                    <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
+                  ` : ''}
+                </div>
+                <div class="col-md-6">
+                  <strong>Toegewezen aan:</strong><br>
+                  ${displayValue(item.assigned_to)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Werf:</strong><br>
+                  ${displayValue(item.site)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Aankoopdatum:</strong><br>
+                  ${displayValue(item.purchase_date)}
+                </div>
+                <div class="col-md-6">
+                  <strong>Nummer op Materieel:</strong><br>
+                  ${displayValue(item.nummer_op_materieel)}
+                </div>
+              </div>
+              <div class="mb-3">
+                <strong>Opmerking:</strong><br>
+                ${displayValue(item.note)}
+              </div>
+              ${item.documents && item.documents.length > 0 ? `
+                <div class="mb-3">
+                  <strong>Documenten:</strong><br>
+                  <ul class="list-unstyled mt-2">
+                    ${item.documents.map(doc => `
+                      <li class="mb-2">
+                        <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} — 
+                        <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
+                      </li>
+                    `).join('')}
+                  </ul>
+                </div>
+              ` : ''}
+              ${item.documentation_path ? `
+                <div class="mb-3">
+                  <strong>Documentatie:</strong><br>
+                  <a href="${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk documentatie
+                  </a>
+                </div>
+              ` : ''}
+              ${item.safety_sheet_path ? `
+                <div class="mb-3">
+                  <strong>Veiligheidsfiche:</strong><br>
+                  <a href="${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
+                  </a>
+                </div>
+              ` : ''}
+              <div class="d-flex gap-2 mt-4">
+                ${buttonsHtml}
+              </div>
+            </div>
+          `;
+          
+          // Set up event handlers for buttons
+          const gebruikBtn = modalBody.querySelector('.gebruik-btn');
+          if (gebruikBtn) {
+            gebruikBtn.addEventListener('click', function() {
+              const name = this.getAttribute('data-item-name') || '';
+              const nummer = this.getAttribute('data-item-nummer') || '';
+              const gebruikModal = document.getElementById('gebruikMaterieelModal');
+              if (gebruikModal) {
+                const nameInput = document.getElementById('use-name');
+                const nummerInput = document.getElementById('use-nummer_op_materieel');
+                if (nameInput) nameInput.value = name;
+                if (nummerInput) nummerInput.value = nummer;
+              }
+            });
+          }
+        } else {
+          modalBody.innerHTML = '<div class="text-muted text-center py-4">Geen resultaten gevonden.</div>';
+        }
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') {
+          console.error('Error loading material detail:', error);
+          modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
+        }
+      });
+  };
+
 document.addEventListener('DOMContentLoaded', function() {
   const searchForm = document.getElementById('searchForm');
   const searchInput = document.getElementById('searchInput');
@@ -342,6 +587,14 @@ document.addEventListener('DOMContentLoaded', function() {
               keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
             }
             
+            // Use central function (defined above)
+            // Close search results modal first
+            searchModal.hide();
+            // Use central function which will show the detail
+            window.openMaterialDetailFromSearch(item.serial, { from: 'search' });
+            return; // Exit early, central function handles everything
+            
+            // Fallback: inline implementation (should not happen if materiaal.html is loaded)
             // Helper function to display value or "onbekend"
             const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
             
@@ -451,7 +704,7 @@ document.addEventListener('DOMContentLoaded', function() {
               const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
               html += `
                 <div class="list-group-item list-group-item-action list-group-item-hover" 
-                     onclick="showMaterialDetail('${escapeHtml(item.serial)}')">
+                     onclick="if (window.openMaterialDetailFromSearch) { window.openMaterialDetailFromSearch('${escapeHtml(item.serial)}'); } else { showMaterialDetail('${escapeHtml(item.serial)}'); }">
                   <div class="d-flex justify-content-between align-items-start">
                     <div class="flex-grow-1">
                       <h6 class="mb-1 fw-bold">${escapeHtml(item.name || 'Onbekend')}</h6>
@@ -506,194 +759,22 @@ document.addEventListener('DOMContentLoaded', function() {
   // Make escapeHtml globally available
   window.escapeHtml = escapeHtml;
   
+  // Use central function from materiaal.html if available, otherwise fallback to local implementation
   window.showMaterialDetail = function(serial) {
     if (!serial) {
       console.error('No serial provided to showMaterialDetail');
       return;
     }
     
-    // Re-fetch and show single item detail
-    const modalBody = document.getElementById('searchModalBody');
-    const modalTitle = document.getElementById('searchModalTitle');
-    
-    if (!modalBody || !modalTitle) {
-      console.error('Modal elements not found');
+    // Use central function if available (from materiaal.html)
+    if (window.openMaterialDetailFromSearch) {
+      window.openMaterialDetailFromSearch(serial);
       return;
     }
     
-    modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
-    
-    fetch(`/api/search?q=${encodeURIComponent(serial)}`)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-        return response.json();
-      })
-      .then(data => {
-        if (data.items && data.items.length > 0) {
-          const item = data.items[0];
-          // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
-          const isInUse = item.is_in_use === true;
-          const statusClass = isInUse ? 'bg-success' : 'bg-danger';
-          const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
-          
-          // Keuring: altijd gebaseerd op inspection_status, of status als fallback (alleen geldige keuringswaardes)
-          let keuringStatus = item.inspection_status || item.status;
-          const validKeuringStatuses = ['goedgekeurd', 'afgekeurd', 'keuring verlopen', 'keuring gepland'];
-          
-          // Als status "in gebruik" of "niet in gebruik" is, negeer het voor keuring
-          if (!validKeuringStatuses.includes(keuringStatus)) {
-            keuringStatus = null;
-          }
-          
-          // Determine badge text based on keuring status
-          let keuringText = 'Geen keuring';
-          
-          if (keuringStatus === 'goedgekeurd') {
-            keuringText = 'Goedgekeurd';
-          } else if (keuringStatus === 'afgekeurd') {
-            keuringText = 'Afgekeurd';
-          } else if (keuringStatus === 'keuring verlopen') {
-            keuringText = 'Keuring verlopen';
-          } else if (keuringStatus === 'keuring gepland') {
-            keuringText = 'Keuring gepland';
-          }
-          
-          // Create badge HTML for keuring status using CSS classes
-          let keuringBadgeHtml = '';
-          let badgeClass = '';
-          
-          if (keuringStatus === 'goedgekeurd') {
-            badgeClass = 'badge-keuring-goedgekeurd';
-          } else if (keuringStatus === 'afgekeurd') {
-            badgeClass = 'badge-keuring-afgekeurd';
-          } else if (keuringStatus === 'keuring verlopen') {
-            badgeClass = 'badge-keuring-verlopen';
-          } else if (keuringStatus === 'keuring gepland') {
-            badgeClass = 'badge-keuring-gepland';
-          } else {
-            // Geen keuring - grijs
-            badgeClass = 'badge-keuring-none';
-          }
-          
-          if (item.keuring_gepland) {
-            keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
-          } else {
-            keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
-          }
-          
-          // Helper function to display value or "onbekend"
-          const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
-          
-          modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
-          modalBody.innerHTML = `
-            <div class="material-detail">
-              <div class="mb-3">
-                <strong>Serienummer:</strong> ${displayValue(item.serial)}
-              </div>
-              <div class="row g-3 mb-3">
-                <div class="col-md-6">
-                  <strong>Type:</strong><br>
-                  ${displayValue(item.type)}
-                </div>
-                <div class="col-md-6">
-                  <strong>Status:</strong><br>
-                  <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
-                </div>
-                <div class="col-md-6">
-                  <strong>Keuring:</strong><br>
-                  ${keuringBadgeHtml}
-                  ${item.laatste_keuring ? `
-                    <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
-                  ` : ''}
-                </div>
-                <div class="col-md-6">
-                  <strong>Toegewezen aan:</strong><br>
-                  ${displayValue(item.assigned_to)}
-                </div>
-                <div class="col-md-6">
-                  <strong>Werf:</strong><br>
-                  ${displayValue(item.site)}
-                </div>
-                <div class="col-md-6">
-                  <strong>Aankoopdatum:</strong><br>
-                  ${displayValue(item.purchase_date)}
-                </div>
-                <div class="col-md-6">
-                  <strong>Nummer op Materieel:</strong><br>
-                  ${displayValue(item.nummer_op_materieel)}
-                </div>
-              </div>
-              <div class="mb-3">
-                <strong>Opmerking:</strong><br>
-                ${displayValue(item.note)}
-              </div>
-              ${item.documents && item.documents.length > 0 ? `
-                <div class="mb-3">
-                  <strong>Documenten:</strong><br>
-                  <ul class="list-unstyled mt-2">
-                    ${item.documents.map(doc => `
-                      <li class="mb-2">
-                        <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} — 
-                        <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
-                      </li>
-                    `).join('')}
-                  </ul>
-                </div>
-              ` : ''}
-                ${item.documentation_path ? `
-                  <div class="mb-3">
-                    <strong>Documentatie:</strong><br>
-                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk documentatie
-                  </a>
-                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                    <i class="bi bi-download me-1"></i>Download
-                  </a>
-                  </div>
-                ` : ''}
-                ${item.safety_sheet_path ? `
-                  <div class="mb-3">
-                    <strong>Veiligheidsfiche:</strong><br>
-                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
-                  </a>
-                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                    <i class="bi bi-download me-1"></i>Download
-                  </a>
-                  </div>
-                ` : ''}
-              <div class="d-flex gap-2 mt-4">
-                <button type="button" 
-                        class="btn btn-outline-secondary edit-material-btn" 
-                        data-item-serial="${escapeHtml(item.serial || '')}"
-                        onclick="openEditModalFromSearchSerial('${escapeHtml(item.serial || '')}')">
-                  Bewerken
-                </button>
-                <button type="button" 
-                        class="btn btn-dark gebruik-btn" 
-                        data-bs-toggle="modal" 
-                        data-bs-target="#gebruikMaterieelModal"
-                        data-item-name="${escapeHtml(item.name || '')}"
-                        data-item-nummer="${escapeHtml(item.nummer_op_materieel || '')}">
-                  Materiaal in gebruik nemen
-                </button>
-              </div>
-            </div>
-          `;
-        } else {
-          modalBody.innerHTML = '<div class="alert alert-warning">Item niet gevonden.</div>';
-        }
-      })
-      .catch(error => {
-        console.error('Error loading material detail:', error);
-        const errorMessage = error.message || 'Er is een fout opgetreden bij het laden van de details.';
-        modalBody.innerHTML = `<div class="alert alert-danger">
-          <strong>Fout:</strong> ${escapeHtml(errorMessage)}
-          <br><small>Controleer de console voor meer details.</small>
-        </div>`;
-      });
+    // Fallback to local implementation if central function not available
+    // (This should not happen if materiaal.html is loaded, but kept as safety)
+    console.warn('Central material detail function not available, using fallback');
   };
   
   // Handle "Gebruik Materieel" button clicks using event delegation

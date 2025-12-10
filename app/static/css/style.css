@@ -150,7 +150,7 @@ body {
 }
 
 .menu-item[href*="documenten"]::before {
-  content: "\f55d"; /* bi-file-earmark-text - document icon */
+  content: "\f55d"; /* bi-file-earmark-text - same as certificate icon on keuringen page */
   font-family: "bootstrap-icons";
   font-size: 16px;
   line-height: 1;
@@ -330,11 +330,13 @@ body {
   color: var(--text);
   letter-spacing: -0.5px;
   line-height: 1.2;
+  margin-bottom: 8px; /* mb-2 equivalent */
 }
 
 .h-sub {
   color: var(--muted);
-  margin-top: 8px;
+  margin-top: 0;
+  margin-bottom: 24px; /* mb-6 equivalent */
   font-size: 15px;
 }
 
@@ -372,9 +374,11 @@ body {
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 20px;
+  border-radius: 12px; /* rounded-xl equivalent */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+  padding: 24px; /* p-6 */
+  position: relative; /* Standaard relative voor absolute children */
+  overflow: hidden; /* Voorkomt dat absolute children buiten de kaart komen */
 }
 
 /* KPI cards (top row) */
@@ -382,7 +386,7 @@ body {
 .grid-top {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  gap: 24px; /* gap-6 equivalent - werkt voor zowel horizontaal als verticaal */
   margin-bottom: 0;
   align-items: stretch;
 }
@@ -395,70 +399,17 @@ body {
   align-items: stretch;
 }
 
-/* Materiaal grid: always 2 columns side by side on desktop */
+/* Materiaal grid: always 2 columns side by side on desktop (legacy - now using grid-top) */
 .materiaal-grid {
   grid-template-columns: repeat(2, 1fr) !important;
   align-items: stretch;
 }
 
-/* ================== MATERIAAL STATS CARDS - MODERN STYLING ================== */
-.materiaal-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 24px;
-  margin-top: 24px;
-  margin-bottom: 32px;
-}
-
-.materiaal-stat-card {
-  background: #ffffff;
-  border: 1px solid #E5E7EB;
-  border-radius: 12px;
-  padding: 24px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 160px;
-}
-
-.materiaal-stat-icon {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  font-size: 24px;
-  opacity: 0.3;
-  line-height: 1;
-}
-
-.materiaal-stat-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-  margin-bottom: 8px;
-  line-height: 1.4;
-}
-
-.materiaal-stat-value {
-  font-size: 40px;
-  font-weight: 700;
-  color: #111827;
-  line-height: 1;
-  margin: 8px 0 12px 0;
-  letter-spacing: -1px;
-}
-
-.materiaal-stat-subtitle {
-  font-size: 14px;
-  font-weight: 400;
-  color: #111827;
-  line-height: 1.4;
-  margin-top: auto;
-}
-
+/* ================== MATERIAAL ADD BUTTON ================== */
 .materiaal-add-button {
   position: absolute;
-  bottom: 20px;
-  right: 20px;
+  bottom: 16px; /* bottom-4 equivalent */
+  right: 16px; /* right-4 equivalent */
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -474,6 +425,8 @@ body {
   line-height: 1;
   transition: background-color 0.2s ease;
   padding: 0;
+  z-index: 1; /* Lagere z-index, binnen de kaart */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtiele shadow */
 }
 
 .materiaal-add-button:hover {
@@ -486,29 +439,16 @@ body {
   box-shadow: 0 0 0 3px rgba(17, 24, 39, 0.2);
 }
 
-@media (max-width: 768px) {
-  .materiaal-stats-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-  
-  .materiaal-stat-card {
-    min-height: 140px;
-  }
-  
-  .materiaal-stat-value {
-    font-size: 36px;
-  }
-}
-
 /* Standaard KPI-styling (dashboard etc.) */
 .kpi {
+  position: relative; /* Essentieel voor absolute positioning van child elements */
   padding: 16px 20px;
   height: 100%;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   min-height: 140px; /* hoge tegels op andere pagina's */
+  overflow: hidden; /* Voorkomt dat absolute children buiten de kaart komen */
 }
 
 /* KPI-kaarten op de overzichts/dashboardpagina wat compacter en met icoon rechtsboven */
@@ -523,14 +463,26 @@ body {
 .kpi-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px; /* gap-2 equivalent */
   color: var(--muted);
   font-weight: 600;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  margin-bottom: 4px;
+  margin-bottom: 8px; /* mb-2 equivalent */
   line-height: 1.2;
+}
+
+/* Uniform icon sizing - 24px × 24px */
+.kpi-title i {
+  width: 24px;
+  height: 24px;
+  font-size: 24px;
+  line-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .materiaal-grid .kpi-title {
@@ -561,7 +513,7 @@ body {
   font-weight: 800;
   color: var(--text);
   line-height: 1;
-  margin: 6px 0;
+  margin: 4px 0; /* mb-1 equivalent */
   letter-spacing: -1px;
 }
 
@@ -574,7 +526,7 @@ body {
 .kpi-sub {
   color: var(--muted);
   font-size: 12px;
-  margin-top: 4px;
+  margin-top: 0;
   line-height: 1.3;
 }
 
@@ -593,14 +545,27 @@ body {
   color: #dc2626;
 }
 
+/* KPI link styling (when stat card is a link) */
+.kpi-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.kpi-link:hover {
+  text-decoration: none;
+  color: inherit;
+}
+
 /* ================== SEARCH BAR ================== */
 
 .search {
   padding: 0;
-  margin-bottom: 24px;
+  margin-top: 24px; /* mt-6 equivalent */
+  margin-bottom: 24px; /* mb-6 equivalent */
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 12px; /* rounded-xl */
   background: #fff;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
 }
 
 .search-wrap {
@@ -638,29 +603,30 @@ body {
 .grid-bottom {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  gap: 24px; /* gap-6 equivalent */
+  margin-top: 24px; /* mt-6 equivalent */
 }
 
 .panel {
   min-height: 280px;
-  padding: 24px;
+  padding: 24px; /* p-6 */
 }
 
 .panel-title {
   font-weight: 700;
   font-size: 18px;
   color: var(--text);
-  margin-bottom: 6px;
+  margin-bottom: 8px; /* mb-2 equivalent */
 }
 
 .panel-sub {
   color: var(--muted);
   font-size: 13px;
-  margin-bottom: 20px;
+  margin-bottom: 24px; /* mb-6 equivalent */
 }
 
 .panel .list-group {
-  margin-top: 16px;
+  margin-top: 24px; /* mt-6 */
 }
 
 .panel .list-group-item {
@@ -795,6 +761,80 @@ body {
   }
 }
 
+/* ================== MATERIAL TABLE ROW STYLING ================== */
+.material-row-clickable {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.material-row-clickable:hover {
+  background-color: #f8f9fa !important;
+}
+
+.material-row-clickable td {
+  user-select: none;
+}
+
+/* ================== SPACING UTILITIES ================== */
+.mt-8 {
+  margin-top: 32px;
+}
+
+.mb-8 {
+  margin-bottom: 32px;
+}
+
+/* ================== ORANGE WARNING CARD ================== */
+.panel-warning-orange {
+  margin-top: 32px;
+  border: 2px solid #F97316;
+  background-color: #ffffff;
+}
+
+.panel-warning-orange .panel-title i {
+  color: #F97316;
+  margin-right: 8px;
+  width: 24px;
+  height: 24px;
+  font-size: 24px;
+  line-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ================== KEUERINGEN TABLE STYLING ================== */
+.keuringen-table-empty-cell {
+  color: #9CA3AF;
+}
+
+.keuringen-table-date-late {
+  color: #DC2626;
+  font-size: 12px;
+}
+
+.keuringen-table-date-today {
+  color: #F59E0B;
+  font-size: 12px;
+}
+
+.keuringen-table-date-upcoming {
+  color: #6B7280;
+  font-size: 12px;
+}
+
+.keuringen-table-empty-message {
+  text-align: center;
+  color: #6B7280;
+  padding: 48px 20px;
+}
+
+.keuringen-table-empty-message a {
+  color: var(--text);
+  text-decoration: underline;
+  margin-left: 8px;
+}
+
 /* ================== UTILITIES & BOOTSTRAP OVERRIDES ================== */
 
 .text-muted {
@@ -895,7 +935,7 @@ body {
 
 /* Header Section */
 .keuringen-header {
-  margin-bottom: 40px;
+  margin-bottom: 24px; /* mb-6 */
 }
 
 .keuringen-header-content {
@@ -909,7 +949,7 @@ body {
   font-size: 36px;
   font-weight: 700;
   color: var(--text);
-  margin: 0;
+  margin: 0 0 8px 0; /* mb-2 */
   letter-spacing: -0.5px;
   line-height: 1.2;
 }
@@ -917,118 +957,38 @@ body {
 .keuringen-subtitle {
   color: #6B7280;
   font-size: 16px;
-  margin-top: 8px;
-  margin-bottom: 0;
+  margin-top: 0;
+  margin-bottom: 24px; /* mb-6 */
   font-weight: 400;
 }
 
-/* Statistics Cards Grid */
-.keuringen-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 24px;
-  margin-bottom: 56px;
-}
-
-.keuringen-stat-card {
-  background: #ffffff;
-  border: 1px solid #E5E7EB;
-  border-radius: 12px;
-  padding: 24px;
-  text-decoration: none;
-  color: inherit;
-  transition: all 0.2s ease;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-height: 160px;
-}
-
-.keuringen-stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  border-color: #D1D5DB;
-}
-
-.keuringen-stat-icon {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  font-size: 24px;
-  opacity: 0.3;
-}
-
-.keuringen-stat-icon-danger {
-  color: #DC2626;
-}
-
-.keuringen-stat-icon-warning {
-  color: #F59E0B;
-}
-
-.keuringen-stat-icon-orange {
-  color: #FD7E14;
-}
-
-.keuringen-stat-value {
-  font-size: 40px;
-  font-weight: 700;
-  line-height: 1;
-  margin-top: 8px;
-  margin-bottom: 12px;
-  letter-spacing: -1px;
-}
-
-.keuringen-stat-value-danger {
-  color: #DC2626;
-}
-
-.keuringen-stat-value-warning {
-  color: #F59E0B;
-}
-
-.keuringen-stat-value-orange {
-  color: #FD7E14;
-}
-
-.keuringen-stat-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-  margin-bottom: 4px;
-}
-
-.keuringen-stat-desc {
-  font-size: 13px;
-  color: #6B7280;
-  line-height: 1.4;
-  margin-top: auto;
-}
+/* Keuringen stat cards now use unified .kpi styling - no separate styles needed */
 
 /* Overview Section */
 .keuringen-overview-section {
   background: #ffffff;
   border: 1px solid #E5E7EB;
-  border-radius: 12px;
-  padding: 32px;
-  margin-bottom: 40px;
+  border-radius: 12px; /* rounded-xl */
+  padding: 24px; /* p-6 */
+  margin-bottom: 24px; /* mb-6 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
 }
 
 .keuringen-overview-header {
-  margin-bottom: 24px;
+  margin-bottom: 24px; /* mb-6 */
 }
 
 .keuringen-overview-title {
   font-size: 24px;
   font-weight: 600;
   color: var(--text);
-  margin: 0 0 6px 0;
+  margin: 0 0 8px 0; /* mb-2 */
 }
 
 .keuringen-overview-subtitle {
   font-size: 14px;
   color: #6B7280;
-  margin: 0;
+  margin: 0 0 24px 0; /* mb-6 */
 }
 
 /* Filter Form */
@@ -1120,9 +1080,11 @@ body {
 .keuringen-table-container {
   background: #ffffff;
   border: 1px solid #E5E7EB;
-  border-radius: 12px;
+  border-radius: 12px; /* rounded-xl */
   overflow: hidden;
-  margin-bottom: 40px;
+  margin-top: 24px; /* mt-6 */
+  margin-bottom: 24px; /* mb-6 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
 }
 
 .keuringen-table {
@@ -1341,11 +1303,6 @@ body {
 
 /* Responsive Design */
 @media (max-width: 1024px) {
-  .keuringen-stats-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 16px;
-  }
-
   .keuringen-filter-grid {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   }
@@ -1363,11 +1320,6 @@ body {
 
   .keuringen-main-title {
     font-size: 28px;
-  }
-
-  .keuringen-stats-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
   }
 
   .keuringen-overview-section {

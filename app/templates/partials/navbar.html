@@ -5,7 +5,7 @@
     <span class="mobile-nav-label">Dashboard</span>
   </a>
   <a href="{{ url_for('materiaal.materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}">
-    <span class="mobile-nav-icon"><i class="bi bi-box-seam"></i></span>
+    <span class="mobile-nav-icon"><i class="bi bi-box"></i></span>
     <span class="mobile-nav-label">Materiaal</span>
   </a>
   <a href="{{ url_for('werven.werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}">
@@ -17,7 +17,7 @@
     <span class="mobile-nav-label">Keuringen</span>
   </a>
   <a href="{{ url_for('documenten.documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}">
-    <span class="mobile-nav-icon"><i class="bi bi-file-earmark-text"></i></span>
+    <span class="mobile-nav-icon"><i class="bi bi-file-earmark"></i></span>
     <span class="mobile-nav-label">Docs</span>
   </a>
 </nav>

@@ -1,0 +1,25 @@
+{# Herbruikbaar stat card component - uniforme styling volgens dashboard referentie #}
+{% macro stat_card(title, value, subtitle, icon=None, color=None, url=None, extra_button=None, position_relative=False) %}
+  {% if url %}
+    <a href="{{ url }}" class="card kpi kpi-link{% if color == 'warn' or color == 'danger' %} warn{% endif %}">
+  {% else %}
+    <div class="card kpi{% if color == 'warn' or color == 'danger' %} warn{% endif %}">
+  {% endif %}
+    <div class="kpi-title">
+      {% if icon %}
+        <i class="{{ icon }}"></i>
+      {% endif %}
+      {{ title }}
+    </div>
+    <div class="kpi-value">{{ value }}</div>
+    <div class="kpi-sub">{{ subtitle }}</div>
+    {% if extra_button %}
+      {{ extra_button|safe }}
+    {% endif %}
+  {% if url %}
+    </a>
+  {% else %}
+    </div>
+  {% endif %}
+{% endmacro %}
+

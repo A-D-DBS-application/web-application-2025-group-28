@@ -1,11 +1,12 @@
 {% extends "base.html" %}
+{% from 'partials/stat_card.html' import stat_card %}
 {% block content %}
 
-<div class="keuringen-header">
+<div class="keuringen-header mb-6">
   <div class="keuringen-header-content">
     <div>
-      <h1 class="keuringen-main-title">Keuringen & Inspecties</h1>
-      <p class="keuringen-subtitle">Wat moet ik nu keuren?</p>
+      <h1 class="keuringen-main-title mb-2">Keuringen & Inspecties</h1>
+      <p class="keuringen-subtitle mb-6">Wat moet ik nu keuren?</p>
     </div>
     <button class="btn btn-dark btn-with-icon" 
             data-bs-toggle="modal"
@@ -17,34 +18,39 @@
 </div>
 
 <!-- A. PRIORITEIT CARDS -->
-<div class="keuringen-stats-grid">
-  <a href="{{ url_for('keuringen.keuringen', priority='te_laat', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
-     class="keuringen-stat-card">
-    <div class="keuringen-stat-icon keuringen-stat-icon-danger"><i class="bi bi-exclamation-triangle"></i></div>
-    <div class="keuringen-stat-value keuringen-stat-value-danger">{{ te_laat_count or 0 }}</div>
-    <div class="keuringen-stat-label">Te laat</div>
-    <div class="keuringen-stat-desc">Keuringen die verlopen zijn</div>
-  </a>
-  <a href="{{ url_for('keuringen.keuringen', priority='vandaag', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
-     class="keuringen-stat-card">
-    <div class="keuringen-stat-icon keuringen-stat-icon-warning"><i class="bi bi-calendar-event"></i></div>
-    <div class="keuringen-stat-value keuringen-stat-value-warning">{{ vandaag_count or 0 }}</div>
-    <div class="keuringen-stat-label">Te keuren vandaag</div>
-    <div class="keuringen-stat-desc">Moeten vandaag gekeurd worden</div>
-  </a>
-  <a href="{{ url_for('keuringen.keuringen', priority='binnen_30', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to) }}" 
-     class="keuringen-stat-card">
-    <div class="keuringen-stat-icon keuringen-stat-icon-orange"><i class="bi bi-clock"></i></div>
-    <div class="keuringen-stat-value keuringen-stat-value-orange">{{ binnen_30_dagen_count or 0 }}</div>
-    <div class="keuringen-stat-label">Binnen 30 dagen</div>
-    <div class="keuringen-stat-desc">Keuringen binnenkort</div>
-  </a>
+<div class="grid grid-top mb-8">
+  {{ stat_card(
+    title="Te laat",
+    value=te_laat_count or 0,
+    subtitle="Keuringen die verlopen zijn",
+    icon="bi bi-exclamation-triangle",
+    color="warn",
+    url=url_for('keuringen.keuringen', priority='te_laat', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to)
+  ) }}
+  
+  {{ stat_card(
+    title="Te keuren vandaag",
+    value=vandaag_count or 0,
+    subtitle="Moeten vandaag gekeurd worden",
+    icon="bi bi-calendar-event",
+    color="warn",
+    url=url_for('keuringen.keuringen', priority='vandaag', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to)
+  ) }}
+  
+  {{ stat_card(
+    title="Binnen 30 dagen",
+    value=binnen_30_dagen_count or 0,
+    subtitle="Keuringen binnenkort",
+    icon="bi bi-clock",
+    color="warn",
+    url=url_for('keuringen.keuringen', priority='binnen_30', q=search_q, status=status_filter, werf=werf_filter, type=type_filter, performer=performer_filter, date_from=date_from, date_to=date_to)
+  ) }}
 </div>
 
 <!-- B. FILTER BAR -->
 <div class="keuringen-overview-section">
   <div class="keuringen-overview-header">
-    <h2 class="keuringen-overview-title">Keringsoverzicht</h2>
+    <h2 class="keuringen-overview-title">Keuringsoverzicht</h2>
     <p class="keuringen-overview-subtitle">{{ total_items }} keuring(en) gevonden</p>
   </div>
 
@@ -207,17 +213,17 @@
                   {% if matching_project %}
                     {{ matching_project.name }}
                   {% else %}
-                    <span style="color: #9CA3AF;">-</span>
+                    <span class="keuringen-table-empty-cell">-</span>
                   {% endif %}
                 {% else %}
-                  <span style="color: #9CA3AF;">-</span>
+                  <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
               </td>
               <td>
                 {% if keuring.laatste_controle %}
                   {{ keuring.laatste_controle.strftime('%Y-%m-%d') }}
                 {% else %}
-                  <span style="color: #9CA3AF;">Nog niet uitgevoerd</span>
+                  <span class="keuringen-table-empty-cell">Nog niet uitgevoerd</span>
                 {% endif %}
               </td>
               <td>
@@ -225,15 +231,15 @@
                   <div>{{ keuring.volgende_controle.strftime('%Y-%m-%d') }}</div>
                   {% if item.dagen_verschil is not none %}
                     {% if item.dagen_verschil < 0 %}
-                      <small style="color: #DC2626; font-size: 12px;">({{ -item.dagen_verschil }} dag{% if -item.dagen_verschil != 1 %}en{% endif %} te laat)</small>
+                      <small class="keuringen-table-date-late">({{ -item.dagen_verschil }} dag{% if -item.dagen_verschil != 1 %}en{% endif %} te laat)</small>
                     {% elif item.dagen_verschil == 0 %}
-                      <small style="color: #F59E0B; font-size: 12px;">(Vandaag!)</small>
+                      <small class="keuringen-table-date-today">(Vandaag!)</small>
                     {% else %}
-                      <small style="color: #6B7280; font-size: 12px;">(over {{ item.dagen_verschil }} dag{% if item.dagen_verschil != 1 %}en{% endif %})</small>
+                      <small class="keuringen-table-date-upcoming">(over {{ item.dagen_verschil }} dag{% if item.dagen_verschil != 1 %}en{% endif %})</small>
                     {% endif %}
                   {% endif %}
                 {% else %}
-                  <span style="color: #9CA3AF;">-</span>
+                  <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
               </td>
               <td>
@@ -255,7 +261,7 @@
                 {% if item.has_certificate %}
                   <span class="keuringen-cert-badge" title="Certificaat beschikbaar"><i class="bi bi-file-earmark-text"></i></span>
                 {% else %}
-                  <span style="color: #9CA3AF;">-</span>
+                  <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
               </td>
               <td class="text-end">
@@ -300,10 +306,10 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="7" style="text-align: center; color: #6B7280; padding: 48px 20px;">
+            <td colspan="7" class="keuringen-table-empty-message">
               Geen keuringen gevonden. 
               {% if search_q or status_filter or werf_filter or type_filter or performer_filter or date_from or date_to %}
-                <a href="{{ url_for('keuringen.keuringen') }}" style="color: var(--text); text-decoration: underline; margin-left: 8px;">Wis filters</a>
+                <a href="{{ url_for('keuringen.keuringen') }}">Wis filters</a>
               {% endif %}
             </td>
           </tr>
@@ -599,6 +605,81 @@
     </div>
   </div>
 </div>
+
+<style>
+/* Local CSS overrides for Keuringen page only */
+
+/* 1. Summary indicator colors */
+/* "Te keuren vandaag" - dark blue (#001F54) */
+.grid.grid-top .kpi:nth-child(2) .kpi-title,
+.grid.grid-top .kpi:nth-child(2) .kpi-title i,
+.grid.grid-top .kpi:nth-child(2) .kpi-value {
+  color: #001F54 !important;
+}
+
+/* "Binnen 30 dagen" - orange (#F4A100) */
+.grid.grid-top .kpi:nth-child(3) .kpi-title,
+.grid.grid-top .kpi:nth-child(3) .kpi-title i,
+.grid.grid-top .kpi:nth-child(3) .kpi-value {
+  color: #F4A100 !important;
+}
+
+/* 2. Reduce height of filter inputs and buttons */
+.keuringen-filter-select {
+  padding: 8px 12px !important;
+  font-size: 14px !important;
+  height: auto !important;
+}
+
+/* Move search icon to the right and adjust input padding */
+.keuringen-search-icon {
+  left: auto !important;
+  right: 16px !important;
+}
+
+.keuringen-search-input {
+  padding: 8px 40px 8px 12px !important;
+  font-size: 14px !important;
+  height: auto !important;
+}
+
+.keuringen-filter-btn {
+  padding: 8px 16px !important;
+  font-size: 14px !important;
+  height: auto !important;
+}
+
+/* 3. Update badge colors - Keuringen page only */
+/* Afgekeurd → Red (#D32F2F) */
+.keuringen-badge-afgekeurd {
+  background-color: #D32F2F !important;
+  color: #ffffff !important;
+}
+
+/* Te laat → Orange (#F4A100) */
+.keuringen-badge-te-laat {
+  background-color: #F4A100 !important;
+  color: #ffffff !important;
+}
+
+/* Te keuren (vandaag badge) → Yellow (#F6D500, dark text) */
+.keuringen-badge-vandaag {
+  background-color: #F6D500 !important;
+  color: #111827 !important; /* dark text */
+}
+
+/* Goedgekeurd → Green (#2E7D32) */
+.keuringen-badge-goedgekeurd {
+  background-color: #2E7D32 !important;
+  color: #ffffff !important;
+}
+
+/* Keuring gepland (gepland badge) → Blue (#1565C0) */
+.keuringen-badge-gepland {
+  background-color: #1565C0 !important;
+  color: #ffffff !important;
+}
+</style>
 
 <script>
 // Cleanup modals
