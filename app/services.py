@@ -23,7 +23,9 @@ class MaterialService:
         """Find material by serial number"""
         if not serial:
             return None
-        return Material.query.filter_by(serial=serial).first()
+        # SQLAlchemy mapt automatisch de Python attribuut 'serial' naar de database kolom 'serienummer'
+        # Gebruik filter() met == voor betere compatibiliteit
+        return Material.query.filter(Material.serial == serial).first()
     
     @staticmethod
     def find_by_name_or_number(name: str, nummer: str | None) -> Material | None:
@@ -178,7 +180,7 @@ class MaterialUsageService:
         # Update material
         material.assigned_to = used_by
         if project_id:
-            material.project_id = project_id
+            material.werf_id = project_id
         if site:
             material.site = site
         material.status = "in gebruik"
@@ -253,9 +255,9 @@ class MaterialUsageService:
             raise ValueError("Material not found")
         
         # Update usage and material
-        usage.project_id = project_id
+        usage.project_id = project_id  # project_id is alias voor werf_id via property
         usage.site = project.name
-        material.project_id = project_id
+        material.werf_id = project_id
         material.site = project.name
         
         db.session.commit()
@@ -280,28 +282,28 @@ class ActivityService:
         today = datetime.utcnow().date()
         query = Activity.query
         
-        # Filter by period using ORM
+        # Filter by period using ORM (gebruik aangemaakt_op in plaats van created_at)
         if filter_period == "today":
             start_date = datetime.combine(today, datetime.min.time())
-            query = query.filter(Activity.created_at >= start_date)
+            query = query.filter(Activity.aangemaakt_op >= start_date)
         elif filter_period == "week":
             start_date = datetime.combine(today - timedelta(days=7), datetime.min.time())
-            query = query.filter(Activity.created_at >= start_date)
+            query = query.filter(Activity.aangemaakt_op >= start_date)
         elif filter_period == "month":
             start_date = datetime.combine(today - timedelta(days=30), datetime.min.time())
-            query = query.filter(Activity.created_at >= start_date)
+            query = query.filter(Activity.aangemaakt_op >= start_date)
         
-        # Filter by user using ORM
+        # Filter by user using ORM (gebruik gebruiker_naam in plaats van user_name)
         if filter_user:
-            query = query.filter(Activity.user_name.ilike(f"%{filter_user}%"))
+            query = query.filter(Activity.user_name.ilike(f"%{filter_user}%"))  # user_name is alias voor gebruiker_naam
         
         # Filter by search query using ORM
         if search_q:
             query = query.filter(
                 or_(
-                    Activity.name.ilike(f"%{search_q}%"),
-                    Activity.serial.ilike(f"%{search_q}%"),
-                    Activity.action.ilike(f"%{search_q}%"),
+                    Activity.name.ilike(f"%{search_q}%"),  # name is alias voor naam
+                    Activity.serial.ilike(f"%{search_q}%"),  # serial is alias voor serienummer
+                    Activity.action.ilike(f"%{search_q}%"),  # action is alias voor actie
                 )
             )
         
@@ -329,21 +331,21 @@ class ActivityService:
         
         # Filter by type if specified, then apply limit
         if filter_type == "materiaal":
-            display_query = materiaal_query.order_by(Activity.created_at.desc())
+            display_query = materiaal_query.order_by(Activity.aangemaakt_op.desc())
         elif filter_type == "gebruik":
-            display_query = gebruik_query.order_by(Activity.created_at.desc())
+            display_query = gebruik_query.order_by(Activity.aangemaakt_op.desc())
         elif filter_type == "keuring":
-            display_query = keuring_query.order_by(Activity.created_at.desc())
+            display_query = keuring_query.order_by(Activity.aangemaakt_op.desc())
         else:
-            display_query = query.order_by(Activity.created_at.desc())
+            display_query = query.order_by(Activity.aangemaakt_op.desc())
         
         # Apply limit if specified
         if limit:
             display_activities = display_query.limit(limit).all()
-            all_activities = query.order_by(Activity.created_at.desc()).limit(limit).all()
+            all_activities = query.order_by(Activity.aangemaakt_op.desc()).limit(limit).all()
         else:
             display_activities = display_query.all()
-            all_activities = query.order_by(Activity.created_at.desc()).all()
+            all_activities = query.order_by(Activity.aangemaakt_op.desc()).all()
         
         counts = {
             "all": len(all_activities),
@@ -357,7 +359,7 @@ class ActivityService:
     @staticmethod
     def get_unique_users() -> list[str]:
         """Get unique user names using ORM"""
-        unique_users = db.session.query(Activity.user_name).filter(
+        unique_users = db.session.query(Activity.user_name).filter(  # user_name is alias voor gebruiker_naam
             Activity.user_name.isnot(None),
             Activity.user_name != ""
         ).distinct().order_by(Activity.user_name).all()
@@ -547,7 +549,7 @@ class KeuringService:
             query = query.filter(
                 or_(
                     Material.site.ilike(f"%{werf_filter}%"),
-                    Material.project_id == int(werf_filter) if werf_filter.isdigit() else None
+                    Material.werf_id == int(werf_filter) if werf_filter.isdigit() else None
                 )
             )
         

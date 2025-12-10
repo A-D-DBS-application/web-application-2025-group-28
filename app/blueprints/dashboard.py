@@ -29,8 +29,8 @@ def dashboard():
     to_inspect = MaterialService.get_to_inspect_count()
     today = datetime.utcnow().date()
 
-    # recente activiteit uit activity_log tabel
-    recent = Activity.query.order_by(Activity.created_at.desc()).limit(8).all()
+    # recente activiteit uit activiteiten_log tabel
+    recent = Activity.query.order_by(Activity.aangemaakt_op.desc()).limit(8).all()
 
     # Haal geplande keuringen op (volgende_controle in de toekomst)
     geplande_keuringen = (
@@ -43,6 +43,13 @@ def dashboard():
 
     # Data voor "Materiaal in gebruik nemen" modal
     all_materials = Material.query.all()
+    
+    # Bepaal welke materialen in gebruik zijn
+    active_material_ids = set()
+    all_active_usages = MaterialUsage.query.filter(MaterialUsage.is_active.is_(True)).all()
+    for usage in all_active_usages:
+        active_material_ids.add(usage.material_id)
+    
     projects = (
         Project.query.filter_by(is_deleted=False)
         .order_by(Project.start_date.asc())
@@ -58,5 +65,6 @@ def dashboard():
         projects=projects,
         today=today,
         geplande_keuringen=geplande_keuringen,
+        active_material_ids=active_material_ids,
     )
 

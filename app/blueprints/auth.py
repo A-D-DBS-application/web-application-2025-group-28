@@ -22,17 +22,17 @@ def signup():
             return render_template("auth_signup.html")
 
         # bestaat al in Supabase?
-        if Gebruiker.query.filter_by(Email=email).first():
+        if Gebruiker.query.filter_by(email=email).first():
             flash("E-mail bestaat al. Log in a.u.b.", "warning")
             return redirect(url_for("auth.login", email=email))
 
         pw_hash = generate_password_hash(password)
 
         new_user = Gebruiker(
-            Naam=naam or None,
-            Email=email,
-            Functie=functie or None,
-            password_hash=pw_hash,
+            naam=naam or None,
+            email=email,
+            functie=functie or None,
+            wachtwoord_hash=pw_hash,
         )
         db.session.add(new_user)
         db.session.commit()
@@ -56,12 +56,12 @@ def login():
             flash("E-mail en wachtwoord zijn verplicht.", "danger")
             return render_template("auth_login.html", prefill_email=prefill_email)
 
-        user = Gebruiker.query.filter_by(Email=email).first()
-        if not user or not user.password_hash:
+        user = Gebruiker.query.filter_by(email=email).first()
+        if not user or not user.wachtwoord_hash:
             flash("Geen account gevonden. Registreer je even.", "info")
             return redirect(url_for("auth.signup", email=email))
 
-        if not check_password_hash(user.password_hash, password):
+        if not check_password_hash(user.wachtwoord_hash, password):
             flash("Onjuist wachtwoord.", "danger")
             return render_template("auth_login.html", prefill_email=email)
 

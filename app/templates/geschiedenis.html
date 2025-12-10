@@ -7,15 +7,21 @@
     <div class="h-sub">Overzicht van alle activiteiten in het systeem</div>
   </div>
 
-  <a href="{{ url_for('geschiedenis.geschiedenis_export', type=filter_type, user=filter_user, period=filter_period, q=search_q) }}" 
-     class="btn btn-outline-primary">
-    📥 Export CSV
-  </a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('dashboard.dashboard') }}" 
+       class="btn btn-outline-secondary">
+      ← Terug
+    </a>
+    <a href="{{ url_for('geschiedenis.geschiedenis_export', type=filter_type, user=filter_user, period=filter_period, q=search_q) }}" 
+       class="btn btn-outline-primary">
+      📥 Export CSV
+    </a>
+  </div>
 </div>
 
-<!-- Filters -->
+<!-- Filters en Activiteiten in één scrollbaar blok -->
 <div class="card panel mt-3">
-  <form method="get" action="{{ url_for('geschiedenis.geschiedenis') }}" class="row g-3 align-items-end">
+  <form method="get" action="{{ url_for('geschiedenis.geschiedenis') }}" class="row g-3 align-items-end mb-3">
     <!-- Zoeken -->
     <div class="col-12 col-md-4">
       <label class="form-label">Zoeken</label>
@@ -54,42 +60,8 @@
       <a href="{{ url_for('geschiedenis.geschiedenis') }}" class="btn btn-outline-secondary">Reset</a>
     </div>
   </form>
-</div>
 
-<!-- Statistieken -->
-<div class="row g-3 mt-2">
-  <div class="col-6 col-md-3">
-    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='all', user=filter_user, period=filter_period, q=search_q) }}'">
-      <div class="kpi-title"><i class="bi bi-graph-up me-2"></i>Totaal</div>
-      <div class="kpi-value">{{ all_count }}</div>
-      <div class="kpi-sub">Alle activiteiten</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='materiaal', user=filter_user, period=filter_period, q=search_q) }}'">
-      <div class="kpi-title"><i class="bi bi-box-seam me-2"></i>Materiaal</div>
-      <div class="kpi-value">{{ materiaal_count }}</div>
-      <div class="kpi-sub">Toegevoegd/bewerkt/verwijderd</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='gebruik', user=filter_user, period=filter_period, q=search_q) }}'">
-      <div class="kpi-title">🔧 Gebruik</div>
-      <div class="kpi-value">{{ gebruik_count }}</div>
-      <div class="kpi-sub">In/uit gebruik</div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='keuring', user=filter_user, period=filter_period, q=search_q) }}'">
-      <div class="kpi-title">✅ Keuringen</div>
-      <div class="kpi-value">{{ keuring_count }}</div>
-      <div class="kpi-sub">Keuring activiteiten</div>
-    </div>
-  </div>
-</div>
-
-<!-- Categorie tabs -->
-<div class="card panel mt-3">
+  <!-- Categorie tabs -->
   <ul class="nav nav-tabs" role="tablist">
     <li class="nav-item">
       <a class="nav-link {% if filter_type == 'all' %}active{% endif %}" 
@@ -117,10 +89,10 @@
     </li>
   </ul>
 
-  <!-- Activiteiten tabel -->
-  <div class="table-responsive mt-3">
+  <!-- Activiteiten tabel in scrollbare container (4 items zichtbaar) -->
+  <div class="table-responsive mt-3" style="max-height: 280px; overflow-y: auto;">
     <table class="table align-middle">
-      <thead>
+      <thead class="sticky-top bg-white">
         <tr>
           <th class="w-160">Datum & Tijd</th>
           <th>Actie</th>
@@ -188,6 +160,38 @@
       <strong>Let op:</strong> Er worden maximaal 500 resultaten getoond. Gebruik de filters om specifiekere resultaten te krijgen.
     </div>
   {% endif %}
+</div>
+
+<!-- Statistieken -->
+<div class="row g-3 mt-2">
+  <div class="col-6 col-md-3">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='all', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title"><i class="bi bi-graph-up me-2"></i>Totaal</div>
+      <div class="kpi-value">{{ all_count }}</div>
+      <div class="kpi-sub">Alle activiteiten</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='materiaal', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title"><i class="bi bi-box-seam me-2"></i>Materiaal</div>
+      <div class="kpi-value">{{ materiaal_count }}</div>
+      <div class="kpi-sub">Toegevoegd/bewerkt/verwijderd</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='gebruik', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title">🔧 Gebruik</div>
+      <div class="kpi-value">{{ gebruik_count }}</div>
+      <div class="kpi-sub">In/uit gebruik</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card kpi cursor-pointer" onclick="window.location='{{ url_for('geschiedenis.geschiedenis', type='keuring', user=filter_user, period=filter_period, q=search_q) }}'">
+      <div class="kpi-title">✅ Keuringen</div>
+      <div class="kpi-value">{{ keuring_count }}</div>
+      <div class="kpi-sub">Keuring activiteiten</div>
+    </div>
+  </div>
 </div>
 
 {% endblock %}

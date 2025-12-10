@@ -89,7 +89,7 @@ def materiaal():
     other_usages = []
     usages_without_project = []
     
-    current_user_name = g.user.Naam if getattr(g, "user", None) else None
+    current_user_name = g.user.naam if getattr(g, "user", None) else None
 
     for usage, material in active_usages:
         row = {
@@ -100,7 +100,7 @@ def materiaal():
             "site": usage.site or "",
             "used_by": usage.used_by or "",
             "start_time": usage.start_time,
-            "project_id": usage.project_id,
+            "project_id": usage.project_id,  # project_id is alias voor werf_id
             "material": material,  # Voor backward compatibility
             "project": usage.project,
         }
@@ -109,8 +109,8 @@ def materiaal():
         if usage.project_id is None:
             usages_without_project.append(row)
         
-        # Check if the "used_by" name matches the logged-in user's name
-        usage_name = (usage.used_by or "").strip()
+        # Check if the "gebruikt_door" name matches the logged-in user's name
+        usage_name = (usage.used_by or "").strip()  # used_by is alias voor gebruikt_door
         if current_user_name and usage_name.lower() == current_user_name.lower():
             my_usages.append(row)
         else:
@@ -716,7 +716,7 @@ def materiaal_gebruiken():
         return redirect(url_for("materiaal.materiaal"))
 
     if not assigned_to and getattr(g, "user", None):
-        assigned_to = g.user.Naam or ""
+        assigned_to = g.user.naam or "" if getattr(g, "user", None) else ""
 
     # Use service to start usage
     try:
@@ -729,7 +729,7 @@ def materiaal_gebruiken():
         MaterialUsageService.start_usage(
             material=item,
             user_id=user_id,
-            used_by=assigned_to or (g.user.Naam if getattr(g, "user", None) else ""),
+            used_by=assigned_to or (g.user.naam if getattr(g, "user", None) else ""),
             project_id=project_id,
             site=site_value
         )
@@ -750,7 +750,7 @@ def materiaal_stop_gebruik():
         flash("Geen gebruiksessie gevonden.", "danger")
         return redirect(url_for("materiaal.materiaal"))
 
-    current_user_name = g.user.Naam if getattr(g, "user", None) else ""
+    current_user_name = g.user.naam if getattr(g, "user", None) else ""
     is_admin = getattr(g.user, 'is_admin', False) if getattr(g, "user", None) else False
 
     # Use service to stop usage

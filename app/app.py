@@ -84,7 +84,7 @@ def load_current_user():
     email = session.get("user_email")
     if not email:
         return
-    g.user = Gebruiker.query.filter_by(Email=email).first()
+    g.user = Gebruiker.query.filter_by(email=email).first()
 
 
 # Document types initialization removed - document_type is now stored as string in Document model

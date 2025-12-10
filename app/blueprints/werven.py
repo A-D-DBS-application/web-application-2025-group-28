@@ -129,7 +129,7 @@ def werf_verwijderen():
     for usage in active_usages:
         usage.is_active = False
         usage.end_time = datetime.utcnow()
-        usage.project_id = None
+        usage.project_id = None  # project_id is alias voor werf_id
         materials_to_update.add(usage.material_id)
         
         # Log activiteit
@@ -142,10 +142,10 @@ def werf_verwijderen():
             )
 
     # 2. Update alle Material records die aan deze werf gekoppeld zijn
-    materials = Material.query.filter_by(project_id=project_id_int).all()
+    materials = Material.query.filter_by(werf_id=project_id_int).all()
     
     for mat in materials:
-        mat.project_id = None
+        mat.werf_id = None
         mat.site = None
         
         # Als het materiaal "in gebruik" was, zet status op "niet in gebruik"
@@ -199,6 +199,12 @@ def werf_detail(project_id):
 
     # alle materialen
     all_materials = Material.query.all()
+    
+    # Bepaal welke materialen in gebruik zijn (overal, niet alleen deze werf)
+    active_material_ids = set()
+    all_active_usages = MaterialUsage.query.filter(MaterialUsage.is_active.is_(True)).all()
+    for usage in all_active_usages:
+        active_material_ids.add(usage.material_id)
 
     # actieve usages op deze werf
     active_usages = (
@@ -213,7 +219,7 @@ def werf_detail(project_id):
     )
 
     # alle materialen die aan deze werf gekoppeld zijn
-    materials = Material.query.filter(Material.project_id == project_id).all()
+    materials = Material.query.filter(Material.werf_id == project_id).all()
 
     # alle andere werven voor de "wissel naar werf" dropdown
     other_projects = Project.query.filter(
@@ -229,6 +235,7 @@ def werf_detail(project_id):
         active_usages=active_usages,
         materials=materials,
         other_projects=other_projects,
+        active_material_ids=active_material_ids,
     )
 
 
@@ -309,12 +316,12 @@ def werf_materiaal_gebruiken(project_id):
         return redirect(url_for("werven.werf_detail", project_id=project_id))
 
     if not assigned_to and getattr(g, "user", None):
-        assigned_to = g.user.Naam or ""
+        assigned_to = g.user.naam or "" if getattr(g, "user", None) else ""
 
     # update materiaal zelf
     item.assigned_to = assigned_to
     item.site = project.name or item.site
-    item.project_id = project_id
+    item.werf_id = project_id
     
     # Set status to "in gebruik"
     item.status = "in gebruik"
@@ -329,7 +336,7 @@ def werf_materiaal_gebruiken(project_id):
         start_time=datetime.utcnow(),
         end_time=None,
         is_active=True,
-        used_by=assigned_to or (g.user.Naam if getattr(g, "user", None) else None),
+        used_by=assigned_to or (g.user.naam if getattr(g, "user", None) else None),
         project_id=project_id,
     )
 
@@ -356,7 +363,7 @@ def werf_stop_gebruik(project_id):
         return redirect(url_for("werven.werf_detail", project_id=project_id))
 
     # Check of de gebruiker dit materiaal zelf in gebruik heeft OF admin is
-    current_user_name = g.user.Naam if getattr(g, "user", None) else None
+    current_user_name = g.user.naam if getattr(g, "user", None) else None
     is_admin = getattr(g.user, 'is_admin', False) if getattr(g, "user", None) else False
     usage_name = (usage.used_by or "").strip()
     
@@ -426,9 +433,9 @@ def werf_switch_material(project_id):
         return redirect(url_for("werven.werf_detail", project_id=project_id))
 
     # Update usage en materiaal naar nieuwe werf
-    usage.project_id = int(new_project_id)
+    usage.project_id = int(new_project_id)  # project_id is alias voor werf_id
     usage.site = new_project.name
-    mat.project_id = int(new_project_id)
+    mat.werf_id = int(new_project_id)
     mat.site = new_project.name
 
     db.session.commit()

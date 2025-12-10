@@ -185,9 +185,16 @@
                    class="form-control"
                    placeholder="Kies of typ een naam">
             <datalist id="werf-materiaal-namen">
+              {# Eerst materialen die NIET in gebruik zijn #}
               {% for m in all_materials %}
-                {% if m.name %}
+                {% if m.name and m.id not in active_material_ids %}
                   <option value="{{ m.name }}">{{ m.name }}</option>
+                {% endif %}
+              {% endfor %}
+              {# Dan materialen die WEL in gebruik zijn (onderaan) #}
+              {% for m in all_materials %}
+                {% if m.name and m.id in active_material_ids %}
+                  <option value="{{ m.name }} (in gebruik)">{{ m.name }}</option>
                 {% endif %}
               {% endfor %}
             </datalist>

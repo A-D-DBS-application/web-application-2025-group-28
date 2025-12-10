@@ -251,14 +251,14 @@ def load_current_user():
     email = session.get("user_email")
     if not email:
         return
-    g.user = Gebruiker.query.filter_by(Email=email).first()
+    g.user = Gebruiker.query.filter_by(email=email).first()
 
 
 def log_activity_db(action: str, name: str, serial: str):
-    """Schrijf een activiteit weg naar de activity_log tabel in Supabase."""
+    """Schrijf een activiteit weg naar de activiteiten_log tabel in Supabase."""
     user_name = None
-    if getattr(g, "user", None) and g.user.Naam:
-        user_name = g.user.Naam
+    if getattr(g, "user", None) and g.user.naam:
+        user_name = g.user.naam
 
     act = Activity(
         action=action,
