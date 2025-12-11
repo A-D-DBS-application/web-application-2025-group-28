@@ -24,15 +24,17 @@ def init_supabase_client(supabase_client: Client | None):
 
 
 def upload_folder_from_bucket(bucket_name: str) -> str:
-    """Map bucket naam naar lokale upload folder (voor fallback)."""
+    """
+    Map bucket naam naar lokale upload folder (alleen voor backward compatibility).
+    Deze functie wordt niet meer gebruikt voor documenten - alles gaat naar Supabase.
+    """
+    # Deze functie wordt alleen nog gebruikt voor type-images en projects
+    # Documenten gaan altijd naar Supabase
     bucket_to_folder = {
-        "docs": current_app.config["DOC_UPLOAD_FOLDER"],
-        "safety": current_app.config["SAFETY_UPLOAD_FOLDER"],
-        "projects": current_app.config["PROJECT_UPLOAD_FOLDER"],
-        "certificates": current_app.config["CERTIFICATE_UPLOAD_FOLDER"],
-        "type-images": current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"],
+        "projects": current_app.config.get("PROJECT_UPLOAD_FOLDER", ""),
+        "type-images": current_app.config.get("TYPE_IMAGE_UPLOAD_FOLDER", ""),
     }
-    return bucket_to_folder.get(bucket_name, current_app.config["DOC_UPLOAD_FOLDER"])
+    return bucket_to_folder.get(bucket_name, "")
 
 
 def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
@@ -66,22 +68,23 @@ def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
 def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix: str) -> str | None:
     """
     Upload een bestand naar Supabase Storage.
-    Retourneert het pad in de bucket (bijv. 'docs/BOOR123_doc_20250101_120000_foto.pdf').
+    Retourneert het pad in de bucket (bijv. 'BOOR123_doc_20250101_120000_foto.pdf').
+    Alle documenten worden opgeslagen in Supabase Storage - geen lokale fallback meer.
     """
     if not file_storage or not file_storage.filename:
         return None
     
     if not _supabase_client:
-        # Fallback naar lokale storage als Supabase niet beschikbaar is
-        print("Warning: Supabase not available, falling back to local storage")
-        return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
+        # Geen fallback meer - Supabase is vereist
+        print("Error: Supabase client not available. Cannot upload file.")
+        raise RuntimeError("Supabase client not initialized. Cannot upload files.")
     
     # Genereer unieke bestandsnaam
     filename = secure_filename(file_storage.filename)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     final_filename = f"{prefix}_{timestamp}_{filename}"
     
-    # Pad in bucket (bijv. "docs/BOOR123_doc_20250101_120000_foto.pdf")
+    # Pad in bucket (bijv. "BOOR123_doc_20250101_120000_foto.pdf")
     file_path = f"{folder}/{final_filename}" if folder else final_filename
     
     # Lees bestand
@@ -101,37 +104,58 @@ def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix:
         
     except Exception as e:
         print(f"Error uploading to Supabase Storage: {e}")
-        # Fallback naar lokale storage bij error
-        return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
+        # Geen fallback meer - gooi error
+        raise RuntimeError(f"Failed to upload file to Supabase Storage: {e}")
 
 
 def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
     """
-    Upload een bestand (gebruikt Supabase Storage of fallback naar lokaal).
+    Upload een bestand naar Supabase Storage.
     Bepaalt automatisch de juiste bucket op basis van upload_folder.
-    Retourneert pad met bucket prefix (bijv. "type-images/filename.jpg").
+    Gebruikt de juiste Nederlandse bucket namen voor documenten.
+    Retourneert pad (bijv. "filename.jpg").
     """
-    # Bepaal bucket en folder op basis van upload_folder
-    if upload_folder == current_app.config["DOC_UPLOAD_FOLDER"]:
-        bucket = "docs"
+    # Bepaal bucket op basis van upload_folder
+    upload_folder_str = str(upload_folder) if upload_folder else ""
+    
+    # Check op speciale SUPABASE_ markers in configuratie
+    if upload_folder == current_app.config.get("SAFETY_UPLOAD_FOLDER") or "SUPABASE_Veiligheidsfiche" in upload_folder_str:
+        bucket = "Veiligheidsfiche"
         folder = ""
-    elif upload_folder == current_app.config["SAFETY_UPLOAD_FOLDER"]:
-        bucket = "safety"
+    elif upload_folder == current_app.config.get("CERTIFICATE_UPLOAD_FOLDER") or "SUPABASE_Keuringsstatus" in upload_folder_str:
+        bucket = "Keuringsstatus documenten"
         folder = ""
-    elif upload_folder == current_app.config["CERTIFICATE_UPLOAD_FOLDER"]:
-        bucket = "certificates"
+    elif upload_folder == current_app.config.get("DOC_UPLOAD_FOLDER") or "SUPABASE_Aankoop-Verkoop" in upload_folder_str:
+        bucket = "Aankoop-Verkoop documenten"
         folder = ""
-    elif upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
+    elif upload_folder == current_app.config.get("TYPE_IMAGE_UPLOAD_FOLDER"):
         bucket = "type-images"
-        folder = ""  # Folder is leeg, maar we voegen bucket prefix toe aan het pad
+        folder = ""
+    elif upload_folder == current_app.config.get("PROJECT_UPLOAD_FOLDER"):
+        bucket = "projects"
+        folder = ""
+    # Fallback: check op pad string (voor backward compatibility)
+    elif "safety" in upload_folder_str.lower():
+        bucket = "Veiligheidsfiche"
+        folder = ""
+    elif "certificate" in upload_folder_str.lower():
+        bucket = "Keuringsstatus documenten"
+        folder = ""
+    elif "docs" in upload_folder_str.lower():
+        bucket = "Aankoop-Verkoop documenten"
+        folder = ""
+    elif "type_image" in upload_folder_str.lower():
+        bucket = "type-images"
+        folder = ""
     else:
-        bucket = "docs"  # default
+        # Default: Aankoop-Verkoop documenten voor documenten
+        bucket = "Aankoop-Verkoop documenten"
         folder = ""
     
     result = save_upload_to_supabase(file_storage, bucket, folder, prefix)
     
     # Voor type-images: voeg bucket prefix toe aan het pad voor consistentie
-    if upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"] and result:
+    if bucket == "type-images" and result:
         if not result.startswith("type-images/"):
             return f"type-images/{result}"
     
@@ -159,11 +183,11 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
     """
     Haal publieke URL op voor een bestand in Supabase Storage.
     Retourneert None als Supabase niet beschikbaar is of bestand niet bestaat.
+    Geen lokale fallback meer - alles moet in Supabase staan.
     """
     if not _supabase_client:
-        # Fallback: als het een lokaal pad is (begint met "uploads/")
-        if file_path and file_path.startswith("uploads/"):
-            return url_for('static', filename=file_path)
+        # Geen fallback meer - Supabase is vereist
+        print(f"Warning: Supabase client not available. Cannot get URL for {bucket_name}/{file_path}")
         return None
     
     try:
@@ -183,9 +207,7 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         return response
     except Exception as e:
         print(f"Error getting Supabase file URL for {bucket_name}/{file_path}: {e}")
-        # Fallback naar lokaal pad
-        if file_path and file_path.startswith("uploads/"):
-            return url_for('static', filename=file_path)
+        # Geen fallback meer - retourneer None
         return None
 
 

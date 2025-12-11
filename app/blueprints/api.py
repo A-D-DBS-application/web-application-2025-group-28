@@ -149,8 +149,31 @@ def api_search():
                     print(f"Warning: Could not generate documentation URL for {item.serial}: {doc_url_error}")
                     documentation_url = ""
                 
-                # Safety sheets are now stored via MaterialType, not Material
+                # Haal veiligheidsfiche op op basis van material_type_id
+                # Zoek naar een Document met type "Veiligheidsfiche" gekoppeld aan het materiaal type
+                safety_sheet_path = None
                 safety_sheet_url = None
+                try:
+                    from models import Document
+                    if item.material_type_id:
+                        # Zoek het meest recente veiligheidsfiche document voor dit materiaal type
+                        safety_doc = Document.query.filter(
+                            Document.document_type == "Veiligheidsfiche",
+                            Document.material_type_id == item.material_type_id
+                        ).order_by(Document.aangemaakt_op.desc()).first()
+                        
+                        if safety_doc and safety_doc.file_path:
+                            safety_sheet_path = safety_doc.file_path
+                            # Genereer URL voor veiligheidsfiche
+                            # Gebruik direct de bucket naam om circulaire import te voorkomen
+                            from helpers import get_supabase_file_url
+                            bucket = "Veiligheidsfiche"  # Direct bucket naam
+                            safety_sheet_url = get_supabase_file_url(bucket, safety_doc.file_path) or ""
+                except (ImportError, AttributeError, ProgrammingError) as safety_error:
+                    # Document tabel bestaat niet of is niet beschikbaar
+                    print(f"Warning: Could not get safety sheet for {item.serial}: {safety_error}")
+                    safety_sheet_path = None
+                    safety_sheet_url = None
                 
                 # Get documents for this material
                 material_docs = documents_by_material.get(item.id, [])
@@ -225,8 +248,8 @@ def api_search():
                     "nummer_op_materieel": str(item.nummer_op_materieel) if item.nummer_op_materieel else "",
                     "documentation_path": str(item.documentation_path) if item.documentation_path else "",
                     "documentation_url": str(documentation_url) if documentation_url else "",
-                    "safety_sheet_path": None,
-                    "safety_sheet_url": None,
+                    "safety_sheet_path": str(safety_sheet_path) if safety_sheet_path else None,
+                    "safety_sheet_url": str(safety_sheet_url) if safety_sheet_url else None,
                     "inspection_status": str(item.inspection_status).strip() if item.inspection_status and str(item.inspection_status).strip() else None,
                     "keuring_gepland": str(keuring_gepland) if keuring_gepland else None,
                     "laatste_keuring": str(laatste_keuring) if laatste_keuring else None,  # From keuring_info

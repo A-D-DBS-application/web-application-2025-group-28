@@ -36,7 +36,7 @@
             type="text" 
             name="q" 
             class="form-control" 
-            placeholder="Zoek documenten..." 
+            placeholder="Zoek op materiaal naam of serienummer..." 
             value="{{ search_query }}"
           >
         </div>
@@ -74,7 +74,6 @@
           <th class="doc-col-sm-hide">Datum</th>
           <th class="doc-col-sm-hide">Grootte</th>
           <th class="doc-col-sm-hide">Geüpload door</th>
-          <th>Type</th>
           <th class="text-end">Acties</th>
         </tr>
       </thead>
@@ -83,21 +82,20 @@
           {% for doc in documents %}
           <tr>
             <td>
-              <span class="fs-5"><i class="bi bi-file-earmark-text"></i></span>
+              <span class="badge bg-secondary">{{ doc.type }}</span>
             </td>
             <td>
               <strong>{{ doc.name }}</strong>
             </td>
             <td>
               {{ doc.material }}<br>
+              {% if doc.material_serial %}
               <small class="text-muted">{{ doc.material_serial }}</small>
+              {% endif %}
             </td>
             <td class="doc-col-sm-hide">{{ doc.date }}</td>
             <td class="doc-col-sm-hide">{{ doc.size }}</td>
             <td class="doc-col-sm-hide">{{ doc.uploaded_by }}</td>
-            <td>
-              <span class="badge bg-secondary">{{ doc.type }}</span>
-            </td>
             <td class="text-end">
               {% if doc.url %}
                 <a href="{{ doc.url }}" class="btn btn-sm btn-outline-secondary" target="_blank" download>
@@ -115,7 +113,7 @@
           {% endfor %}
         {% else %}
           <tr>
-            <td colspan="8" class="text-center text-muted py-4">
+            <td colspan="7" class="text-center text-muted py-4">
               Geen documenten gevonden
             </td>
           </tr>
@@ -157,7 +155,7 @@
             </select>
           </div>
 
-          <div class="mb-3 hidden" id="material_select_container">
+          <div class="mb-3 d-none" id="material_select_container">
             <label for="material_id" class="form-label">Materieel <span class="text-danger">*</span></label>
             <select class="form-select" id="material_id" name="material_id">
               <option value="">Selecteer materieel...</option>
@@ -165,10 +163,10 @@
                 <option value="{{ material.id }}">{{ material.name }} ({{ material.serial }})</option>
               {% endfor %}
             </select>
-            <small class="form-text text-muted">Verplicht voor aankoopfactuur, Keuringstatus en verkoopfactuur</small>
+            <small class="form-text text-muted">Verplicht voor alle document types behalve Veiligheidsfiche</small>
           </div>
 
-          <div class="mb-3 hidden" id="material_type_select_container">
+          <div class="mb-3 d-none" id="material_type_select_container">
             <label for="material_type" class="form-label">Materiaal Type <span class="text-danger">*</span></label>
             <input 
               type="text" 
@@ -206,28 +204,44 @@
 
 <script>
   // Toon/verberg materiaal selectie op basis van document type
-  document.getElementById('document_type').addEventListener('change', function() {
+  document.addEventListener('DOMContentLoaded', function() {
+    const documentTypeSelect = document.getElementById('document_type');
     const materialContainer = document.getElementById('material_select_container');
     const materialSelect = document.getElementById('material_id');
     const materialTypeContainer = document.getElementById('material_type_select_container');
     const materialTypeSelect = document.getElementById('material_type');
     
-    if (this.value === 'Veiligheidsfiche') {
-      // Voor Veiligheidsfiche: toon materiaal TYPE selectie
-      materialContainer.style.display = 'none';
-      materialSelect.removeAttribute('required');
-      materialSelect.value = '';
-      
-      materialTypeContainer.style.display = 'block';
-      materialTypeSelect.setAttribute('required', 'required');
-    } else {
-      // Voor andere types: toon specifiek materiaal selectie
-      materialContainer.style.display = 'block';
-      materialSelect.setAttribute('required', 'required');
-      
-      materialTypeContainer.style.display = 'none';
-      materialTypeSelect.removeAttribute('required');
-      materialTypeSelect.value = '';
+    function updateMaterialSelection() {
+      if (documentTypeSelect.value === 'Veiligheidsfiche') {
+        // Voor Veiligheidsfiche: toon materiaal TYPE selectie
+        materialContainer.classList.add('d-none');
+        materialSelect.removeAttribute('required');
+        materialSelect.value = '';
+        
+        materialTypeContainer.classList.remove('d-none');
+        materialTypeSelect.setAttribute('required', 'required');
+      } else if (documentTypeSelect.value) {
+        // Voor alle andere types: toon specifiek materiaal selectie
+        materialContainer.classList.remove('d-none');
+        materialSelect.setAttribute('required', 'required');
+        
+        materialTypeContainer.classList.add('d-none');
+        materialTypeSelect.removeAttribute('required');
+        materialTypeSelect.value = '';
+      } else {
+        // Geen type geselecteerd: verberg beide
+        materialContainer.classList.add('d-none');
+        materialSelect.removeAttribute('required');
+        
+        materialTypeContainer.classList.add('d-none');
+        materialTypeSelect.removeAttribute('required');
+      }
+    }
+    
+    if (documentTypeSelect) {
+      documentTypeSelect.addEventListener('change', updateMaterialSelection);
+      // Roep ook aan bij page load om de juiste staat te tonen
+      updateMaterialSelection();
     }
   });
 </script>
