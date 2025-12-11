@@ -211,6 +211,30 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         return None
 
 
+def delete_file_from_supabase(bucket_name: str, file_path: str) -> bool:
+    """
+    Verwijder een bestand uit Supabase Storage.
+    Retourneert True als succesvol, False bij fout.
+    """
+    if not _supabase_client:
+        print(f"Warning: Supabase client not available. Cannot delete {bucket_name}/{file_path}")
+        return False
+    
+    try:
+        # Verwijder bucket prefix als die er al in zit
+        clean_path = file_path
+        if file_path.startswith(f"{bucket_name}/"):
+            clean_path = file_path[len(f"{bucket_name}/"):]
+        
+        # Verwijder bestand uit Supabase Storage
+        response = _supabase_client.storage.from_(bucket_name).remove([clean_path])
+        print(f"DEBUG: Deleted file from Supabase: bucket={bucket_name}, path={clean_path}")
+        return True
+    except Exception as e:
+        print(f"Error deleting file from Supabase {bucket_name}/{file_path}: {e}")
+        return False
+
+
 def get_file_url_from_path(file_path: str) -> str | None:
     """
     Bepaal automatisch de juiste URL voor een bestandspad.

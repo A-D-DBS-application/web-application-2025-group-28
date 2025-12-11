@@ -5,7 +5,7 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from sqlalchemy import or_, func
 
-from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, log_activity_db
+from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, log_activity_db, delete_file_from_supabase
 from constants import DOCUMENT_TYPES
 from models import db, Document, Material, MaterialType, KeuringHistoriek
 
@@ -100,11 +100,14 @@ def documenten():
             "type": doc.document_type,
             "material": material_name or "Onbekend",
             "material_serial": material_serial,
+            "material_id": doc.material_id,
+            "material_type": doc.material_type,
             "date": doc.aangemaakt_op.strftime("%d-%m-%Y") if doc.aangemaakt_op else "",
             "size": file_size_str,
             "uploaded_by": doc.uploaded_by or "Onbekend",
             "url": file_url,
-            "path": doc.file_path
+            "path": doc.file_path,
+            "note": doc.note
         })
     
     # Haal alle materialen op voor de dropdown (dynamisch - exclusief verwijderde materialen)
@@ -297,6 +300,167 @@ def documenten_upload():
         db.session.rollback()
         current_app.logger.error(f"Error uploading document: {e}", exc_info=True)
         flash(f"Fout bij uploaden: {str(e)}", "error")
+    
+    return redirect(url_for("documenten.documenten"))
+
+
+@documenten_bp.route("/edit", methods=["POST"])
+@login_required
+def documenten_bewerken():
+    """Wijzig een document."""
+    try:
+        document_id = request.form.get("document_id")
+        if not document_id:
+            flash("Document ID ontbreekt.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        document = Document.query.get(document_id)
+        if not document:
+            flash("Document niet gevonden.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        # Haal form data op
+        document_type = request.form.get("document_type", "").strip()
+        material_id = request.form.get("material_id", "").strip()
+        material_type_name = request.form.get("material_type", "").strip()
+        note = request.form.get("note", "").strip()
+        document_file = request.files.get("document_file")
+        
+        # Validatie
+        if not document_type:
+            flash("Document type is verplicht.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        # Bepaal of we materiaal of materiaal type nodig hebben
+        is_veiligheidsfiche = document_type == "Veiligheidsfiche"
+        
+        if is_veiligheidsfiche:
+            # Voor veiligheidsfiche: materiaal type is verplicht
+            if not material_type_name:
+                flash("Materiaal type is verplicht voor veiligheidsfiche.", "error")
+                return redirect(url_for("documenten.documenten"))
+            
+            # Zoek of maak materiaal type
+            material_type = MaterialType.query.filter_by(name=material_type_name).first()
+            if not material_type:
+                # Maak nieuw materiaal type aan
+                material_type = MaterialType(
+                    name=material_type_name,
+                    aangemaakt_op=datetime.utcnow()
+                )
+                db.session.add(material_type)
+                db.session.flush()
+            
+            material_id = None
+            material_type_id = material_type.id
+        else:
+            # Voor andere document types: materiaal is verplicht
+            if not material_id:
+                flash("Materieel is verplicht voor dit document type.", "error")
+                return redirect(url_for("documenten.documenten"))
+            
+            # Valideer dat materiaal bestaat
+            material = Material.query.filter(
+                Material.id == int(material_id),
+                or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+            ).first()
+            if not material:
+                flash("Geselecteerd materieel bestaat niet of is verwijderd.", "error")
+                return redirect(url_for("documenten.documenten"))
+            
+            material_type_id = None
+        
+        # Als er een nieuw bestand is geüpload, verwijder het oude en upload het nieuwe
+        if document_file and document_file.filename:
+            # Bepaal bucket
+            bucket = get_bucket_for_document_type(document_type)
+            
+            # Verwijder oud bestand uit Supabase
+            old_bucket = get_bucket_for_document_type(document.document_type)
+            if document.file_path:
+                delete_file_from_supabase(old_bucket, document.file_path)
+            
+            # Genereer prefix voor nieuw bestand
+            if material_id:
+                material = Material.query.filter(
+                    Material.id == int(material_id),
+                    or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+                ).first()
+                prefix = f"{material.serial}_{document_type.lower().replace(' ', '_')}"
+            else:
+                prefix = f"{material_type_name.lower().replace(' ', '_')}_{document_type.lower().replace(' ', '_')}"
+            
+            # Upload nieuw bestand
+            file_path = save_upload_to_supabase(
+                document_file,
+                bucket_name=bucket,
+                folder="",
+                prefix=prefix
+            )
+            
+            if not file_path:
+                flash("Fout bij uploaden van nieuw bestand.", "error")
+                return redirect(url_for("documenten.documenten"))
+            
+            # Bereken bestandsgrootte
+            document_file.seek(0, 2)
+            file_size = document_file.tell()
+            document_file.seek(0)
+            
+            document.file_path = file_path
+            document.file_name = secure_filename(document_file.filename)
+            document.file_size = file_size
+        
+        # Update document velden
+        document.document_type = document_type
+        document.material_id = int(material_id) if material_id else None
+        document.material_type_id = material_type_id
+        document.material_type = material_type_name if is_veiligheidsfiche else None
+        document.note = note if note else None
+        
+        db.session.commit()
+        
+        flash(f"Document '{document.file_name}' is bijgewerkt.", "success")
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error editing document: {e}", exc_info=True)
+        flash(f"Fout bij wijzigen: {str(e)}", "error")
+    
+    return redirect(url_for("documenten.documenten"))
+
+
+@documenten_bp.route("/delete", methods=["POST"])
+@login_required
+def documenten_verwijderen():
+    """Verwijder een document."""
+    try:
+        document_id = request.form.get("document_id")
+        if not document_id:
+            flash("Document ID ontbreekt.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        document = Document.query.get(document_id)
+        if not document:
+            flash("Document niet gevonden.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        # Verwijder bestand uit Supabase Storage
+        bucket = get_bucket_for_document_type(document.document_type)
+        if document.file_path:
+            delete_file_from_supabase(bucket, document.file_path)
+        
+        # Verwijder document uit database
+        file_name = document.file_name
+        db.session.delete(document)
+        db.session.commit()
+        
+        flash(f"Document '{file_name}' is verwijderd.", "success")
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error deleting document: {e}", exc_info=True)
+        flash(f"Fout bij verwijderen: {str(e)}", "error")
     
     return redirect(url_for("documenten.documenten"))
 

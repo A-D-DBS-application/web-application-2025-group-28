@@ -97,17 +97,38 @@
             <td class="doc-col-sm-hide">{{ doc.size }}</td>
             <td class="doc-col-sm-hide">{{ doc.uploaded_by }}</td>
             <td class="text-end">
-              {% if doc.url %}
-                <a href="{{ doc.url }}" class="btn btn-sm btn-outline-secondary" target="_blank" download>
-                  ⬇ Downloaden
-                </a>
-              {% elif doc.path %}
-                <a href="{{ url_for('static', filename=doc.path) }}" class="btn btn-sm btn-outline-secondary" download>
-                  ⬇ Downloaden
-                </a>
-              {% else %}
-                <button class="btn btn-sm btn-outline-secondary" disabled>⬇ Downloaden</button>
-              {% endif %}
+              <div class="d-flex gap-2 justify-content-end">
+                {% if doc.url %}
+                  <a href="{{ doc.url }}" class="btn btn-sm btn-outline-secondary" target="_blank" download>
+                    ⬇ Downloaden
+                  </a>
+                {% elif doc.path %}
+                  <a href="{{ url_for('static', filename=doc.path) }}" class="btn btn-sm btn-outline-secondary" download>
+                    ⬇ Downloaden
+                  </a>
+                {% else %}
+                  <button class="btn btn-sm btn-outline-secondary" disabled>⬇ Downloaden</button>
+                {% endif %}
+                <button type="button" 
+                        class="btn btn-sm btn-outline-primary" 
+                        data-bs-toggle="modal" 
+                        data-bs-target="#editDocumentModal"
+                        data-document-id="{{ doc.id }}"
+                        data-document-type="{{ doc.type }}"
+                        data-material-id="{{ doc.material_id if doc.material_id else '' }}"
+                        data-material-type="{{ doc.material_type if doc.material_type else '' }}"
+                        data-note="{{ doc.note if doc.note else '' }}">
+                  Wijzigen
+                </button>
+                <button type="button" 
+                        class="btn btn-sm btn-outline-danger" 
+                        data-bs-toggle="modal" 
+                        data-bs-target="#deleteDocumentModal"
+                        data-document-id="{{ doc.id }}"
+                        data-document-name="{{ doc.name }}">
+                  Verwijderen
+                </button>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -242,6 +263,180 @@
       documentTypeSelect.addEventListener('change', updateMaterialSelection);
       // Roep ook aan bij page load om de juiste staat te tonen
       updateMaterialSelection();
+    }
+  });
+</script>
+
+<!-- Edit Document Modal -->
+<div class="modal fade" id="editDocumentModal" tabindex="-1" aria-labelledby="editDocumentModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editDocumentModalLabel">Document wijzigen</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form method="post" action="{{ url_for('documenten.documenten_bewerken') }}" enctype="multipart/form-data">
+        <div class="modal-body">
+          <input type="hidden" name="document_id" id="edit-document-id">
+          
+          <div class="mb-3">
+            <label for="edit_document_type" class="form-label">Document type <span class="text-danger">*</span></label>
+            <select class="form-select" id="edit_document_type" name="document_type" required>
+              <option value="">Selecteer type...</option>
+              {% for doc_type in document_types %}
+                <option value="{{ doc_type }}">{{ doc_type }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_document_file" class="form-label">Nieuw bestand (optioneel)</label>
+            <input type="file" class="form-control" id="edit_document_file" name="document_file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+            <small class="form-text text-muted">Laat leeg om het huidige bestand te behouden</small>
+          </div>
+
+          <div class="mb-3 d-none" id="edit_material_select_container">
+            <label for="edit_material_id" class="form-label">Materieel <span class="text-danger">*</span></label>
+            <select class="form-select" id="edit_material_id" name="material_id">
+              <option value="">Selecteer materieel...</option>
+              {% for material in all_materials %}
+                <option value="{{ material.id }}">{{ material.name }} ({{ material.serial }})</option>
+              {% endfor %}
+            </select>
+            <small class="form-text text-muted">Verplicht voor alle document types behalve Veiligheidsfiche</small>
+          </div>
+
+          <div class="mb-3 d-none" id="edit_material_type_select_container">
+            <label for="edit_material_type" class="form-label">Materiaal Type <span class="text-danger">*</span></label>
+            <input 
+              type="text" 
+              class="form-control" 
+              id="edit_material_type" 
+              name="material_type" 
+              list="edit_material_types_datalist"
+              placeholder="Type of selecteer materiaal type..."
+            >
+            <datalist id="edit_material_types_datalist">
+              {% for mat_type in material_types_list %}
+                <option value="{{ mat_type }}">{{ mat_type }}</option>
+              {% endfor %}
+            </datalist>
+            <small class="form-text text-muted">
+              Verplicht voor Veiligheidsfiche - selecteer uit de lijst of typ een nieuw materiaal type.
+            </small>
+          </div>
+
+          <div class="mb-3">
+            <label for="edit_note" class="form-label">Opmerking (optioneel)</label>
+            <textarea class="form-control" id="edit_note" name="note" rows="3" placeholder="Optionele opmerkingen..."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-primary">Wijzigingen opslaan</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Document Modal -->
+<div class="modal fade" id="deleteDocumentModal" tabindex="-1" aria-labelledby="deleteDocumentModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="post" action="{{ url_for('documenten.documenten_verwijderen') }}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="deleteDocumentModalLabel">Document verwijderen</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" name="document_id" id="delete-document-id">
+          <p>
+            Weet je zeker dat je het document
+            <strong id="delete-document-name"></strong>
+            wilt verwijderen?
+          </p>
+          <p class="text-muted small">Deze actie kan niet ongedaan worden gemaakt.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuleren</button>
+          <button type="submit" class="btn btn-danger">Verwijderen</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Edit modal handler
+  document.addEventListener('DOMContentLoaded', function() {
+    const editModal = document.getElementById('editDocumentModal');
+    if (editModal) {
+      editModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        if (!button) return;
+        
+        const documentId = button.getAttribute('data-document-id');
+        const documentType = button.getAttribute('data-document-type');
+        const materialId = button.getAttribute('data-material-id');
+        const materialType = button.getAttribute('data-material-type');
+        const note = button.getAttribute('data-note');
+        
+        document.getElementById('edit-document-id').value = documentId || '';
+        document.getElementById('edit_document_type').value = documentType || '';
+        document.getElementById('edit_material_id').value = materialId || '';
+        document.getElementById('edit_material_type').value = materialType || '';
+        document.getElementById('edit_note').value = note || '';
+        
+        // Update material selection visibility
+        const documentTypeSelect = document.getElementById('edit_document_type');
+        const materialContainer = document.getElementById('edit_material_select_container');
+        const materialSelect = document.getElementById('edit_material_id');
+        const materialTypeContainer = document.getElementById('edit_material_type_select_container');
+        const materialTypeSelect = document.getElementById('edit_material_type');
+        
+        function updateEditMaterialSelection() {
+          if (documentTypeSelect.value === 'Veiligheidsfiche') {
+            materialContainer.classList.add('d-none');
+            materialSelect.removeAttribute('required');
+            materialSelect.value = '';
+            
+            materialTypeContainer.classList.remove('d-none');
+            materialTypeSelect.setAttribute('required', 'required');
+          } else if (documentTypeSelect.value) {
+            materialContainer.classList.remove('d-none');
+            materialSelect.setAttribute('required', 'required');
+            
+            materialTypeContainer.classList.add('d-none');
+            materialTypeSelect.removeAttribute('required');
+            materialTypeSelect.value = '';
+          } else {
+            materialContainer.classList.add('d-none');
+            materialSelect.removeAttribute('required');
+            
+            materialTypeContainer.classList.add('d-none');
+            materialTypeSelect.removeAttribute('required');
+          }
+        }
+        
+        updateEditMaterialSelection();
+        documentTypeSelect.addEventListener('change', updateEditMaterialSelection);
+      });
+    }
+    
+    // Delete modal handler
+    const deleteModal = document.getElementById('deleteDocumentModal');
+    if (deleteModal) {
+      deleteModal.addEventListener('show.bs.modal', function (event) {
+        const button = event.relatedTarget;
+        if (!button) return;
+        
+        const documentId = button.getAttribute('data-document-id');
+        const documentName = button.getAttribute('data-document-name');
+        
+        document.getElementById('delete-document-id').value = documentId || '';
+        document.getElementById('delete-document-name').textContent = documentName || 'dit document';
+      });
     }
   });
 </script>
