@@ -125,22 +125,23 @@ def inject_user():
 # UPLOAD CONFIGURATIE – documentatie
 # -----------------------------------------------------
 
-# Upload configuratie - alleen voor type-images en projects
-# Documenten (veiligheidsfiches, keuringstatus, facturen) gaan direct naar Supabase Storage
 BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
+DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
+SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
 PROJECT_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "projects")
+CERTIFICATE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "certificates")
 TYPE_IMAGE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "type_images")
 
+os.makedirs(DOC_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROJECT_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CERTIFICATE_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(TYPE_IMAGE_UPLOAD_FOLDER, exist_ok=True)
 
-# Configuratie voor backward compatibility
-# Documenten mappen worden niet meer lokaal aangemaakt - alles gaat naar Supabase
-# Maar we behouden de configuratie met speciale waarden zodat save_upload() de juiste bucket kan bepalen
-app.config["DOC_UPLOAD_FOLDER"] = "SUPABASE_Aankoop-Verkoop documenten"  # Marker voor Supabase bucket
-app.config["SAFETY_UPLOAD_FOLDER"] = "SUPABASE_Veiligheidsfiche"  # Marker voor Supabase bucket
-app.config["CERTIFICATE_UPLOAD_FOLDER"] = "SUPABASE_Keuringsstatus documenten"  # Marker voor Supabase bucket
+app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER
+app.config["SAFETY_UPLOAD_FOLDER"] = SAFETY_UPLOAD_FOLDER
 app.config["PROJECT_UPLOAD_FOLDER"] = PROJECT_UPLOAD_FOLDER
+app.config["CERTIFICATE_UPLOAD_FOLDER"] = CERTIFICATE_UPLOAD_FOLDER
 app.config["TYPE_IMAGE_UPLOAD_FOLDER"] = TYPE_IMAGE_UPLOAD_FOLDER
 
 # Upload helper functions are in helpers.py

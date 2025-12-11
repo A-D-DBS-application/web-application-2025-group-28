@@ -80,7 +80,13 @@
       <tbody>
         {% if documents %}
           {% for doc in documents %}
-          <tr>
+          {% set row_class = "" %}
+          {% if doc.inspection_status == "verlopen" %}
+            {% set row_class = "table-danger" %}
+          {% elif doc.inspection_status == "bijna_verlopen" %}
+            {% set row_class = "table-warning" %}
+          {% endif %}
+          <tr class="{{ row_class }}">
             <td>
               <span class="badge bg-secondary">{{ doc.type }}</span>
             </td>

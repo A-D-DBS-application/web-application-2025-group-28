@@ -8,6 +8,7 @@ from sqlalchemy import or_, func
 from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, log_activity_db
 from constants import DOCUMENT_TYPES
 from models import db, Document, Material, MaterialType, KeuringHistoriek
+from datetime import timedelta
 
 
 documenten_bp = Blueprint("documenten", __name__, url_prefix="/documenten")
@@ -22,6 +23,42 @@ def get_bucket_for_document_type(document_type: str) -> str:
         "Veiligheidsfiche": "Veiligheidsfiche"
     }
     return bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
+
+
+def get_inspection_status_priority(material: Material | None) -> tuple[int, str]:
+    """
+    Bepaal de prioriteit en status van een materiaal voor sortering.
+    Returns: (priority: int, status: str)
+    - priority 0: Verlopen (rood) - hoogste prioriteit
+    - priority 1: Bijna verlopen binnen 1 maand (geel)
+    - priority 2: In orde (groen/normaal) - laagste prioriteit
+    
+    status: "verlopen", "bijna_verlopen", "in_orde"
+    """
+    if not material:
+        return (2, "in_orde")  # Geen materiaal = in orde
+    
+    # Check of keuring verlopen is (via inspection_status)
+    if material.inspection_status == "keuring verlopen":
+        return (0, "verlopen")
+    
+    # Check of keuring bijna vervalt (binnen 1 maand) op basis van laatste_keuring + validity days
+    if material.laatste_keuring and material.material_type_id and material.material_type:
+        validity_days = material.material_type.inspection_validity_days
+        if validity_days and validity_days > 0:
+            today = datetime.utcnow().date()
+            expiry_date = material.laatste_keuring + timedelta(days=validity_days)
+            days_until_expiry = (expiry_date - today).days
+            
+            # Als verlopen
+            if days_until_expiry < 0:
+                return (0, "verlopen")
+            # Als binnen 1 maand (30 dagen)
+            elif days_until_expiry <= 30:
+                return (1, "bijna_verlopen")
+    
+    # Anders: in orde
+    return (2, "in_orde")
 
 
 @documenten_bp.route("/", methods=["GET"])
@@ -60,22 +97,25 @@ def documenten():
             )
         )
     
-    # Sorteer op datum (nieuwste eerst)
-    query = query.order_by(Document.aangemaakt_op.desc())
-    
+    # Haal alle documenten op (nog niet gesorteerd op keuringsstatus)
     documents_db = query.all()
     
-    # Converteer naar template formaat
+    # Converteer naar template formaat en bereken keuringsstatus
     documents = []
     for doc in documents_db:
         # Bepaal materiaal naam
         material_name = None
         material_serial = None
+        material_obj = None
         if doc.material_id and doc.material:
             material_name = doc.material.name
             material_serial = doc.material.serial
+            material_obj = doc.material
         elif doc.material_type_id and doc.material_type_ref:
             material_name = f"Type: {doc.material_type_ref.name}"
+        
+        # Bepaal keuringsstatus prioriteit voor sortering
+        inspection_priority, inspection_status = get_inspection_status_priority(material_obj)
         
         # Bepaal bucket en haal URL op
         bucket = get_bucket_for_document_type(doc.document_type)
@@ -104,8 +144,23 @@ def documenten():
             "size": file_size_str,
             "uploaded_by": doc.uploaded_by or "Onbekend",
             "url": file_url,
-            "path": doc.file_path
+            "path": doc.file_path,
+            "inspection_priority": inspection_priority,  # Voor sortering: 0=verlopen, 1=bijna_verlopen, 2=in_orde
+            "inspection_status": inspection_status  # "verlopen", "bijna_verlopen", "in_orde"
         })
+    
+    # Voeg sorteer timestamp toe aan elk document
+    for doc_data in documents:
+        # Vind het originele document voor de datum
+        original_doc = next((d for d in documents_db if d.id == doc_data["id"]), None)
+        if original_doc and original_doc.aangemaakt_op:
+            doc_data["_sort_timestamp"] = original_doc.aangemaakt_op.timestamp()
+        else:
+            doc_data["_sort_timestamp"] = 0
+    
+    # Sorteer: eerst op priority (0=verlopen, 1=bijna_verlopen, 2=in_orde), dan op datum (nieuwste eerst)
+    # Lagere priority nummer = hogere prioriteit (verlopen komt eerst)
+    documents.sort(key=lambda x: (x["inspection_priority"], -x.get("_sort_timestamp", 0)))
     
     # Haal alle materialen op voor de dropdown (dynamisch - exclusief verwijderde materialen)
     # Deze lijst wordt automatisch bijgewerkt wanneer materialen worden toegevoegd of verwijderd
