@@ -63,13 +63,21 @@ class MaterialService:
     @staticmethod
     def get_to_inspect_count() -> int:
         """Get count of materials requiring inspection"""
-        keuring_verlopen = Material.query.filter_by(
-            inspection_status="keuring verlopen"
-        ).count()
+        # Count materials that need inspection:
+        # 1. Materials with "voorwaardelijk" status (need to be re-inspected)
+        # 2. Materials with "keuring gepland" status (te keuren - planned but not yet executed)
+        # 3. Materials with "afgekeurd" status (rejected, need to be re-inspected)
         keuring_gepland = Material.query.filter_by(
             inspection_status="keuring gepland"
         ).count()
-        return keuring_verlopen + keuring_gepland
+        voorwaardelijk = Material.query.filter_by(
+            inspection_status="voorwaardelijk"
+        ).count()
+        afgekeurd = Material.query.filter_by(
+            inspection_status="afgekeurd"
+        ).count()
+        
+        return keuring_gepland + voorwaardelijk + afgekeurd
     
     @staticmethod
     def check_inspection_expiry(material: Material) -> bool:
@@ -706,6 +714,9 @@ class KeuringService:
                 elif material.inspection_status == "afgekeurd":
                     status_badge = "afgekeurd"
                     status_class = "danger"
+                elif material.inspection_status == "voorwaardelijk":
+                    status_badge = "voorwaardelijk"
+                    status_class = "warning"
                 else:
                     status_badge = "gepland"
                     status_class = "secondary"
@@ -728,13 +739,22 @@ class KeuringService:
                         status_class = "secondary"
                         dagen_verschil = (keuring.volgende_controle - today).days
             
-            # Check certificate
+            # Check certificate - zoek het meest recente certificaat uit alle historiek records
             has_certificate = False
-            latest_history = KeuringHistoriek.query.filter_by(
-                material_id=material.id
-            ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
-            if latest_history and latest_history.certificaat_path:
+            certificaat_url = None
+            # Zoek het meest recente historiek record met een certificaat
+            latest_certificate_history = (
+                KeuringHistoriek.query
+                .filter_by(material_id=material.id)
+                .filter(KeuringHistoriek.certificaat_path.isnot(None))
+                .filter(KeuringHistoriek.certificaat_path != "")
+                .order_by(KeuringHistoriek.keuring_datum.desc())
+                .first()
+            )
+            if latest_certificate_history and latest_certificate_history.certificaat_path:
                 has_certificate = True
+                from helpers import get_file_url_from_path
+                certificaat_url = get_file_url_from_path(latest_certificate_history.certificaat_path)
             
             inspection_list.append({
                 'keuring': keuring,
@@ -743,6 +763,7 @@ class KeuringService:
                 'status_class': status_class,
                 'dagen_verschil': dagen_verschil,
                 'has_certificate': has_certificate,
+                'certificaat_url': certificaat_url,
             })
         
         # Get filter options

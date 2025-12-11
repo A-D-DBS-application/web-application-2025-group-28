@@ -254,13 +254,21 @@
                   <span class="keuringen-badge keuringen-badge-goedgekeurd"><i class="bi bi-check-circle me-1"></i>Goedgekeurd</span>
                 {% elif item.status_badge == 'afgekeurd' %}
                   <span class="keuringen-badge keuringen-badge-afgekeurd"><i class="bi bi-x-circle me-1"></i>Afgekeurd</span>
+                {% elif item.status_badge == 'voorwaardelijk' %}
+                  <span class="keuringen-badge keuringen-badge-voorwaardelijk"><i class="bi bi-exclamation-triangle me-1"></i>Voorwaardelijk</span>
                 {% else %}
                   <span class="keuringen-badge keuringen-badge-gepland">Te Keuren</span>
                 {% endif %}
               </td>
               <td>
-                {% if item.has_certificate %}
-                  <span class="keuringen-cert-badge" title="Certificaat beschikbaar"><i class="bi bi-file-earmark-text"></i></span>
+                {% if item.has_certificate and item.certificaat_url %}
+                  <a href="{{ item.certificaat_url }}" target="_blank" class="btn btn-sm btn-outline-primary" title="Certificaat bekijken">
+                    <i class="bi bi-file-earmark-text me-1"></i>Certificaat
+                  </a>
+                {% elif item.has_certificate %}
+                  <span class="btn btn-sm btn-outline-secondary" title="Certificaat URL niet beschikbaar">
+                    <i class="bi bi-file-earmark-text me-1"></i>Certificaat
+                  </span>
                 {% else %}
                   <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
@@ -288,6 +296,20 @@
                             onclick="openEditKeuringModal(this)">
                       Bewerken
                     </button>
+                  {% elif material.inspection_status == 'voorwaardelijk' or material.inspection_status == 'afgekeurd' %}
+                    <!-- Voorwaardelijk of Afgekeurd - allow to register new result -->
+                    <button type="button" 
+                            class="keuringen-action-btn keuringen-action-btn-primary"
+                            data-bs-toggle="modal"
+                            data-bs-target="#keuringResultaatModal"
+                            onclick="openResultaatModal({{ keuring.id }})">
+                      Resultaat registreren
+                    </button>
+                    <button type="button" 
+                            class="keuringen-action-btn"
+                            onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
+                      Details
+                    </button>
                   {% else %}
                     <!-- Already inspected - show "Details" -->
                     <button type="button" 
@@ -295,11 +317,6 @@
                             onclick="showMaterialInspectionHistory('{{ material.serial }}', {{ material.id }})">
                       Details
                     </button>
-                    {% if item.has_certificate %}
-                      <a href="#" class="keuringen-action-btn keuringen-action-btn-link" title="Certificaat">
-                        Certificaat
-                      </a>
-                    {% endif %}
                   {% endif %}
                 </div>
               </td>
@@ -378,7 +395,7 @@
 
       <form method="post" action="{{ url_for('keuringen.keuring_toevoegen') }}" id="nieuweKeuringForm">
         <div class="modal-body">
-          <div id="nieuweKeuringErrors" class="alert alert-danger error-container"></div>
+          <div id="nieuweKeuringErrors" class="alert alert-danger error-container d-none"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel <span class="text-danger">*</span></label>
@@ -449,7 +466,7 @@
       <form method="post" action="{{ url_for('keuringen.keuring_bewerken') }}" id="bewerkKeuringForm">
         <input type="hidden" name="keuring_id" id="edit-keuring-id">
         <div class="modal-body">
-          <div id="bewerkKeuringErrors" class="alert alert-danger error-container"></div>
+          <div id="bewerkKeuringErrors" class="alert alert-danger error-container d-none"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel</label>
@@ -512,7 +529,7 @@
       <form method="post" action="{{ url_for('keuringen.keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
         <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
         <div class="modal-body">
-          <div id="keuringResultaatErrors" class="alert alert-danger error-container"></div>
+          <div id="keuringResultaatErrors" class="alert alert-danger error-container d-none"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Resultaat <span class="text-danger">*</span></label>
@@ -600,7 +617,7 @@
           </div>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" id="materieelInspectieHistoriekFooter">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
       </div>
     </div>
@@ -680,6 +697,12 @@
   background-color: #1565C0 !important;
   color: #ffffff !important;
 }
+
+/* Voorwaardelijk → Orange/Warning (#F4A100) */
+.keuringen-badge-voorwaardelijk {
+  background-color: #F4A100 !important;
+  color: #ffffff !important;
+}
 </style>
 
 <script>
@@ -699,6 +722,14 @@ document.addEventListener('DOMContentLoaded', function() {
     modal.addEventListener('hidden.bs.modal', function() {
       cleanupModals();
     });
+    // Clear error containers when modal is shown
+    modal.addEventListener('show.bs.modal', function() {
+      const errorContainer = modal.querySelector('.error-container');
+      if (errorContainer) {
+        errorContainer.textContent = '';
+        errorContainer.classList.add('d-none');
+      }
+    });
   });
 });
 
@@ -707,6 +738,10 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
   const modal = new bootstrap.Modal(document.getElementById('materieelInspectieHistoriekModal'));
   const modalBody = document.getElementById('materieelInspectieHistoriekBody');
   const modalTitle = document.getElementById('historiek-material-name');
+  const footer = document.getElementById('materieelInspectieHistoriekFooter');
+  
+  // Reset footer to default
+  footer.innerHTML = '<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>';
   
   modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
   modal.show();
@@ -755,6 +790,10 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
             }
           }
           
+          // Store keuring_id for action buttons
+          const keuringId = historyData.keuring_id;
+          const inspectionStatus = historyData.inspection_status || '';
+          
           let historyHtml = `
             <div class="mb-3">
               <strong>Serienummer:</strong> ${escapeHtml(material.serial || '')}<br>
@@ -777,6 +816,26 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
             <hr>
             <h6>Inspectie Historiek</h6>
           `;
+          
+          // Update footer with action buttons
+          const footer = document.getElementById('materieelInspectieHistoriekFooter');
+          let footerHtml = '';
+          
+          // Show "Resultaat registreren" if status is afgekeurd, voorwaardelijk, or if there's a keuring_id without laatste_controle
+          if (keuringId && (inspectionStatus === 'afgekeurd' || inspectionStatus === 'voorwaardelijk' || !historyData.historiek || historyData.historiek.length === 0)) {
+            footerHtml += `<button type="button" class="btn btn-primary me-2" onclick="openResultaatModalFromHistoriek(${keuringId}); bootstrap.Modal.getInstance(document.getElementById('materieelInspectieHistoriekModal')).hide();">Resultaat registreren</button>`;
+          }
+          
+          // Show "Bewerken" if there's a keuring_id (to edit next inspection date)
+          if (keuringId) {
+            const volgendeDatum = historyData.volgende_keuring_datum || '';
+            const serialEscaped = (material.serial || '').replace(/'/g, "\\'");
+            const datumEscaped = (volgendeDatum || '').replace(/'/g, "\\'");
+            footerHtml += `<button type="button" class="btn btn-outline-primary me-2" onclick="openEditKeuringModalFromHistoriek(${keuringId}, '${serialEscaped}', '${datumEscaped}'); bootstrap.Modal.getInstance(document.getElementById('materieelInspectieHistoriekModal')).hide();">Bewerken</button>`;
+          }
+          
+          footerHtml += `<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>`;
+          footer.innerHTML = footerHtml;
           
           if (historyData.historiek && historyData.historiek.length > 0) {
             historyHtml += '<div class="list-group">';
@@ -849,7 +908,40 @@ window.openResultaatModal = function(keuringId) {
   sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
   const nextDate = sixMonthsLater.toISOString().split('T')[0];
   document.getElementById('resultaat-volgende-keuring-datum').value = nextDate;
-  };
+};
+
+// Open resultaat modal from historiek (same function, just with a different name for clarity)
+window.openResultaatModalFromHistoriek = function(keuringId) {
+  openResultaatModal(keuringId);
+  const modal = new bootstrap.Modal(document.getElementById('keuringResultaatModal'));
+  modal.show();
+};
+
+// Open edit modal from historiek
+window.openEditKeuringModalFromHistoriek = function(keuringId, serial, volgendeDatum) {
+  document.getElementById('edit-keuring-id').value = keuringId || '';
+  document.getElementById('edit-keuring-serial').value = serial || '';
+  document.getElementById('edit-volgende-keuring-datum').value = volgendeDatum || '';
+  // Fetch keuring status data to populate uitgevoerd_door and opmerking
+  fetch(`/api/keuring/status/${keuringId}`)
+    .then(response => response.json())
+    .then(data => {
+      if (data && !data.error) {
+        document.getElementById('edit-keuring-uitgevoerd-door').value = data.uitgevoerd_door || '';
+        document.getElementById('edit-keuring-opmerking').value = data.opmerkingen || '';
+        if (data.volgende_controle) {
+          document.getElementById('edit-volgende-keuring-datum').value = data.volgende_controle;
+        }
+      }
+      const modal = new bootstrap.Modal(document.getElementById('bewerkKeuringModal'));
+      modal.show();
+    })
+    .catch(error => {
+      console.error('Error loading keuring data:', error);
+      const modal = new bootstrap.Modal(document.getElementById('bewerkKeuringModal'));
+      modal.show();
+    });
+};
 
   function escapeHtml(text) {
     if (!text) return '';

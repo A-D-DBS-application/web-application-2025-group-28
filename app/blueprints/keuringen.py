@@ -245,6 +245,31 @@ def keuring_resultaat():
         certificaat_path = save_upload(
             certificaat_file, current_app.config["CERTIFICATE_UPLOAD_FOLDER"], prefix
         )
+        
+        # Sla certificaat ook op als Document record voor documenten pagina
+        from models import Document
+        from werkzeug.utils import secure_filename
+        
+        # Bereken bestandsgrootte
+        certificaat_file.seek(0, 2)  # Ga naar einde
+        file_size = certificaat_file.tell()
+        certificaat_file.seek(0)  # Reset
+        
+        user_name = g.user.naam if g.user else "Onbekend"
+        document = Document(
+            document_type="Keuringstatus",
+            file_path=certificaat_path,
+            file_name=secure_filename(certificaat_file.filename),
+            file_size=file_size,
+            material_id=material.id,
+            material_type_id=None,
+            material_type=None,
+            uploaded_by=user_name,
+            user_id=g.user.gebruiker_id if g.user else None,
+            note=f"Certificaat voor keuring {keuring_datum.strftime('%Y-%m-%d')} - {resultaat}",
+            aangemaakt_op=datetime.utcnow()
+        )
+        db.session.add(document)
     
     historiek_record = KeuringHistoriek(
         material_id=material.id,
@@ -469,6 +494,23 @@ def api_keuring_details(historiek_id):
     })
 
 
+@keuringen_bp.route("/api/keuring/status/<int:keuring_id>")
+@login_required
+def api_keuring_status(keuring_id):
+    """API endpoint om keuring status details op te halen voor bewerken"""
+    keuring = Keuringstatus.query.filter_by(id=keuring_id).first()
+    
+    if not keuring:
+        return jsonify({"error": "Keuring niet gevonden"}), 404
+    
+    return jsonify({
+        "id": keuring.id,
+        "uitgevoerd_door": keuring.uitgevoerd_door or "",
+        "opmerkingen": keuring.opmerkingen or "",
+        "volgende_controle": keuring.volgende_controle.strftime("%Y-%m-%d") if keuring.volgende_controle else "",
+    })
+
+
 @keuringen_bp.route("/api/keuring/historiek/<int:material_id>")
 @login_required
 def api_keuring_historiek(material_id):
@@ -485,9 +527,11 @@ def api_keuring_historiek(material_id):
     keuring_status = None
     volgende_keuring_datum = None
     dagen_verschil = None
+    keuring_id = None
     if material.keuring_id:
         keuring = Keuringstatus.query.filter_by(id=material.keuring_id).first()
         if keuring:
+            keuring_id = keuring.id
             volgende_keuring_datum = keuring.volgende_controle.strftime("%Y-%m-%d") if keuring.volgende_controle else None
             if keuring.volgende_controle:
                 dagen_verschil = (keuring.volgende_controle - today).days
@@ -514,6 +558,7 @@ def api_keuring_historiek(material_id):
         "material_name": material.name or "Onbekend",
         "serial": material.serial or "-",
         "inspection_status": material.inspection_status or "Onbekend",
+        "keuring_id": keuring_id,
         "volgende_keuring_datum": volgende_keuring_datum,
         "dagen_verschil": dagen_verschil,
         "historiek": historiek_list

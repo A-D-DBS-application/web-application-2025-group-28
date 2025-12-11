@@ -123,7 +123,7 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
         bucket = "Veiligheidsfiche"
         folder = ""
     elif upload_folder == current_app.config.get("CERTIFICATE_UPLOAD_FOLDER") or "SUPABASE_Keuringsstatus" in upload_folder_str:
-        bucket = "Keuringsstatus documenten"
+        bucket = "Keuringsstatus"
         folder = ""
     elif upload_folder == current_app.config.get("DOC_UPLOAD_FOLDER") or "SUPABASE_Aankoop-Verkoop" in upload_folder_str:
         bucket = "Aankoop-Verkoop documenten"
@@ -139,7 +139,7 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
         bucket = "Veiligheidsfiche"
         folder = ""
     elif "certificate" in upload_folder_str.lower():
-        bucket = "Keuringsstatus documenten"
+        bucket = "Keuringsstatus"
         folder = ""
     elif "docs" in upload_folder_str.lower():
         bucket = "Aankoop-Verkoop documenten"
@@ -259,8 +259,8 @@ def get_file_url_from_path(file_path: str) -> str | None:
         bucket = "projects"
         clean_path = file_path.replace("uploads/projects/", "projects/") if "uploads/projects/" in file_path else file_path
     elif file_path.startswith("certificates/") or file_path.startswith("uploads/certificates/"):
-        bucket = "certificates"
-        clean_path = file_path.replace("uploads/certificates/", "certificates/") if "uploads/certificates/" in file_path else file_path
+        bucket = "Keuringsstatus"
+        clean_path = file_path.replace("uploads/certificates/", "").replace("certificates/", "") if "uploads/certificates/" in file_path or "certificates/" in file_path else file_path
     elif file_path.startswith("type-images/") or file_path.startswith("type_images/") or file_path.startswith("uploads/type_images/"):
         bucket = "type-images"
         clean_path = file_path.replace("uploads/type_images/", "type-images/").replace("type_images/", "type-images/")
@@ -269,12 +269,14 @@ def get_file_url_from_path(file_path: str) -> str | None:
         # Dit is voor backward compatibility met oude bestanden
         if file_path.startswith("uploads/"):
             return url_for('static', filename=file_path)
-        # Als het alleen een bestandsnaam is zonder prefix, probeer als type-image eerst
-        # (omdat dit vaak voorkomt bij materiaal types)
+        # Als het alleen een bestandsnaam is zonder prefix, detecteer op basis van bestandsnaam
         if "/" not in file_path and not file_path.startswith("uploads/"):
+            # Certificaten hebben "_cert_" in de bestandsnaam
+            if "_cert_" in file_path:
+                bucket = "Keuringsstatus"
+                clean_path = file_path
             # Check of het een image extensie heeft (jpg, jpeg, png) - dan is het waarschijnlijk een type-image
-            image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
-            if any(file_path.lower().endswith(ext) for ext in image_extensions):
+            elif any(file_path.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
                 bucket = "type-images"
                 clean_path = file_path
             else:

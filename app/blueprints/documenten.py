@@ -18,7 +18,7 @@ def get_bucket_for_document_type(document_type: str) -> str:
     bucket_mapping = {
         "Aankoopfactuur": "Aankoop-Verkoop documenten",
         "Verkoopfactuur": "Aankoop-Verkoop documenten",
-        "Keuringstatus": "Keuringsstatus documenten",
+        "Keuringstatus": "Keuringsstatus",
         "Veiligheidsfiche": "Veiligheidsfiche"
     }
     return bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
