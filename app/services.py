@@ -63,13 +63,9 @@ class MaterialService:
     @staticmethod
     def get_to_inspect_count() -> int:
         """Get count of materials requiring inspection"""
-        keuring_verlopen = Material.query.filter_by(
+        return Material.query.filter_by(
             inspection_status="keuring verlopen"
         ).count()
-        keuring_gepland = Material.query.filter_by(
-            inspection_status="keuring gepland"
-        ).count()
-        return keuring_verlopen + keuring_gepland
     
     @staticmethod
     def check_inspection_expiry(material: Material) -> bool:
@@ -663,38 +659,53 @@ class KeuringService:
             except ValueError:
                 pass
         
-        # Sorting
-        if sort_by == "materieel":
-            if sort_order == "desc":
-                query = query.order_by(Material.name.desc())
-            else:
-                query = query.order_by(Material.name.asc())
-        elif sort_by == "laatste_keuring":
-            if sort_order == "desc":
-                query = query.order_by(Keuringstatus.laatste_controle.desc().nulls_last())
-            else:
-                query = query.order_by(Keuringstatus.laatste_controle.asc().nulls_last())
-        elif sort_by == "volgende_keuring":
-            if sort_order == "desc":
-                query = query.order_by(Keuringstatus.volgende_controle.desc().nulls_last())
-            else:
-                query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
-        elif sort_by == "resultaat":
-            if sort_order == "desc":
-                query = query.order_by(Material.inspection_status.desc().nulls_last())
-            else:
-                query = query.order_by(Material.inspection_status.asc().nulls_last())
+        # Check if we need to sort by risk (requires Python-side sorting)
+        needs_risk_sorting = (sort_by == "risk" or not sort_by)
+        
+        # If sorting by risk, we need to get ALL items first, calculate risk, sort, then paginate
+        # Otherwise, we can use database pagination
+        if needs_risk_sorting:
+            # Get all items (no pagination yet)
+            all_inspection_items = query.all()
+            total_items = len(all_inspection_items)
         else:
-            query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+            # Apply database sorting for non-risk sorts
+            if sort_by == "materieel":
+                if sort_order == "desc":
+                    query = query.order_by(Material.name.desc())
+                else:
+                    query = query.order_by(Material.name.asc())
+            elif sort_by == "laatste_keuring":
+                if sort_order == "desc":
+                    query = query.order_by(Keuringstatus.laatste_controle.desc().nulls_last())
+                else:
+                    query = query.order_by(Keuringstatus.laatste_controle.asc().nulls_last())
+            elif sort_by == "volgende_keuring":
+                if sort_order == "desc":
+                    query = query.order_by(Keuringstatus.volgende_controle.desc().nulls_last())
+                else:
+                    query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+            elif sort_by == "resultaat":
+                if sort_order == "desc":
+                    query = query.order_by(Material.inspection_status.desc().nulls_last())
+                else:
+                    query = query.order_by(Material.inspection_status.asc().nulls_last())
+            else:
+                # Default: sort by volgende_controle
+                query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
+            
+            # Pagination for non-risk sorts
+            total_items = query.count()
+            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+            all_inspection_items = pagination.items
         
-        # Pagination
-        total_items = query.count()
-        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
-        inspection_items = pagination.items
+        # Import risk calculation algorithm and helper
+        from algorithms.inspection_risk import calculate_inspection_risk
+        from helpers import get_file_url_from_path
         
-        # Build inspection list with computed status
+        # Build inspection list with computed status and risk
         inspection_list = []
-        for keuring, material in inspection_items:
+        for keuring, material in all_inspection_items:
             status_badge = "gepland"
             status_class = "secondary"
             dagen_verschil = None
@@ -730,11 +741,16 @@ class KeuringService:
             
             # Check certificate
             has_certificate = False
+            certificaat_url = None
             latest_history = KeuringHistoriek.query.filter_by(
                 material_id=material.id
             ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
             if latest_history and latest_history.certificaat_path:
                 has_certificate = True
+                certificaat_url = get_file_url_from_path(latest_history.certificaat_path)
+            
+            # Calculate risk using algorithm
+            risk_data = calculate_inspection_risk(material, keuring, today)
             
             inspection_list.append({
                 'keuring': keuring,
@@ -743,7 +759,60 @@ class KeuringService:
                 'status_class': status_class,
                 'dagen_verschil': dagen_verschil,
                 'has_certificate': has_certificate,
+                'certificaat_url': certificaat_url,
+                'risk_score': risk_data['risk_score'],
+                'risk_level': risk_data['risk_level'],
+                'risk_explanation': risk_data['risk_explanation'],
             })
+        
+        # Helper function for pagination iteration (only used for risk sorting)
+        def _iter_pages_helper(current_page, total_pages, left_edge, right_edge, left_current, right_current):
+            """Helper to generate page numbers for pagination"""
+            last = 0
+            for num in range(1, total_pages + 1):
+                if num <= left_edge or \
+                   (num > current_page - left_current - 1 and num < current_page + right_current) or \
+                   num > total_pages - right_edge:
+                    if last + 1 != num:
+                        yield None
+                    yield num
+                    last = num
+        
+        # Sort by risk if requested, or default to risk_score DESC if no sort specified
+        if needs_risk_sorting:
+            # Default sorting: risk_score DESC if no sort specified
+            reverse = (sort_order == "desc") if sort_by == "risk" else True
+            inspection_list.sort(key=lambda x: x['risk_score'], reverse=reverse)
+            
+            # Manual pagination for risk-sorted results
+            start_idx = (page - 1) * per_page
+            end_idx = start_idx + per_page
+            paginated_list = inspection_list[start_idx:end_idx]
+            
+            # Create a pagination-like object for compatibility
+            from math import ceil
+            total_pages = ceil(total_items / per_page) if total_items > 0 else 1
+            
+            # Create a simple object that mimics Flask-SQLAlchemy's Pagination
+            class PaginationObject:
+                def __init__(self, page, per_page, total, pages):
+                    self.page = page
+                    self.per_page = per_page
+                    self.total = total
+                    self.pages = pages
+                    self.has_prev = page > 1
+                    self.has_next = page < pages
+                    self.prev_num = page - 1 if page > 1 else None
+                    self.next_num = page + 1 if page < pages else None
+                
+                def iter_pages(self, left_edge=1, right_edge=1, left_current=2, right_current=2):
+                    return _iter_pages_helper(self.page, self.pages, left_edge, right_edge, left_current, right_current)
+            
+            pagination = PaginationObject(page, per_page, total_items, total_pages)
+            inspection_list = paginated_list
+        else:
+            # For non-risk sorts, inspection_list is already paginated from database
+            pass
         
         # Get filter options
         all_projects = Project.query.filter_by(is_deleted=False).order_by(Project.name).all()
