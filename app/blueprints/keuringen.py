@@ -47,8 +47,8 @@ def keuringen():
     priority_filter = (request.args.get("priority") or "").strip()
     
     page = request.args.get("page", 1, type=int)
-    sort_by = request.args.get("sort", "volgende_controle")
-    sort_order = request.args.get("order", "asc")
+    sort_by = request.args.get("sort", "")  # Default: empty (will sort by risk)
+    sort_order = request.args.get("order", "desc")  # Default: desc for risk sorting
     
     # Get filtered keuringen using service
     inspection_list, pagination, total_items, filter_options = KeuringService.get_filtered_keuringen(

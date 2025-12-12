@@ -672,6 +672,7 @@ class KeuringService:
                 pass
         
         # Sorting
+        # Note: Risk sorting is handled after risk calculation (Python-side)
         if sort_by == "materieel":
             if sort_order == "desc":
                 query = query.order_by(Material.name.desc())
@@ -692,7 +693,12 @@ class KeuringService:
                 query = query.order_by(Material.inspection_status.desc().nulls_last())
             else:
                 query = query.order_by(Material.inspection_status.asc().nulls_last())
+        elif sort_by == "risk":
+            # Risk sorting handled after risk calculation
+            pass
         else:
+            # Default: sort by volgende_controle if no sort specified
+            # Note: If sort_by is empty/not set, we'll sort by risk after calculation
             query = query.order_by(Keuringstatus.volgende_controle.asc().nulls_last())
         
         # Pagination
@@ -700,7 +706,10 @@ class KeuringService:
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         inspection_items = pagination.items
         
-        # Build inspection list with computed status
+        # Import risk calculation algorithm
+        from algorithms.inspection_risk import calculate_inspection_risk
+        
+        # Build inspection list with computed status and risk
         inspection_list = []
         for keuring, material in inspection_items:
             status_badge = "gepland"
@@ -756,6 +765,9 @@ class KeuringService:
                 from helpers import get_file_url_from_path
                 certificaat_url = get_file_url_from_path(latest_certificate_history.certificaat_path)
             
+            # Calculate risk using algorithm
+            risk_data = calculate_inspection_risk(material, keuring, today)
+            
             inspection_list.append({
                 'keuring': keuring,
                 'material': material,
@@ -764,7 +776,16 @@ class KeuringService:
                 'dagen_verschil': dagen_verschil,
                 'has_certificate': has_certificate,
                 'certificaat_url': certificaat_url,
+                'risk_score': risk_data['risk_score'],
+                'risk_level': risk_data['risk_level'],
+                'risk_explanation': risk_data['risk_explanation'],
             })
+        
+        # Sort by risk if requested, or default to risk_score DESC if no sort specified
+        if sort_by == "risk" or not sort_by:
+            # Default sorting: risk_score DESC if no sort specified
+            reverse = (sort_order == "desc") if sort_by == "risk" else True
+            inspection_list.sort(key=lambda x: x['risk_score'], reverse=reverse)
         
         # Get filter options
         all_projects = Project.query.filter_by(is_deleted=False).order_by(Project.name).all()
