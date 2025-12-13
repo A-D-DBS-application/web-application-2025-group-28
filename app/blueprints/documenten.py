@@ -360,19 +360,38 @@ def documenten_upload():
 @login_required
 def document_download(document_id):
     """Download een document - redirect naar Supabase URL."""
-    document = Document.query.get_or_404(document_id)
-    
-    # Bepaal bucket
-    bucket = get_bucket_for_document_type(document.document_type)
-    
-    # Haal publieke URL op
-    file_url = get_supabase_file_url(bucket, document.file_path)
-    
-    if file_url:
-        # Redirect naar de Supabase URL - browser zal het bestand downloaden
-        return redirect(file_url)
-    else:
-        flash("Document niet gevonden of niet beschikbaar.", "error")
+    try:
+        document = Document.query.get_or_404(document_id)
+        
+        if not document:
+            flash("Document niet gevonden.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        # Bepaal bucket
+        bucket = get_bucket_for_document_type(document.document_type)
+        
+        # Debug logging
+        current_app.logger.info(f"Download request: document_id={document_id}, type={document.document_type}, bucket={bucket}, path={document.file_path}")
+        
+        if not document.file_path:
+            current_app.logger.error(f"Document {document_id} has no file_path")
+            flash("Document heeft geen bestandspad.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        # Haal publieke URL op
+        file_url = get_supabase_file_url(bucket, document.file_path)
+        
+        if file_url:
+            # Redirect naar de Supabase URL - browser zal het bestand downloaden
+            current_app.logger.info(f"Redirecting to URL: {file_url}")
+            return redirect(file_url)
+        else:
+            current_app.logger.error(f"Could not generate URL for document {document_id} in bucket '{bucket}' with path '{document.file_path}'")
+            flash(f"Kon document URL niet genereren. Controleer of de bucket '{bucket}' bestaat in Supabase.", "error")
+            return redirect(url_for("documenten.documenten"))
+    except Exception as e:
+        current_app.logger.error(f"Error in document_download: {e}", exc_info=True)
+        flash(f"Fout bij downloaden: {str(e)}", "error")
         return redirect(url_for("documenten.documenten"))
 
 

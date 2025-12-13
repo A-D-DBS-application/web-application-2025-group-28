@@ -131,10 +131,14 @@
 }
 
 .image-preview-large {
-  max-width: 100%;
+  max-width: 400px;
   max-height: 300px;
-  object-fit: cover;
+  width: auto;
+  height: auto;
+  object-fit: contain;
   border-radius: 8px;
+  margin: 0 auto;
+  display: block;
 }
 
 /* Hidden utility class */

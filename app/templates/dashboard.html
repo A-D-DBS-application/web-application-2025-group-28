@@ -444,35 +444,86 @@
                 <strong>Opmerking:</strong><br>
                 ${displayValue(item.note)}
               </div>
-              ${item.documents && item.documents.length > 0 ? `
-                <div class="mb-3">
-                  <strong>Documenten:</strong><br>
-                  <ul class="list-unstyled mt-2">
-                    ${item.documents.map(doc => `
-                      <li class="mb-2">
-                        <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} — 
-                        <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
-                      </li>
-                    `).join('')}
-                  </ul>
-                </div>
-              ` : ''}
-              ${item.documentation_path ? `
-                <div class="mb-3">
-                  <strong>Documentatie:</strong><br>
-                  <a href="${escapeHtml(item.documentation_path)}" target="_blank" class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk documentatie
-                  </a>
-                </div>
-              ` : ''}
-              ${item.safety_sheet_path ? `
-                <div class="mb-3">
-                  <strong>Veiligheidsfiche:</strong><br>
-                  <a href="${escapeHtml(item.safety_sheet_path)}" target="_blank" class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
-                  </a>
-                </div>
-              ` : ''}
+              ${(() => {
+                // Groepeer documenten per bucket/type
+                const docsByBucket = {};
+                if (item.documents && item.documents.length > 0) {
+                  item.documents.forEach(doc => {
+                    let bucketName = '';
+                    if (doc.document_type === 'Aankoopfactuur' || doc.document_type === 'Verkoopfactuur') {
+                      bucketName = 'Aankoop-Verkoop documenten';
+                    } else if (doc.document_type === 'Keuringstatus') {
+                      bucketName = 'Keuringsstatus documenten';
+                    } else if (doc.document_type === 'Veiligheidsfiche') {
+                      bucketName = 'Veiligheidsfiche';
+                    } else {
+                      bucketName = 'Aankoop-Verkoop documenten'; // default
+                    }
+                    
+                    if (!docsByBucket[bucketName]) {
+                      docsByBucket[bucketName] = [];
+                    }
+                    docsByBucket[bucketName].push(doc);
+                  });
+                }
+                
+                // Voeg ook legacy documentation_path en safety_sheet_path toe
+                if (item.documentation_path) {
+                  if (!docsByBucket['Aankoop-Verkoop documenten']) {
+                    docsByBucket['Aankoop-Verkoop documenten'] = [];
+                  }
+                  docsByBucket['Aankoop-Verkoop documenten'].push({
+                    file_name: 'Documentatie',
+                    file_url: item.documentation_url || item.documentation_path,
+                    document_type: 'Documentatie',
+                    id: null  // Legacy document heeft geen ID
+                  });
+                }
+                
+                if (item.safety_sheet_path) {
+                  if (!docsByBucket['Veiligheidsfiche']) {
+                    docsByBucket['Veiligheidsfiche'] = [];
+                  }
+                  docsByBucket['Veiligheidsfiche'].push({
+                    file_name: 'Veiligheidsfiche',
+                    file_url: item.safety_sheet_url || item.safety_sheet_path,
+                    document_type: 'Veiligheidsfiche',
+                    id: null  // Legacy document heeft geen ID
+                  });
+                }
+                
+                let html = '';
+                Object.keys(docsByBucket).forEach(bucketName => {
+                  const docs = docsByBucket[bucketName];
+                  if (docs.length > 0) {
+                    html += `
+                      <div class="mb-3">
+                        <strong>${escapeHtml(bucketName)}:</strong><br>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                    `;
+                    docs.forEach(doc => {
+                      if (doc.file_url) {
+                        // Gebruik download route als document ID beschikbaar is, anders directe URL
+                        const viewUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
+                        const downloadUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
+                        html += `
+                          <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                          </a>
+                          <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        `;
+                      }
+                    });
+                    html += `
+                        </div>
+                      </div>
+                    `;
+                  }
+                });
+                return html;
+              })()}
               <div class="d-flex gap-2 mt-4">
                 ${buttonsHtml}
               </div>
@@ -692,43 +743,99 @@ document.addEventListener('DOMContentLoaded', function() {
                   <strong>Opmerking:</strong><br>
                   ${displayValue(item.note)}
                 </div>
-                ${item.documents && item.documents.length > 0 ? `
-                  <div class="mb-3">
-                    <strong>Documenten:</strong><br>
-                    <ul class="list-unstyled mt-2">
-                      ${item.documents.map(doc => `
-                        <li class="mb-2">
-                          <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} — 
-                          <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
-                        </li>
-                      `).join('')}
-                    </ul>
-                  </div>
-                ` : ''}
-                ${item.documentation_path ? `
-                  <div class="mb-3">
-                    <strong>Documentatie:</strong><br>
-                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk documentatie
-                  </a>
-                  <a href="${escapeHtml(item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                    <i class="bi bi-download me-1"></i>Download
-                  </a>
-                  </div>
-                ` : ''}
-                ${item.safety_sheet_path ? `
-                  <div class="mb-3">
-                    <strong>Veiligheidsfiche:</strong><br>
-                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" target="_blank" class="btn btn-sm btn-outline-primary me-2">
-                    <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
-                  </a>
-                  <a href="${escapeHtml(item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''))}" download class="btn btn-sm btn-outline-secondary me-2">
-                    <i class="bi bi-download me-1"></i>Download
-                  </a>
-                  </div>
-                ` : ''}
+                ${(() => {
+                  // Groepeer documenten per bucket/type
+                  const docsByBucket = {};
+                  if (item.documents && item.documents.length > 0) {
+                    item.documents.forEach(doc => {
+                      let bucketName = '';
+                      if (doc.document_type === 'Aankoopfactuur' || doc.document_type === 'Verkoopfactuur') {
+                        bucketName = 'Aankoop-Verkoop documenten';
+                      } else if (doc.document_type === 'Keuringstatus') {
+                        bucketName = 'Keuringsstatus documenten';
+                      } else if (doc.document_type === 'Veiligheidsfiche') {
+                        bucketName = 'Veiligheidsfiche';
+                      } else {
+                        bucketName = 'Aankoop-Verkoop documenten'; // default
+                      }
+                      
+                      if (!docsByBucket[bucketName]) {
+                        docsByBucket[bucketName] = [];
+                      }
+                      docsByBucket[bucketName].push(doc);
+                    });
+                  }
+                  
+                // Voeg ook legacy documentation_path en safety_sheet_path toe
+                if (item.documentation_path) {
+                  if (!docsByBucket['Aankoop-Verkoop documenten']) {
+                    docsByBucket['Aankoop-Verkoop documenten'] = [];
+                  }
+                  docsByBucket['Aankoop-Verkoop documenten'].push({
+                    file_name: 'Documentatie',
+                    file_url: item.documentation_url || (item.documentation_path ? '/static/' + item.documentation_path : ''),
+                    document_type: 'Documentatie',
+                    id: null  // Legacy document heeft geen ID
+                  });
+                }
+                
+                if (item.safety_sheet_path) {
+                  if (!docsByBucket['Veiligheidsfiche']) {
+                    docsByBucket['Veiligheidsfiche'] = [];
+                  }
+                  docsByBucket['Veiligheidsfiche'].push({
+                    file_name: 'Veiligheidsfiche',
+                    file_url: item.safety_sheet_url || (item.safety_sheet_path ? '/static/' + item.safety_sheet_path : ''),
+                    document_type: 'Veiligheidsfiche',
+                    id: null  // Legacy document heeft geen ID
+                  });
+                }
+                
+                let html = '';
+                Object.keys(docsByBucket).forEach(bucketName => {
+                  const docs = docsByBucket[bucketName];
+                  if (docs.length > 0) {
+                    html += `
+                      <div class="mb-3">
+                        <strong>${escapeHtml(bucketName)}:</strong><br>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                    `;
+                    docs.forEach(doc => {
+                      // Gebruik download route als document ID beschikbaar is EN file_url bestaat, anders directe URL
+                      // Als doc.id bestaat, gebruik altijd de download route (ook als file_url leeg is)
+                      if (doc.id && doc.id !== null && doc.id !== 'null') {
+                        const viewUrl = `/documenten/download/${doc.id}`;
+                        const downloadUrl = `/documenten/download/${doc.id}`;
+                        html += `
+                          <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                          </a>
+                          <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        `;
+                      } else if (doc.file_url && doc.file_url.trim() !== '') {
+                        // Legacy documenten zonder ID - gebruik directe URL
+                        html += `
+                          <a href="${escapeHtml(doc.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                          </a>
+                          <a href="${escapeHtml(doc.file_url)}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        `;
+                      }
+                    });
+                    html += `
+                        </div>
+                      </div>
+                    `;
+                  }
+                });
+                return html;
+              })()}
                 <div class="d-flex gap-2 mt-4">
-                  <button type="button" 
+                  <button type="button"
                           class="btn btn-outline-secondary edit-material-btn" 
                           data-item-serial="${escapeHtml(item.serial || '')}"
                           onclick="openEditModalFromSearchSerial('${escapeHtml(item.serial || '')}')">

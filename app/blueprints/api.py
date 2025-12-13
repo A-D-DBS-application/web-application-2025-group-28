@@ -141,10 +141,16 @@ def api_search():
                             laatste_keuring = None
                 
                 # Build URLs for documentation using storage helper
+                # Voor backward compatibility: als documentation_path bestaat maar geen Document record, gebruik default bucket
                 documentation_url = ""
                 try:
                     if item.documentation_path:
+                        # Probeer eerst via get_file_url_from_path (voor oude bestanden)
                         documentation_url = get_file_url_from_path(item.documentation_path) or ""
+                        # Als dat niet werkt, probeer met default bucket "Aankoop-Verkoop documenten"
+                        if not documentation_url and not item.documentation_path.startswith("http"):
+                            bucket = "Aankoop-Verkoop documenten"
+                            documentation_url = get_supabase_file_url(bucket, item.documentation_path) or ""
                 except Exception as doc_url_error:
                     print(f"Warning: Could not generate documentation URL for {item.serial}: {doc_url_error}")
                     documentation_url = ""

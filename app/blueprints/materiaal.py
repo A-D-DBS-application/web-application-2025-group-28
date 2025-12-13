@@ -259,6 +259,18 @@ def materiaal_type_toevoegen():
         prefix = secure_filename(name)
         type_image_path = save_upload(type_image_file, current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"], prefix)
     
+    new_type = MaterialType(
+        name=name,
+        description=description if description else None,
+        inspection_validity_days=inspection_validity_days,
+        type_image=type_image_path,
+        safety_sheet=None,  # Wordt later ingesteld na Supabase upload
+    )
+    
+    db.session.add(new_type)
+    db.session.flush()  # Flush om ID te krijgen voor Document record
+    
+    # Maak Document record aan voor veiligheidsfiche in documenten tabel
     safety_sheet_path = None
     if safety_sheet_file and safety_sheet_file.filename:
         filename = secure_filename(safety_sheet_file.filename)
@@ -267,22 +279,6 @@ def materiaal_type_toevoegen():
             flash("Veiligheidsfiche moet een PDF bestand zijn.", "danger")
             return redirect(url_for("materiaal.materiaal_types"))
         
-        prefix = secure_filename(name)
-        safety_sheet_path = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
-    
-    new_type = MaterialType(
-        name=name,
-        description=description if description else None,
-        inspection_validity_days=inspection_validity_days,
-        type_image=type_image_path,
-        safety_sheet=safety_sheet_path,
-    )
-    
-    db.session.add(new_type)
-    db.session.flush()  # Flush om ID te krijgen voor Document record
-    
-    # Maak Document record aan voor veiligheidsfiche in documenten tabel
-    if safety_sheet_path:
         # Upload naar Supabase Storage bucket "Veiligheidsfiche"
         safety_sheet_file.seek(0)  # Reset file pointer
         bucket = "Veiligheidsfiche"
@@ -294,6 +290,10 @@ def materiaal_type_toevoegen():
         )
         
         if file_path:
+            # Update safety_sheet_path voor backward compatibility
+            safety_sheet_path = file_path
+            new_type.safety_sheet = file_path
+            
             # Bereken bestandsgrootte
             safety_sheet_file.seek(0, 2)  # Ga naar einde
             file_size = safety_sheet_file.tell()
@@ -399,11 +399,8 @@ def materiaal_type_bewerken():
                 except:
                     pass
         
-        prefix = secure_filename(name)
-        type_item.safety_sheet = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
-        
         # Maak/update Document record aan voor veiligheidsfiche in documenten tabel
-        if type_item.safety_sheet:
+        if safety_sheet_file and safety_sheet_file.filename:
             # Verwijder oude Document record als die bestaat
             old_doc = Document.query.filter_by(
                 material_type_id=type_item.id,
@@ -423,6 +420,9 @@ def materiaal_type_bewerken():
             )
             
             if file_path:
+                # Update safety_sheet_path voor backward compatibility
+                type_item.safety_sheet = file_path
+                
                 # Bereken bestandsgrootte
                 safety_sheet_file.seek(0, 2)  # Ga naar einde
                 file_size = safety_sheet_file.tell()
@@ -584,12 +584,6 @@ def materiaal_toevoegen():
         flash("Serienummer bestaat al in het systeem.", "danger")
         return redirect(url_for("materiaal.materiaal"))
 
-    documentation_path = None
-    if documentation_file and documentation_file.filename:
-        documentation_path = save_upload(
-            documentation_file, current_app.config["DOC_UPLOAD_FOLDER"], f"{serial}_doc"
-        )
-
     item = Material(
         name=name,
         serial=serial,
@@ -600,7 +594,7 @@ def materiaal_toevoegen():
         note=note if note else None,
         status=DEFAULT_INSPECTION_STATUS,  # Keep status for backward compatibility
         nummer_op_materieel=nummer if nummer else None,
-        documentation_path=documentation_path,
+        documentation_path=None,  # Wordt later ingesteld na Supabase upload
     )
 
     if purchase_date_str:
@@ -630,7 +624,8 @@ def materiaal_toevoegen():
     db.session.flush()  # Flush to get the item.id before creating related records
     
     # Maak Document record aan voor documentatie in documenten tabel
-    if documentation_path and documentation_file and documentation_file.filename:
+    documentation_path = None
+    if documentation_file and documentation_file.filename:
         # Upload naar Supabase Storage bucket op basis van document type
         bucket_mapping = {
             "Aankoopfactuur": "Aankoop-Verkoop documenten",
@@ -649,6 +644,10 @@ def materiaal_toevoegen():
         )
         
         if file_path:
+            # Update documentation_path voor backward compatibility
+            documentation_path = file_path
+            item.documentation_path = file_path
+            
             # Bereken bestandsgrootte
             documentation_file.seek(0, 2)  # Ga naar einde
             file_size = documentation_file.tell()

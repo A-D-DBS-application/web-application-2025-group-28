@@ -170,6 +170,10 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
             return url_for('static', filename=file_path)
         return None
     
+    if not file_path or not file_path.strip():
+        print(f"Warning: Empty file_path for bucket {bucket_name}")
+        return None
+    
     try:
         # Als file_path al een volledige URL is, retourneer die
         if file_path.startswith("http://") or file_path.startswith("https://"):
@@ -177,16 +181,59 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         
         # Verwijder bucket prefix als die er al in zit (bijv. "type-images/filename.jpg" -> "filename.jpg")
         # Supabase get_public_url verwacht alleen het pad binnen de bucket
-        clean_path = file_path
-        if file_path.startswith(f"{bucket_name}/"):
-            clean_path = file_path[len(f"{bucket_name}/"):]
+        clean_path = file_path.strip()
         
-        # Haal publieke URL op van Supabase
-        response = _supabase_client.storage.from_(bucket_name).get_public_url(clean_path)
-        print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, path={clean_path}, full_path={file_path}, URL={response}")
-        return response
+        # Verwijder eventuele leading/trailing slashes
+        clean_path = clean_path.strip('/')
+        
+        # Verwijder bucket prefix als die er al in zit
+        if clean_path.startswith(f"{bucket_name}/"):
+            clean_path = clean_path[len(f"{bucket_name}/"):]
+        elif clean_path.startswith(f"{bucket_name}"):
+            clean_path = clean_path[len(bucket_name):].lstrip('/')
+        
+        # Verwijder eventuele andere bucket prefixes die mogelijk in het pad zitten
+        # (bijv. "Aankoop-Verkoop documenten/filename.pdf" -> "filename.pdf")
+        if "/" in clean_path:
+            parts = clean_path.split("/")
+            # Als eerste deel een bekende bucket naam is, verwijder die
+            known_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche", "type-images", "projects"]
+            if parts[0] in known_buckets:
+                clean_path = "/".join(parts[1:])
+        
+        # Probeer eerst te controleren of de bucket bestaat door een lijst op te halen
+        # Als dat faalt, probeer dan direct de URL te genereren
+        try:
+            # Haal publieke URL op van Supabase
+            response = _supabase_client.storage.from_(bucket_name).get_public_url(clean_path)
+            print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, path={clean_path}, full_path={file_path}, URL={response}")
+            return response
+        except Exception as bucket_error:
+            # Als de bucket niet bestaat, probeer alternatieve bucket namen
+            print(f"Warning: Error with bucket '{bucket_name}': {bucket_error}")
+            # Probeer alternatieve bucket namen (zonder spaties, met underscores, etc.)
+            alternative_buckets = [
+                bucket_name.replace(" ", "-"),  # "Aankoop-Verkoop documenten" -> "Aankoop-Verkoop-documenten"
+                bucket_name.replace(" ", "_"),  # "Aankoop-Verkoop documenten" -> "Aankoop-Verkoop_documenten"
+                bucket_name.lower().replace(" ", "-"),  # lowercase
+            ]
+            
+            for alt_bucket in alternative_buckets:
+                if alt_bucket == bucket_name:
+                    continue  # Skip de originele bucket naam
+                try:
+                    response = _supabase_client.storage.from_(alt_bucket).get_public_url(clean_path)
+                    print(f"DEBUG: Generated Supabase URL with alternative bucket={alt_bucket}, path={clean_path}, URL={response}")
+                    return response
+                except:
+                    continue
+            
+            # Als alle alternatieven falen, gooi de originele error
+            raise bucket_error
     except Exception as e:
-        print(f"Error getting Supabase file URL for {bucket_name}/{file_path}: {e}")
+        print(f"Error getting Supabase file URL for bucket={bucket_name}, path={file_path}: {e}")
+        import traceback
+        traceback.print_exc()
         # Fallback naar lokaal pad
         if file_path and file_path.startswith("uploads/"):
             return url_for('static', filename=file_path)

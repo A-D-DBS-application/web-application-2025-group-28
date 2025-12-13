@@ -2,12 +2,13 @@
 Keuringen blueprint - handles all inspection/keuring-related routes
 """
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, Response, g, current_app
-from models import db, Material, Keuringstatus, KeuringHistoriek, Project
-from helpers import login_required, log_activity_db, save_upload
+from models import db, Material, Keuringstatus, KeuringHistoriek, Project, Document
+from helpers import login_required, log_activity_db, save_upload, save_upload_to_supabase
 from services import MaterialService, KeuringService
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from sqlalchemy import or_
+from werkzeug.utils import secure_filename
 import csv
 from io import StringIO
 
@@ -241,10 +242,44 @@ def keuring_resultaat():
     
     certificaat_path = None
     if certificaat_file and certificaat_file.filename:
-        prefix = f"{keuring.serienummer or material.serial}_cert_{datetime.utcnow().strftime('%Y%m%d')}"
-        certificaat_path = save_upload(
-            certificaat_file, current_app.config["CERTIFICATE_UPLOAD_FOLDER"], prefix
+        # Upload naar Supabase Storage bucket "Keuringsstatus documenten"
+        bucket = "Keuringsstatus documenten"
+        prefix = f"{keuring.serienummer or material.serial}_keuringstatus_{datetime.utcnow().strftime('%Y%m%d')}"
+        
+        certificaat_file.seek(0)  # Reset file pointer
+        file_path = save_upload_to_supabase(
+            certificaat_file,
+            bucket_name=bucket,
+            folder="",
+            prefix=prefix
         )
+        
+        if file_path:
+            certificaat_path = file_path
+            
+            # Bereken bestandsgrootte
+            certificaat_file.seek(0, 2)  # Ga naar einde
+            file_size = certificaat_file.tell()
+            certificaat_file.seek(0)  # Reset
+            
+            filename = secure_filename(certificaat_file.filename)
+            user_name = g.user.naam if g.user else "Onbekend"
+            
+            # Maak Document record aan voor keuringscertificaat
+            document = Document(
+                document_type="Keuringstatus",
+                file_path=file_path,
+                file_name=filename,
+                file_size=file_size,
+                material_id=material.id,
+                material_type_id=None,
+                material_type=None,
+                uploaded_by=user_name,
+                user_id=g.user.gebruiker_id if g.user else None,
+                note=f"Keuring uitgevoerd op {keuring_datum.strftime('%Y-%m-%d')} - {resultaat}",
+                aangemaakt_op=datetime.utcnow()
+            )
+            db.session.add(document)
     
     historiek_record = KeuringHistoriek(
         material_id=material.id,
