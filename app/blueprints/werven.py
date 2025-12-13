@@ -6,6 +6,7 @@ from models import db, Material, MaterialUsage, Project
 from helpers import login_required, log_activity_db, save_project_image, get_file_url_from_path
 from services import MaterialService
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import or_
 import csv
 from io import StringIO
@@ -13,7 +14,7 @@ from io import StringIO
 werven_bp = Blueprint('werven', __name__)
 
 
-def find_material_by_name_or_number(name: str, nummer: str | None):
+def find_material_by_name_or_number(name: str, nummer: Optional[str]):
     """Find material by name or number"""
     return MaterialService.find_by_name_or_number(name, nummer)
 
@@ -218,8 +219,11 @@ def werf_detail(project_id):
         .all()
     )
 
-    # alle materialen die aan deze werf gekoppeld zijn
-    materials = Material.query.filter(Material.werf_id == project_id).all()
+    # alle materialen die aan deze werf gekoppeld zijn (exclude soft-deleted)
+    materials = Material.query.filter(
+        Material.werf_id == project_id,
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).all()
 
     # alle andere werven voor de "wissel naar werf" dropdown
     other_projects = Project.query.filter(

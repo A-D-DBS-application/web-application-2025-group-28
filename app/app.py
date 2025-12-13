@@ -1,5 +1,6 @@
 from flask import Flask, session, g
 from datetime import datetime
+from typing import Optional
 import os
 
 from config import Config
@@ -22,7 +23,7 @@ app.config.from_object(Config)
 db.init_app(app)
 
 # Supabase Storage client initialiseren
-supabase_client: Client | None = None
+supabase_client: Optional[Client] = None
 if SUPABASE_AVAILABLE and app.config.get("SUPABASE_URL") and app.config.get("SUPABASE_SERVICE_KEY"):
     try:
         supabase_client = create_client(
@@ -76,7 +77,7 @@ app.register_blueprint(api_bp)
 
 # login_required is now imported from helpers
 from helpers import login_required
-
+ 
 
 @app.before_request
 def load_current_user():
@@ -126,17 +127,16 @@ def inject_user():
 # -----------------------------------------------------
 
 BASE_UPLOAD_FOLDER = os.path.join(app.root_path, "static", "uploads")
-# Document folders worden niet meer gebruikt - alle documenten gaan naar Supabase buckets
-# Deze worden alleen nog gebruikt voor backward compatibility in helpers.py mapping
-DOC_UPLOAD_FOLDER = "SUPABASE_Aankoop-Verkoop documenten"  # Marker string, geen echte folder
-SAFETY_UPLOAD_FOLDER = "SUPABASE_Veiligheidsfiche"  # Marker string, geen echte folder
-CERTIFICATE_UPLOAD_FOLDER = "SUPABASE_Keuringsstatus documenten"  # Marker string, geen echte folder
-# Alleen deze folders worden nog lokaal gebruikt:
+DOC_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "docs")
+SAFETY_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "safety")
 PROJECT_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "projects")
+CERTIFICATE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "certificates")
 TYPE_IMAGE_UPLOAD_FOLDER = os.path.join(BASE_UPLOAD_FOLDER, "type_images")
 
-# Maak alleen lokale folders aan voor niet-documenten
+os.makedirs(DOC_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(SAFETY_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROJECT_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(CERTIFICATE_UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(TYPE_IMAGE_UPLOAD_FOLDER, exist_ok=True)
 
 app.config["DOC_UPLOAD_FOLDER"] = DOC_UPLOAD_FOLDER

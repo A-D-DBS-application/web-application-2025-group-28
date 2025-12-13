@@ -2,11 +2,12 @@
 Service layer for business logic - separates business rules from route handlers.
 Routes should call these functions instead of containing business logic directly.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
+from typing import Optional, Union
 from models import (
     db, Material, MaterialUsage, Project, Keuringstatus, 
-    KeuringHistoriek, MaterialType, Activity
+    KeuringHistoriek, MaterialType, Activity, Gebruiker
 )
 from sqlalchemy import or_, func, and_, case
 from constants import (
@@ -19,7 +20,7 @@ class MaterialService:
     """Service for material-related business logic"""
     
     @staticmethod
-    def find_by_serial(serial: str) -> Material | None:
+    def find_by_serial(serial: str) -> Optional[Material]:
         """Find material by serial number (excludes deleted materials)"""
         if not serial:
             return None
@@ -31,7 +32,7 @@ class MaterialService:
         ).first()
     
     @staticmethod
-    def find_by_name_or_number(name: str, nummer: str | None) -> Material | None:
+    def find_by_name_or_number(name: str, nummer: Optional[str]) -> Optional[Material]:
         """Find material by nummer_op_materieel first, then by name (excludes deleted materials)"""
         item = None
         if nummer:
@@ -97,17 +98,26 @@ class MaterialService:
     def update_expired_inspections() -> int:
         """
         Automatically update materials with expired inspections.
-        For each material with laatste_keuring and material_type:
-        - Calculate verloopdatum = laatste_keuring + materiaal_type.keuring_geldigheid_dagen
-        - If today > verloopdatum, set keuring_status = "keuring verlopen"
-        This status overrides any manually set status (except if already "keuring verlopen").
-        Optimized to avoid N+1 queries.
-        Returns count of updated materials.
+        
+        BELANGRIJK: Alleen materialen met status "goedgekeurd" worden automatisch gewijzigd naar "keuring verlopen".
+        Alle andere statussen ("afgekeurd", "onder voorbehoud", "keuring gepland", etc.) blijven altijd behouden.
+        
+        Part 1: Updates materials based on expired Keuringstatus records.
+        - Alleen materialen met inspection_status == "goedgekeurd"
+        
+        Part 2: Updates materials based on laatste_keuring/purchase_date + validity days.
+        - Uses laatste_keuring if available, otherwise falls back to purchase_date
+        - Alleen materialen met inspection_status == "goedgekeurd"
+        - Optionally fills in laatste_keuring with purchase_date for consistency
+        - Optimized to avoid N+1 queries.
+        
+        Returns count of updated materials (only counts status changes from "goedgekeurd" to "keuring verlopen").
         """
         today = datetime.utcnow().date()
         updated_count = 0
         
-        # PART 1: Get keuringen with expired dates (existing logic)
+        # PART 1: Get keuringen with expired dates
+        # Update alleen materialen waarvan inspection_status == "goedgekeurd"
         keuringen_met_verlopen_datum = Keuringstatus.query.filter(
             Keuringstatus.volgende_controle.isnot(None),
             Keuringstatus.volgende_controle < today,
@@ -120,10 +130,10 @@ class MaterialService:
             
             if serials:
                 # Single query to get all materials by serial numbers
-                # Only update if status is NOT already "keuring verlopen"
+                # ALLEEN materialen met status "goedgekeurd" - alle andere statussen blijven onaangeroerd
                 materials = Material.query.filter(
                     Material.serial.in_(serials),
-                    Material.inspection_status != "keuring verlopen"
+                    Material.inspection_status == "goedgekeurd"  # Alleen "goedgekeurd" mag worden aangepast
                 ).all()
                 
                 # Create a map of serial -> material for O(1) lookup
@@ -136,18 +146,27 @@ class MaterialService:
                     
                     material = material_map.get(keuring.serienummer)
                     if material:
-                        material.inspection_status = "keuring verlopen"
-                        updated_count += 1
+                        # Extra veiligheidscheck: alleen updaten als status nog steeds "goedgekeurd" is
+                        # Dit voorkomt race conditions en zorgt voor idempotentie
+                        if material.inspection_status == "goedgekeurd":
+                            material.inspection_status = "keuring verlopen"
+                            updated_count += 1
         
-        # PART 2: Check materials with laatste_keuring + keuring_geldigheid_dagen
-        # Get all materials with laatste_keuring (NOT purchase_date) and material_type_id
-        # Only check materials that are NOT already "keuring verlopen"
+        # PART 2: Check materials with laatste_keuring/purchase_date + keuring_geldigheid_dagen
+        # Get materials that have:
+        # - Either laatste_keuring OR purchase_date (fallback)
+        # - material_type_id is set
+        # - Status is exactly "goedgekeurd" (ALLEEN "goedgekeurd" mag worden aangepast)
+        # - Not deleted
         materials_to_check = (
             Material.query
             .filter(
-                Material.laatste_keuring.isnot(None),  # Only use laatste_keuring, no purchase_date fallback
+                or_(
+                    Material.laatste_keuring.isnot(None),
+                    Material.purchase_date.isnot(None)  # Include materials with purchase_date as fallback
+                ),
                 Material.material_type_id.isnot(None),
-                Material.inspection_status != "keuring verlopen",  # Only update if not already expired
+                Material.inspection_status == "goedgekeurd",  # ALLEEN "goedgekeurd" - andere statussen blijven behouden
                 or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
             )
             .all()
@@ -175,22 +194,38 @@ class MaterialService:
                 if not material_type or not material_type.inspection_validity_days or material_type.inspection_validity_days <= 0:
                     continue
                 
-                # Skip if laatste_keuring is NULL (shouldn't happen due to filter, but double-check)
-                if not material.laatste_keuring:
+                # Determine base date: use laatste_keuring if available, otherwise fallback to purchase_date
+                base_date = material.laatste_keuring or material.purchase_date
+                
+                # Skip if both dates are missing (edge case)
+                if not base_date:
                     continue
                 
-                # Calculate verloopdatum = laatste_keuring + keuring_geldigheid_dagen
-                expiry_date = material.laatste_keuring + timedelta(days=material_type.inspection_validity_days)
+                # Optional: Fill in laatste_keuring with purchase_date for consistency
+                # Only when laatste_keuring is missing and purchase_date exists
+                # Dit overschrijft GEEN statussen (behalve "goedgekeurd" → "keuring verlopen" hieronder)
+                if not material.laatste_keuring and material.purchase_date:
+                    material.laatste_keuring = material.purchase_date
+                    # Note: We don't count this as an "update" for updated_count
+                    # Only status changes are counted
                 
-                # If today > verloopdatum, set keuring_status = "keuring verlopen"
+                # Calculate expiry_date = base_date + validity_days
+                expiry_date = base_date + timedelta(days=material_type.inspection_validity_days)
+                
+                # If today > expiry_date and status is "goedgekeurd", set to "keuring verlopen"
                 if today > expiry_date:
-                    # Only update if current status is NOT already "keuring verlopen" (idempotent check)
-                    if material.inspection_status != "keuring verlopen":
+                    # Double-check status is still "goedgekeurd" (idempotent check + extra veiligheid)
+                    # Als status al "keuring verlopen" is, doe niets (idempotent)
+                    # Als status iets anders is ("afgekeurd", "onder voorbehoud", etc.), blijf ongemoeid
+                    if material.inspection_status == "goedgekeurd":
                         material.inspection_status = "keuring verlopen"
                         updated_count += 1
         
-        if updated_count > 0:
-            db.session.commit()
+        # NOTE: We do NOT commit here - let the caller handle transaction boundaries
+        # This prevents issues where this function is called within a larger transaction
+        # (e.g., during material creation) and would commit prematurely or interfere
+        # with the caller's commit logic.
+        # Callers should call db.session.commit() after this function if needed.
         
         return updated_count
     
@@ -203,7 +238,7 @@ class MaterialService:
         ).count() > 0
     
     @staticmethod
-    def get_active_usage(material_id: int) -> MaterialUsage | None:
+    def get_active_usage(material_id: int) -> Optional[MaterialUsage]:
         """Get active usage record for material"""
         return MaterialUsage.query.filter_by(
             material_id=material_id,
@@ -211,10 +246,32 @@ class MaterialService:
         ).first()
     
     @staticmethod
+    def calculate_material_status_from_werf(material: Material) -> str:
+        """
+        Bereken materiaal status (gebruiksstatus) op basis van werf_id.
+        
+        Business rule:
+        - Als werf_id aanwezig en niet None: status = "in gebruik"
+        - Anders: status = "niet in gebruik"
+        
+        Returns:
+            "in gebruik" of "niet in gebruik"
+        """
+        if material.werf_id is not None:
+            return "in gebruik"
+        else:
+            return "niet in gebruik"
+    
+    @staticmethod
     def update_material_status(material: Material) -> None:
         """
-        Update material status based on active usages.
-        Status = "in gebruik" if has active usage, else "niet in gebruik"
+        Update material status based on active usages AND werf_id.
+        Status = "in gebruik" if has active usage OR has werf_id, else "niet in gebruik"
+        
+        Priority:
+        1. Active usage (highest priority)
+        2. Werf_id (if no active usage)
+        3. Otherwise "niet in gebruik"
         """
         active_count = MaterialUsage.query.filter_by(
             material_id=material.id,
@@ -224,7 +281,8 @@ class MaterialService:
         if active_count > 0:
             material.status = "in gebruik"
         else:
-            material.status = "niet in gebruik"
+            # Fallback to werf_id-based calculation
+            material.status = MaterialService.calculate_material_status_from_werf(material)
 
 
 class MaterialUsageService:
@@ -235,8 +293,8 @@ class MaterialUsageService:
         material: Material,
         user_id: int,
         used_by: str,
-        project_id: int | None = None,
-        site: str | None = None
+        project_id: Optional[int] = None,
+        site: Optional[str] = None
     ) -> MaterialUsage:
         """
         Start a new material usage session.
@@ -312,7 +370,7 @@ class MaterialUsageService:
         return usage
     
     @staticmethod
-    def get_active_usage(material_id: int) -> MaterialUsage | None:
+    def get_active_usage(material_id: int) -> Optional[MaterialUsage]:
         """Get active usage for material"""
         return MaterialUsage.query.filter_by(
             material_id=material_id,
@@ -356,7 +414,7 @@ class ActivityService:
         filter_user: str = "",
         filter_period: str = "all",
         search_q: str = "",
-        limit: int | None = 500
+        limit: Optional[int] = 500
     ) -> tuple[list[Activity], dict]:
         """
         Get filtered activities using ORM queries.
@@ -453,7 +511,7 @@ class MaterialUsageRepository:
     """Repository for material usage queries - handles ORM-based filtering"""
     
     @staticmethod
-    def get_active_usages_grouped(user_name: str | None = None) -> tuple[list[dict], list[dict], list[dict]]:
+    def get_active_usages_grouped(user_name: Optional[str] = None) -> tuple[list[dict], list[dict], list[dict]]:
         """
         Get active usages grouped by user using ORM queries.
         Returns (my_usages, other_usages, usages_without_project)
@@ -574,30 +632,45 @@ class KeuringService:
         """
         from dateutil.relativedelta import relativedelta
         
-        # Build base query
-        query = db.session.query(Keuringstatus, Material).join(
-            Material, Material.keuring_id == Keuringstatus.id
+        # Build base query - NIEUWE LOGICA: Direct Material records die voldoen aan voorwaarden
+        # Een materiaal verschijnt in keuringentabel als:
+        # - laatste_keuring is ingevuld OF
+        # - keuringsstatus is "Onder voorbehoud" of "Afgekeurd"
+        
+        # Basis filter: laatste_keuring ingevuld OF status is "Onder voorbehoud" of "Afgekeurd"
+        # EN materiaal is niet verwijderd (soft delete filter)
+        base_filter = and_(
+            or_(
+                Material.laatste_keuring.isnot(None),
+                Material.inspection_status.in_(["onder voorbehoud", "afgekeurd", "Onder voorbehoud", "Afgekeurd"])
+            ),
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))  # Exclude soft-deleted materials
         )
         
-        # Apply priority filter
+        # Query Material records die voldoen aan voorwaarden
+        # LEFT JOIN met Keuringstatus voor backward compatibility (template verwacht keuring object)
+        # maar de echte data komt uit Material
+        # JOIN met Project om werf naam op te halen
+        query = db.session.query(Keuringstatus, Material).outerjoin(
+            Keuringstatus, Material.keuring_id == Keuringstatus.id
+        ).outerjoin(
+            Project, Material.werf_id == Project.id
+        ).filter(
+            base_filter
+        ).distinct()
+        
+        # Apply priority filter - NIEUWE LOGICA: Priority filters zijn niet meer relevant
+        # omdat volgende_controle altijd None is. Deze filters worden genegeerd.
+        # (Behouden voor backward compatibility maar hebben geen effect)
         if priority_filter == "te_laat":
-            query = query.filter(
-                Keuringstatus.volgende_controle.isnot(None),
-                Keuringstatus.volgende_controle < today,
-                Keuringstatus.laatste_controle.is_(None)
-            )
+            # Geen items meer met "te laat" omdat volgende_controle altijd None is
+            query = query.filter(False)  # Return empty result
         elif priority_filter == "vandaag":
-            query = query.filter(
-                Keuringstatus.volgende_controle == today,
-                Keuringstatus.laatste_controle.is_(None)
-            )
+            # Geen items meer met "vandaag" omdat volgende_controle altijd None is
+            query = query.filter(False)  # Return empty result
         elif priority_filter == "binnen_30":
-            query = query.filter(
-                Keuringstatus.volgende_controle.isnot(None),
-                Keuringstatus.volgende_controle > today,
-                Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
-                Keuringstatus.laatste_controle.is_(None)
-            )
+            # Geen items meer met "binnen_30" omdat volgende_controle altijd None is
+            query = query.filter(False)  # Return empty result
         
         # Text search
         if search_q:
@@ -679,11 +752,13 @@ class KeuringService:
                 else:
                     query = query.order_by(Material.name.asc())
             elif sort_by == "laatste_keuring":
+                # Sorteer op material.laatste_keuring (direct van materiaal)
                 if sort_order == "desc":
-                    query = query.order_by(Keuringstatus.laatste_controle.desc().nulls_last())
+                    query = query.order_by(Material.laatste_keuring.desc().nulls_last())
                 else:
-                    query = query.order_by(Keuringstatus.laatste_controle.asc().nulls_last())
+                    query = query.order_by(Material.laatste_keuring.asc().nulls_last())
             elif sort_by == "volgende_keuring":
+                # Volgende keuring is altijd leeg volgens nieuwe logica, maar sorteer op NULL voor consistentie
                 if sort_order == "desc":
                     query = query.order_by(Keuringstatus.volgende_controle.desc().nulls_last())
                 else:
@@ -726,40 +801,33 @@ class KeuringService:
                     active_usages[usage.material_id] = usage
         
         # Build inspection list with computed status and risk
+        # NIEUWE LOGICA: Direct mapping van Material naar keuringentabel
         inspection_list = []
         for keuring, material in all_inspection_items:
+            # Resultaat badge: gebruik direct material.inspection_status
             status_badge = "gepland"
             status_class = "secondary"
             dagen_verschil = None
             
-            if keuring.laatste_controle:
-                if material.inspection_status == "goedgekeurd":
+            # Map inspection_status direct naar status_badge
+            if material.inspection_status:
+                status_lower = material.inspection_status.lower()
+                if status_lower == "goedgekeurd":
                     status_badge = "goedgekeurd"
                     status_class = "success"
-                elif material.inspection_status == "afgekeurd":
+                elif status_lower == "afgekeurd":
                     status_badge = "afgekeurd"
                     status_class = "danger"
+                elif status_lower in ["onder voorbehoud", "keuring onder voorbehoud"]:
+                    status_badge = "onder_voorbehoud"
+                    status_class = "warning"
                 else:
+                    # Andere statussen: default "gepland"
                     status_badge = "gepland"
                     status_class = "secondary"
-            else:
-                if keuring.volgende_controle:
-                    if keuring.volgende_controle < today:
-                        status_badge = "te laat"
-                        status_class = "danger"
-                        dagen_verschil = (today - keuring.volgende_controle).days
-                    elif keuring.volgende_controle == today:
-                        status_badge = "vandaag"
-                        status_class = "warning"
-                        dagen_verschil = 0
-                    elif keuring.volgende_controle <= (today + relativedelta(days=30)):
-                        status_badge = "binnenkort"
-                        status_class = "warning"
-                        dagen_verschil = (keuring.volgende_controle - today).days
-                    else:
-                        status_badge = "gepland"
-                        status_class = "secondary"
-                        dagen_verschil = (keuring.volgende_controle - today).days
+            
+            # Volgende keuring is altijd leeg volgens nieuwe logica (geen automatische berekening)
+            # dagen_verschil blijft None
             
             # Check certificate
             has_certificate = False
@@ -774,33 +842,69 @@ class KeuringService:
             # Calculate risk using algorithm
             risk_data = calculate_inspection_risk(material, keuring, today)
             
-            # Get active usage location (current location from materiaal_gebruik)
-            active_usage = active_usages.get(material.id)
+            # NIEUWE LOGICA: Gebruik material.werf_id als bron van waarheid voor werf/locatie
+            # Dit is consistent met hoe materiaal wordt aangemaakt (directe koppeling via werf_id)
             current_location = None
             current_werf_name = None
             in_gebruik = False
             
-            if active_usage:
+            # Check of materiaal aan een werf gekoppeld is via werf_id (directe koppeling)
+            if material.werf_id and material.project:
+                # Materiaal is direct gekoppeld aan een werf
+                current_werf_name = material.project.name
+                current_location = current_werf_name
                 in_gebruik = True
-                # Prefer werf name from project, otherwise use locatie from usage
-                if active_usage.project_id and active_usage.project:
-                    current_werf_name = active_usage.project.name
+            elif material.werf_id:
+                # Werf_id bestaat maar project relatie is niet geladen, haal project op
+                project = Project.query.filter_by(id=material.werf_id, is_deleted=False).first()
+                if project:
+                    current_werf_name = project.name
                     current_location = current_werf_name
-                elif active_usage.site:
-                    current_location = active_usage.site
-                elif active_usage.project_id:
-                    # Try to get project name if project relationship is not loaded
-                    project = Project.query.filter_by(id=active_usage.project_id, is_deleted=False).first()
-                    if project:
-                        current_werf_name = project.name
+                    in_gebruik = True
+            
+            # Fallback: als er geen directe werf koppeling is, check active usage (voor backward compatibility)
+            if not current_location:
+                active_usage = active_usages.get(material.id)
+                if active_usage:
+                    in_gebruik = True
+                    # Prefer werf name from project, otherwise use locatie from usage
+                    if active_usage.project_id and active_usage.project:
+                        current_werf_name = active_usage.project.name
                         current_location = current_werf_name
+                    elif active_usage.site:
+                        current_location = active_usage.site
+                    elif active_usage.project_id:
+                        # Try to get project name if project relationship is not loaded
+                        project = Project.query.filter_by(id=active_usage.project_id, is_deleted=False).first()
+                        if project:
+                            current_werf_name = project.name
+                            current_location = current_werf_name
+            
+            # Maak een dummy Keuringstatus object voor backward compatibility met template
+            # Template verwacht keuring.laatste_controle en keuring.volgende_controle
+            # Maar we gebruiken nu direct material.laatste_keuring
+            class DummyKeuring:
+                def __init__(self, material, keuring):
+                    # Laatste controle: gebruik material.laatste_keuring
+                    self.laatste_controle = material.laatste_keuring
+                    # Volgende controle: gebruik echte volgende_controle als die bestaat (handmatig ingepland)
+                    # Anders None (geen automatische berekening meer)
+                    self.volgende_controle = keuring.volgende_controle if keuring else None
+                    # Andere velden voor backward compatibility
+                    self.id = keuring.id if keuring else None
+                    self.serienummer = material.serial
+                    self.opmerkingen = keuring.opmerkingen if keuring else None
+                    self.uitgevoerd_door = keuring.uitgevoerd_door if keuring else None
+                    self.updated_by = keuring.updated_by if keuring else None
+            
+            dummy_keuring = DummyKeuring(material, keuring)
             
             inspection_list.append({
-                'keuring': keuring,
+                'keuring': dummy_keuring,  # Gebruik dummy object met material data
                 'material': material,
                 'status_badge': status_badge,
                 'status_class': status_class,
-                'dagen_verschil': dagen_verschil,
+                'dagen_verschil': dagen_verschil,  # Altijd None (geen volgende keuring)
                 'has_certificate': has_certificate,
                 'certificaat_url': certificaat_url,
                 'risk_score': risk_data['risk_score'],
@@ -912,3 +1016,114 @@ class KeuringRepository:
             .all()
         )
 
+
+def ensure_keuring_status_and_historiek_for_new_material(
+    material: Material,
+    geplande_keuringsdatum: Optional[date] = None,
+    user_id: Optional[int] = None
+) -> None:
+    """
+    NIEUWE SIMPELE LOGICA: Maak alleen keuring_status record aan als nodig voor backward compatibility.
+    
+    Een materiaal verschijnt in keuringentabel als:
+    - laatste_keuring is ingevuld OF
+    - keuringsstatus is "Onder voorbehoud" of "Afgekeurd"
+    
+    GEEN automatische berekeningen voor volgende_controle.
+    GEEN geplande keuringen.
+    
+    Args:
+        material: Het Material object dat net is aangemaakt (moet material.id hebben)
+        geplande_keuringsdatum: Genegeerd (niet meer gebruikt)
+        user_id: Optionele user_id voor updated_by veld
+    """
+    from sqlalchemy import and_
+    
+    if not material.id:
+        raise ValueError("Material must have an id before calling this function")
+    
+    if not material.serial:
+        # Geen serienummer, kan geen keuring_status record maken
+        return
+    
+    # NIEUWE LOGICA: Check of materiaal moet verschijnen in keuringentabel
+    heeft_laatste_keuring = material.laatste_keuring is not None
+    status_onder_voorbehoud_of_afgekeurd = (
+        material.inspection_status and 
+        material.inspection_status.lower() in ["onder voorbehoud", "afgekeurd", "keuring onder voorbehoud"]
+    )
+    
+    # Alleen keuring_status record aanmaken als nodig
+    moet_keuring_status = heeft_laatste_keuring or status_onder_voorbehoud_of_afgekeurd
+    
+    if not moet_keuring_status:
+        return
+    
+    # Upsert keuring_status op serienummer (voor backward compatibility)
+    keuring_status = Keuringstatus.query.filter_by(serienummer=material.serial).first()
+    
+    if not keuring_status:
+        keuring_status = Keuringstatus(serienummer=material.serial)
+        db.session.add(keuring_status)
+    
+    # Update laatste_controle: gebruik material.laatste_keuring
+    keuring_status.laatste_controle = material.laatste_keuring if heeft_laatste_keuring else None
+    
+    # GEEN automatische berekening voor volgende_controle - altijd None
+    keuring_status.volgende_controle = None
+    
+    keuring_status.updated_by = user_id
+    
+    # Flush om keuring_status.id te krijgen voor link met material
+    db.session.flush()
+    
+    # Link material aan keuring_status via keuring_id (voor backward compatibility)
+    material.keuring_id = keuring_status.id
+    
+    # Als laatste_keuring ingevuld, maak ook historiek record
+    if heeft_laatste_keuring:
+        # Bepaal resultaat voor historiek op basis van inspection_status
+        resultaat = None
+        if material.inspection_status:
+            status_lower = material.inspection_status.lower()
+            if status_lower == "goedgekeurd":
+                resultaat = "Goedgekeurd"
+            elif status_lower == "afgekeurd":
+                resultaat = "Afgekeurd"
+            elif status_lower in ["onder voorbehoud", "keuring onder voorbehoud"]:
+                resultaat = "Onder voorbehoud"
+            else:
+                # Fallback: gebruik status als resultaat
+                resultaat = material.inspection_status
+        
+        if not resultaat:
+            resultaat = "Te keuren"  # Default fallback
+        
+        # Check of er al een historiek record bestaat (idempotentie)
+        existing_historiek = KeuringHistoriek.query.filter(
+            and_(
+                KeuringHistoriek.material_id == material.id,
+                KeuringHistoriek.keuring_datum == material.laatste_keuring,
+                KeuringHistoriek.resultaat == resultaat
+            )
+        ).first()
+        
+        if not existing_historiek:
+            # Bepaal uitgevoerd_door: gebruik gebruikersnaam als beschikbaar, anders "Onbekend"
+            uitgevoerd_door = "Onbekend"
+            if user_id:
+                user = Gebruiker.query.get(user_id)
+                if user and user.naam:
+                    uitgevoerd_door = user.naam
+            
+            historiek = KeuringHistoriek(
+                material_id=material.id,
+                serienummer=material.serial,
+                keuring_datum=material.laatste_keuring,
+                resultaat=resultaat,
+                uitgevoerd_door=uitgevoerd_door,
+                opmerkingen=None,
+                volgende_keuring_datum=None,  # GEEN automatische berekening
+                certificaat_path=None
+            )
+            db.session.add(historiek)

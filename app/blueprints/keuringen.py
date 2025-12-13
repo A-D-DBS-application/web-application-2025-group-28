@@ -7,7 +7,7 @@ from helpers import login_required, log_activity_db, save_upload, save_upload_to
 from services import MaterialService, KeuringService
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from werkzeug.utils import secure_filename
 import csv
 from io import StringIO
@@ -32,7 +32,9 @@ def keuringen():
     today = datetime.utcnow().date()
     
     # AUTOMATISCH ALGORITME: Update verlopen keuringen
-    update_verlopen_keuringen()
+    updated_count = update_verlopen_keuringen()
+    if updated_count > 0:
+        db.session.commit()
     
     # Get priority counts
     priority_counts = KeuringService.get_priority_counts(today)
@@ -367,7 +369,11 @@ def keuring_dupliceer(historiek_id):
         flash("Keuring niet gevonden.", "danger")
         return redirect(url_for("keuringen.keuringen"))
     
-    material = Material.query.filter_by(id=historiek.material_id).first() if historiek.material_id else None
+    # Filter op is_deleted om verwijderde materialen uit te sluiten
+    material = Material.query.filter(
+        Material.id == historiek.material_id,
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).first() if historiek.material_id else None
     if not material:
         flash("Materiaal niet gevonden.", "danger")
         return redirect(url_for("keuringen.keuringen"))
@@ -480,7 +486,11 @@ def api_keuring_details(historiek_id):
     if not historiek:
         return jsonify({"error": "Keuring niet gevonden"}), 404
     
-    material = Material.query.filter_by(id=historiek.material_id).first()
+    # Filter op is_deleted om verwijderde materialen uit te sluiten
+    material = Material.query.filter(
+        Material.id == historiek.material_id,
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).first()
     
     resultaat_badge = ""
     if historiek.resultaat == "goedgekeurd":
@@ -516,7 +526,11 @@ def api_keuring_historiek(material_id):
     from datetime import date
     
     today = date.today()
-    material = Material.query.filter_by(id=material_id).first()
+    # Filter op is_deleted om verwijderde materialen uit te sluiten
+    material = Material.query.filter(
+        Material.id == material_id,
+        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+    ).first()
     
     if not material:
         return jsonify({"error": "Materiaal niet gevonden"}), 404
@@ -683,8 +697,11 @@ def api_keuring_planning_delete():
         # If there's no laatste_controle either, we might want to remove the keuring_id link
         # But let's keep it simple and just clear volgende_controle
         
-        # Find the material and update its status
-        material = Material.query.filter_by(serial=serienummer).first()
+        # Find the material and update its status (exclude deleted materials)
+        material = Material.query.filter(
+            Material.serial == serienummer,
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+        ).first()
         if material:
             # If there's no historiek, clear the inspection_status
             historiek_count = KeuringHistoriek.query.filter_by(material_id=material.id).count()

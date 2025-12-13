@@ -219,26 +219,28 @@
               </td>
               <td>
                 {# 
-                  BUG FIX: Previously showed material.site or material.project_id (default/initial location).
-                  Now shows active usage location from materiaal_gebruik table.
-                  - If material is "in gebruik" (has active materiaal_gebruik record): show werf name or locatie from active usage
-                  - If material is "niet in gebruik": show "-"
+                  NIEUWE LOGICA: Werf/locatie komt direct uit material.werf_id (directe koppeling).
+                  - Als materiaal aan een werf gekoppeld is (material.werf_id): toon werf naam
+                  - Als er geen directe koppeling is maar wel active usage: toon usage locatie (fallback)
+                  - Anders: toon "-"
                 #}
-                {% if item.in_gebruik and item.current_location %}
+                {% if item.current_location %}
                   {{ item.current_location }}
                 {% else %}
                   <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
               </td>
               <td>
-                {% if keuring.laatste_controle %}
-                  {{ keuring.laatste_controle.strftime('%Y-%m-%d') }}
+                {# NIEUWE LOGICA: Laatste keuring komt direct uit material.laatste_keuring #}
+                {% if material.laatste_keuring %}
+                  {{ material.laatste_keuring.strftime('%Y-%m-%d') }}
                 {% else %}
-                  <span class="keuringen-table-empty-cell">Nog niet uitgevoerd</span>
+                  <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
               </td>
               <td>
                 {% if keuring.volgende_controle %}
+                  {# Toon altijd de geplande datum (volgende_controle) - dit is de enige bron #}
                   <div>{{ keuring.volgende_controle.strftime('%Y-%m-%d') }}</div>
                   {% if item.dagen_verschil is not none %}
                     {% if item.dagen_verschil < 0 %}
@@ -250,22 +252,21 @@
                     {% endif %}
                   {% endif %}
                 {% else %}
-                  <span class="keuringen-table-empty-cell">-</span>
+                  {# Geen geplande datum: toon "Nog in te plannen" #}
+                  <span class="keuringen-table-empty-cell">Nog in te plannen</span>
                 {% endif %}
               </td>
               <td>
-                {% if item.status_badge == 'te laat' %}
-                  <span class="keuringen-badge keuringen-badge-te-laat"><i class="bi bi-exclamation-triangle me-1"></i>Te laat</span>
-                {% elif item.status_badge == 'vandaag' %}
-                  <span class="keuringen-badge keuringen-badge-vandaag"><i class="bi bi-calendar-event me-1"></i>Vandaag</span>
-                {% elif item.status_badge == 'binnenkort' %}
-                  <span class="keuringen-badge keuringen-badge-binnenkort"><i class="bi bi-clock me-1"></i>Binnenkort</span>
-                {% elif item.status_badge == 'goedgekeurd' %}
+                {# NIEUWE LOGICA: Resultaat komt direct uit material.inspection_status #}
+                {% if item.status_badge == 'goedgekeurd' %}
                   <span class="keuringen-badge keuringen-badge-goedgekeurd"><i class="bi bi-check-circle me-1"></i>Goedgekeurd</span>
                 {% elif item.status_badge == 'afgekeurd' %}
                   <span class="keuringen-badge keuringen-badge-afgekeurd"><i class="bi bi-x-circle me-1"></i>Afgekeurd</span>
+                {% elif item.status_badge == 'onder_voorbehoud' %}
+                  <span class="keuringen-badge keuringen-badge-gepland"><i class="bi bi-exclamation-triangle me-1"></i>Onder voorbehoud</span>
                 {% else %}
-                  <span class="keuringen-badge keuringen-badge-gepland">Te Keuren</span>
+                  {# Default: toon exacte status tekst uit material #}
+                  <span class="keuringen-badge keuringen-badge-gepland">{{ material.inspection_status or 'Te Keuren' }}</span>
                 {% endif %}
               </td>
               <td>
@@ -294,8 +295,9 @@
               </td>
               <td class="text-end">
                 <div class="keuringen-action-buttons">
-                  {% if not keuring.laatste_controle %}
-                    <!-- Not yet inspected - show "Resultaat registreren" -->
+                  {# NIEUWE LOGICA: Altijd precies 1 knop op basis van volgende_controle datum #}
+                  {% if keuring.volgende_controle %}
+                    {# Er is een geplande volgende keuring: toon "Resultaat registreren" #}
                     <button type="button" 
                             class="keuringen-action-btn keuringen-action-btn-primary"
                             data-bs-toggle="modal"
@@ -304,25 +306,16 @@
                             onclick="openResultaatModal(parseInt(this.getAttribute('data-keuring-id')))">
                       Resultaat registreren
                     </button>
-                    <button type="button" 
-                            class="keuringen-action-btn"
-                            data-bs-toggle="modal"
-                            data-bs-target="#bewerkKeuringModal"
-                            data-keuring-id="{{ keuring.id }}"
-                            data-serial="{{ material.serial }}"
-                            data-volgende-datum="{{ keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '' }}"
-                            data-uitgevoerd-door="{{ (keuring.uitgevoerd_door or '')|replace("'", "&#39;") }}"
-                            data-opmerking="{{ (keuring.opmerkingen or '')|replace("'", "&#39;")|replace('"', '&quot;') }}"
-                            onclick="openEditKeuringModal(this)">
-                      Bewerken
-                    </button>
                   {% else %}
-                    <!-- Already inspected - show certificate link if available -->
-                    {% if item.has_certificate %}
-                      <a href="{{ item.certificaat_url }}" target="_blank" class="keuringen-action-btn keuringen-action-btn-link" title="Certificaat">
-                        Certificaat
-                      </a>
-                    {% endif %}
+                    {# Geen geplande volgende keuring: toon "Keuring inplannen" #}
+                    <button type="button" 
+                            class="keuringen-action-btn keuringen-action-btn-primary"
+                            data-bs-toggle="modal"
+                            data-bs-target="#nieuweKeuringModal"
+                            data-material-serial="{{ material.serial }}"
+                            onclick="openNieuweKeuringModal('{{ material.serial }}')">
+                      Keuring inplannen
+                    </button>
                   {% endif %}
                 </div>
               </td>
@@ -957,6 +950,20 @@ window.openResultaatModal = function(keuringId) {
   const nextDate = sixMonthsLater.toISOString().split('T')[0];
   document.getElementById('resultaat-volgende-keuring-datum').value = nextDate;
   };
+
+// Open nieuwe keuring modal met materiaal vooraf geselecteerd
+window.openNieuweKeuringModal = function(materialSerial) {
+  const modal = new bootstrap.Modal(document.getElementById('nieuweKeuringModal'));
+  const serialInput = document.getElementById('keuring-serial');
+  
+  // Zet het serienummer in het input veld als het is meegegeven
+  if (materialSerial && serialInput) {
+    serialInput.value = materialSerial;
+  }
+  
+  // Open de modal
+  modal.show();
+};
 
   function escapeHtml(text) {
     if (!text) return '';

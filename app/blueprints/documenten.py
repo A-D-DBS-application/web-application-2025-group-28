@@ -3,9 +3,10 @@ from __future__ import annotations
 from flask import Blueprint, flash, redirect, render_template, request, url_for, g, current_app
 from werkzeug.utils import secure_filename
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import or_, func
 
-from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, log_activity_db
+from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, get_document_url, log_activity_db
 from constants import DOCUMENT_TYPES
 from models import db, Document, Material, MaterialType, KeuringHistoriek
 from datetime import timedelta
@@ -25,7 +26,7 @@ def get_bucket_for_document_type(document_type: str) -> str:
     return bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
 
 
-def get_inspection_status_priority(material: Material | None) -> tuple[int, str]:
+def get_inspection_status_priority(material: Optional[Material]) -> tuple[int, str]:
     """
     Bepaal de prioriteit en status van een materiaal voor sortering.
     Returns: (priority: int, status: str)
@@ -117,12 +118,8 @@ def documenten():
         # Bepaal keuringsstatus prioriteit voor sortering
         inspection_priority, inspection_status = get_inspection_status_priority(material_obj)
         
-        # Bepaal bucket en haal URL op
-        bucket = get_bucket_for_document_type(doc.document_type)
-        # Gebruik de juiste bucket voor het ophalen van de URL
-        # Het file_path bevat alleen de bestandsnaam, niet de bucket naam
-        # We moeten de bucket expliciet doorgeven
-        file_url = get_supabase_file_url(bucket, doc.file_path)
+        # Gebruik centrale helper functie voor document URLs
+        file_url = get_document_url(doc.document_type, doc.file_path)
         
         # Format file size
         file_size_str = ""
@@ -367,26 +364,24 @@ def document_download(document_id):
             flash("Document niet gevonden.", "error")
             return redirect(url_for("documenten.documenten"))
         
-        # Bepaal bucket
-        bucket = get_bucket_for_document_type(document.document_type)
-        
         # Debug logging
-        current_app.logger.info(f"Download request: document_id={document_id}, type={document.document_type}, bucket={bucket}, path={document.file_path}")
+        current_app.logger.info(f"Download request: document_id={document_id}, type={document.document_type}, path={document.file_path}")
         
         if not document.file_path:
             current_app.logger.error(f"Document {document_id} has no file_path")
             flash("Document heeft geen bestandspad.", "error")
             return redirect(url_for("documenten.documenten"))
         
-        # Haal publieke URL op
-        file_url = get_supabase_file_url(bucket, document.file_path)
+        # Gebruik centrale helper functie voor document URLs
+        file_url = get_document_url(document.document_type, document.file_path)
         
         if file_url:
             # Redirect naar de Supabase URL - browser zal het bestand downloaden
             current_app.logger.info(f"Redirecting to URL: {file_url}")
             return redirect(file_url)
         else:
-            current_app.logger.error(f"Could not generate URL for document {document_id} in bucket '{bucket}' with path '{document.file_path}'")
+            bucket = get_bucket_for_document_type(document.document_type)
+            current_app.logger.error(f"Could not generate URL for document {document_id} (type={document.document_type}, bucket={bucket}) with path '{document.file_path}'")
             flash(f"Kon document URL niet genereren. Controleer of de bucket '{bucket}' bestaat in Supabase.", "error")
             return redirect(url_for("documenten.documenten"))
     except Exception as e:

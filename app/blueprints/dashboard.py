@@ -22,7 +22,9 @@ def root_redirect():
 @login_required
 def dashboard():
     # Update automatisch verlopen keuringen
-    MaterialService.update_expired_inspections()
+    updated_count = MaterialService.update_expired_inspections()
+    if updated_count > 0:
+        db.session.commit()
     
     # Use service layer for business logic
     total_items = MaterialService.get_total_count()

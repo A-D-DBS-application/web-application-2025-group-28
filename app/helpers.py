@@ -5,6 +5,7 @@ from flask import g, session, redirect, url_for, request, current_app
 from models import db, Gebruiker, Activity
 from datetime import datetime
 from werkzeug.utils import secure_filename
+from typing import Optional
 import os
 
 # Supabase Storage
@@ -15,9 +16,9 @@ except ImportError:
     SUPABASE_AVAILABLE = False
 
 # Global supabase client - will be initialized by app
-_supabase_client: Client | None = None
+_supabase_client: Optional[Client] = None
 
-def init_supabase_client(supabase_client: Client | None):
+def init_supabase_client(supabase_client: Optional[Client]):
     """Initialize the supabase client for file uploads"""
     global _supabase_client
     _supabase_client = supabase_client
@@ -40,7 +41,7 @@ def upload_folder_from_bucket(bucket_name: str) -> str:
     return bucket_to_folder.get(bucket_name, current_app.config["PROJECT_UPLOAD_FOLDER"])
 
 
-def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
+def save_upload_local(file_storage, upload_folder, prefix: str) -> Optional[str]:
     """
     Fallback: Sla een geüpload bestand lokaal op (oude methode).
     Gebruikt alleen als Supabase niet beschikbaar is.
@@ -68,7 +69,7 @@ def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
     return f"{relative_folder}/{final_filename}"
 
 
-def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix: str) -> str | None:
+def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix: str) -> Optional[str]:
     """
     Upload een bestand naar Supabase Storage.
     Retourneert het pad in de bucket (bijv. 'BOOR123_doc_20250101_120000_foto.pdf').
@@ -119,7 +120,7 @@ def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix:
         return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
 
 
-def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
+def save_upload(file_storage, upload_folder, prefix: str) -> Optional[str]:
     """
     Upload een bestand (gebruikt Supabase Storage of fallback naar lokaal).
     Bepaalt automatisch de juiste bucket op basis van upload_folder.
@@ -152,7 +153,7 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
     return result
 
 
-def save_project_image(file_storage, prefix: str) -> str | None:
+def save_project_image(file_storage, prefix: str) -> Optional[str]:
     """
     Upload een werf-afbeelding naar Supabase Storage (bucket: projects).
     Retourneert pad met "projects/" prefix voor consistentie.
@@ -169,10 +170,21 @@ def save_project_image(file_storage, prefix: str) -> str | None:
     return result
 
 
-def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
+def get_supabase_file_url(bucket_name: str, file_path: str) -> Optional[str]:
     """
     Haal publieke URL op voor een bestand in Supabase Storage.
-    Retourneert None als Supabase niet beschikbaar is of bestand niet bestaat.
+    
+    NIEUWE LOGICA: 
+    - file_path bevat alleen het pad binnen de bucket (geen bucket prefix)
+    - bucket_name wordt expliciet doorgegeven
+    - Geen automatische prefix verwijdering meer (voorkomt fouten)
+    
+    Args:
+        bucket_name: Naam van de Supabase Storage bucket
+        file_path: Pad binnen de bucket (bijv. "test_9_doc_20250101_120000_foto.pdf")
+    
+    Returns:
+        Publieke URL of None als bestand niet bestaat/Supabase niet beschikbaar
     """
     if not _supabase_client:
         # Fallback: als het een lokaal pad is (begint met "uploads/")
@@ -189,57 +201,37 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         if file_path.startswith("http://") or file_path.startswith("https://"):
             return file_path
         
-        # Verwijder bucket prefix als die er al in zit (bijv. "type-images/filename.jpg" -> "filename.jpg")
-        # Supabase get_public_url verwacht alleen het pad binnen de bucket
-        clean_path = file_path.strip()
+        # NIEUWE LOGICA: file_path bevat alleen het pad binnen de bucket
+        # Verwijder alleen leading/trailing slashes, maar behoud de rest
+        clean_path = file_path.strip().strip('/')
         
-        # Verwijder eventuele leading/trailing slashes
-        clean_path = clean_path.strip('/')
+        # Verwijder bucket prefix als die per ongeluk in file_path zit (voor backward compatibility)
+        # Maar alleen als het exact matcht - niet gedeeltelijk
+        known_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche", "type-images", "projects"]
+        for known_bucket in known_buckets:
+            if clean_path.startswith(f"{known_bucket}/"):
+                clean_path = clean_path[len(f"{known_bucket}/"):]
+                break
+            elif clean_path == known_bucket:
+                # Als het pad alleen de bucket naam is, is er iets mis
+                print(f"Warning: file_path is only bucket name '{clean_path}', no actual file path")
+                return None
         
-        # Verwijder bucket prefix als die er al in zit
-        if clean_path.startswith(f"{bucket_name}/"):
-            clean_path = clean_path[len(f"{bucket_name}/"):]
-        elif clean_path.startswith(f"{bucket_name}"):
-            clean_path = clean_path[len(bucket_name):].lstrip('/')
+        # URL encode speciale karakters in het pad (vooral spaties en speciale tekens)
+        # Maar behoud slashes voor folder structuur
+        from urllib.parse import quote
+        # Split op slashes, encode elk deel, en join weer
+        path_parts = clean_path.split('/')
+        encoded_parts = [quote(part, safe='') for part in path_parts]
+        encoded_path = '/'.join(encoded_parts)
         
-        # Verwijder eventuele andere bucket prefixes die mogelijk in het pad zitten
-        # (bijv. "Aankoop-Verkoop documenten/filename.pdf" -> "filename.pdf")
-        if "/" in clean_path:
-            parts = clean_path.split("/")
-            # Als eerste deel een bekende bucket naam is, verwijder die
-            known_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche", "type-images", "projects"]
-            if parts[0] in known_buckets:
-                clean_path = "/".join(parts[1:])
+        # Haal publieke URL op van Supabase
+        # Supabase SDK verwacht het pad binnen de bucket (zonder bucket prefix)
+        response = _supabase_client.storage.from_(bucket_name).get_public_url(encoded_path)
         
-        # Probeer eerst te controleren of de bucket bestaat door een lijst op te halen
-        # Als dat faalt, probeer dan direct de URL te genereren
-        try:
-            # Haal publieke URL op van Supabase
-            response = _supabase_client.storage.from_(bucket_name).get_public_url(clean_path)
-            print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, path={clean_path}, full_path={file_path}, URL={response}")
-            return response
-        except Exception as bucket_error:
-            # Als de bucket niet bestaat, probeer alternatieve bucket namen
-            print(f"Warning: Error with bucket '{bucket_name}': {bucket_error}")
-            # Probeer alternatieve bucket namen (zonder spaties, met underscores, etc.)
-            alternative_buckets = [
-                bucket_name.replace(" ", "-"),  # "Aankoop-Verkoop documenten" -> "Aankoop-Verkoop-documenten"
-                bucket_name.replace(" ", "_"),  # "Aankoop-Verkoop documenten" -> "Aankoop-Verkoop_documenten"
-                bucket_name.lower().replace(" ", "-"),  # lowercase
-            ]
-            
-            for alt_bucket in alternative_buckets:
-                if alt_bucket == bucket_name:
-                    continue  # Skip de originele bucket naam
-                try:
-                    response = _supabase_client.storage.from_(alt_bucket).get_public_url(clean_path)
-                    print(f"DEBUG: Generated Supabase URL with alternative bucket={alt_bucket}, path={clean_path}, URL={response}")
-                    return response
-                except:
-                    continue
-            
-            # Als alle alternatieven falen, gooi de originele error
-            raise bucket_error
+        print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, original_path={file_path}, clean_path={clean_path}, encoded_path={encoded_path}, URL={response}")
+        return response
+        
     except Exception as e:
         print(f"Error getting Supabase file URL for bucket={bucket_name}, path={file_path}: {e}")
         import traceback
@@ -250,7 +242,35 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> str | None:
         return None
 
 
-def get_file_url_from_path(file_path: str) -> str | None:
+def get_document_url(document_type: str, file_path: str) -> Optional[str]:
+    """
+    Centrale helper functie om document URLs te genereren.
+    
+    Gebruikt de juiste bucket op basis van document_type en genereert een geldige Supabase URL.
+    
+    Args:
+        document_type: Type document (Aankoopfactuur, Verkoopfactuur, Keuringstatus, Veiligheidsfiche)
+        file_path: Pad binnen de bucket (zonder bucket prefix)
+    
+    Returns:
+        Publieke URL of None als bestand niet bestaat
+    """
+    if not file_path or not file_path.strip():
+        return None
+    
+    # Bepaal bucket op basis van document type
+    bucket_mapping = {
+        "Aankoopfactuur": "Aankoop-Verkoop documenten",
+        "Verkoopfactuur": "Aankoop-Verkoop documenten",
+        "Keuringstatus": "Keuringsstatus documenten",
+        "Veiligheidsfiche": "Veiligheidsfiche"
+    }
+    bucket = bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
+    
+    return get_supabase_file_url(bucket, file_path)
+
+
+def get_file_url_from_path(file_path: str) -> Optional[str]:
     """
     Bepaal automatisch de juiste URL voor een bestandspad.
     Detecteert automatisch de bucket op basis van het pad.

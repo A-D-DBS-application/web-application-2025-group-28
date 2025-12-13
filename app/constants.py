@@ -43,6 +43,7 @@ INSPECTION_STATUSES = {
 }
 
 # Keuring Status Options for form dropdown (used in "Nieuw Materiaal" modal)
+# NOTE: "keuring gepland" is verwijderd - te complex voor create flow
 KEURING_STATUS_OPTIONS = {
     "goedgekeurd": {
         "value": "goedgekeurd",
@@ -55,10 +56,6 @@ KEURING_STATUS_OPTIONS = {
     "onder voorbehoud": {
         "value": "onder voorbehoud",
         "label": "Onder voorbehoud"
-    },
-    "keuring gepland": {
-        "value": "keuring gepland",
-        "label": "Keuring gepland"
     }
 }
 

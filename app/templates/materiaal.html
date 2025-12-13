@@ -242,19 +242,6 @@
 </div>
 {% endif %}
 
-<!-- Flash messages (worden meestal al door base.html getoond, maar kan geen kwaad) -->
-<div class="container px-0 mt-6">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ 'danger' if category=='danger' else category }} mb-2" role="alert">
-          {{ message }}
-        </div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
-</div>
-
 <!-- Materiaallijst / overzicht -->
 <div class="card panel mt-8">
   <div class="panel-title d-flex align-items-center justify-content-between">
@@ -422,11 +409,6 @@
                   <option value="{{ status.value }}">{{ status.label }}</option>
                 {% endfor %}
               </select>
-            </div>
-
-            <div class="col-md-6" id="datum_geplande_keuring_container" style="display: none;">
-              <label class="form-label">Datum geplande keuring*</label>
-              <input name="datum_geplande_keuring" id="datum_geplande_keuring" type="date" class="form-control">
             </div>
 
             <div class="col-md-6">
@@ -1057,10 +1039,11 @@
                         <div class="d-flex flex-wrap gap-2 mt-2">
                     `;
                     docs.forEach(doc => {
-                      if (doc.file_url) {
-                        // Gebruik download route als document ID beschikbaar is, anders directe URL
-                        const viewUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
-                        const downloadUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
+                      // NIEUWE LOGICA: Gebruik altijd download route als document ID beschikbaar is
+                      // Dit zorgt ervoor dat URLs altijd correct worden gegenereerd server-side
+                      if (doc.id) {
+                        const viewUrl = `/documenten/download/${doc.id}`;
+                        const downloadUrl = `/documenten/download/${doc.id}`;
                         html += `
                           <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
                             <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
@@ -1068,6 +1051,28 @@
                           <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-download me-1"></i>Download
                           </a>
+                        `;
+                      } else if (doc.file_url) {
+                        // Fallback voor legacy documenten zonder ID (gebruik directe URL)
+                        const viewUrl = escapeHtml(doc.file_url);
+                        const downloadUrl = escapeHtml(doc.file_url);
+                        html += `
+                          <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                          </a>
+                          <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        `;
+                      } else {
+                        // Geen document beschikbaar - disable knoppen
+                        html += `
+                          <span class="btn btn-sm btn-outline-secondary disabled" title="Geen document beschikbaar">
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                          </span>
+                          <span class="btn btn-sm btn-outline-secondary disabled" title="Geen document beschikbaar">
+                            <i class="bi bi-download me-1"></i>Download
+                          </span>
                         `;
                       }
                     });
@@ -1392,21 +1397,44 @@
                             <strong>${escapeHtml(bucketName)}:</strong><br>
                             <div class="d-flex flex-wrap gap-2 mt-2">
                         `;
-                        docs.forEach(doc => {
-                          if (doc.file_url) {
-                            // Gebruik download route als document ID beschikbaar is, anders directe URL
-                            const viewUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
-                            const downloadUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
-                            html += `
-                              <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
-                                <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
-                              </a>
-                              <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
-                                <i class="bi bi-download me-1"></i>Download
-                              </a>
-                            `;
-                          }
-                        });
+                      docs.forEach(doc => {
+                        // NIEUWE LOGICA: Gebruik altijd download route als document ID beschikbaar is
+                        // Dit zorgt ervoor dat URLs altijd correct worden gegenereerd server-side
+                        if (doc.id) {
+                          const viewUrl = `/documenten/download/${doc.id}`;
+                          const downloadUrl = `/documenten/download/${doc.id}`;
+                          html += `
+                            <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
+                              <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                            </a>
+                            <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                              <i class="bi bi-download me-1"></i>Download
+                            </a>
+                          `;
+                        } else if (doc.file_url) {
+                          // Fallback voor legacy documenten zonder ID (gebruik directe URL)
+                          const viewUrl = escapeHtml(doc.file_url);
+                          const downloadUrl = escapeHtml(doc.file_url);
+                          html += `
+                            <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
+                              <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                            </a>
+                            <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                              <i class="bi bi-download me-1"></i>Download
+                            </a>
+                          `;
+                        } else {
+                          // Geen document beschikbaar - disable knoppen
+                          html += `
+                            <span class="btn btn-sm btn-outline-secondary disabled" title="Geen document beschikbaar">
+                              <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                            </span>
+                            <span class="btn btn-sm btn-outline-secondary disabled" title="Geen document beschikbaar">
+                              <i class="bi bi-download me-1"></i>Download
+                            </span>
+                          `;
+                        }
+                      });
                         html += `
                             </div>
                           </div>
@@ -1602,48 +1630,8 @@ document.addEventListener('DOMContentLoaded', function () {
             submitBtn.disabled = false;
           }
         }
-        // Reset keuring status conditional field visibility
-        const keuringStatusSelect = document.getElementById('keuring_status');
-        const datumContainer = document.getElementById('datum_geplande_keuring_container');
-        const datumInput = document.getElementById('datum_geplande_keuring');
-        if (keuringStatusSelect && datumContainer && datumInput) {
-          if (keuringStatusSelect.value === 'keuring gepland') {
-            datumContainer.style.display = 'block';
-            datumInput.required = true;
-          } else {
-            datumContainer.style.display = 'none';
-            datumInput.required = false;
-            datumInput.value = '';
-          }
-        }
+        // Reset form fields
       });
-    }
-  }
-
-  // Handle keuring status change to show/hide "Datum geplande keuring" field
-  const keuringStatusSelect = document.getElementById('keuring_status');
-  const datumContainer = document.getElementById('datum_geplande_keuring_container');
-  const datumInput = document.getElementById('datum_geplande_keuring');
-  
-  if (keuringStatusSelect && datumContainer && datumInput) {
-    keuringStatusSelect.addEventListener('change', function() {
-      if (this.value === 'keuring gepland') {
-        datumContainer.style.display = 'block';
-        datumInput.required = true;
-      } else {
-        datumContainer.style.display = 'none';
-        datumInput.required = false;
-        datumInput.value = '';
-      }
-    });
-    
-    // Initial check on page load
-    if (keuringStatusSelect.value === 'keuring gepland') {
-      datumContainer.style.display = 'block';
-      datumInput.required = true;
-    } else {
-      datumContainer.style.display = 'none';
-      datumInput.required = false;
     }
   }
 
@@ -1715,18 +1703,6 @@ document.addEventListener('DOMContentLoaded', function () {
           typeSelect.focus();
         }
         return false;
-      }
-      
-      // Validate conditional "Datum geplande keuring" field
-      const keuringStatusSelect = document.getElementById('keuring_status');
-      const datumInput = document.getElementById('datum_geplande_keuring');
-      if (keuringStatusSelect && datumInput) {
-        if (keuringStatusSelect.value === 'keuring gepland' && !datumInput.value) {
-          e.preventDefault();
-          alert('Datum geplande keuring is verplicht wanneer "Keuring gepland" is geselecteerd.');
-          datumInput.focus();
-          return false;
-        }
       }
       
       // Let native HTML5 validation handle required fields

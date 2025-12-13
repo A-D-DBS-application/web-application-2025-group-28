@@ -3,7 +3,7 @@ API blueprint - handles API endpoints
 """
 from flask import Blueprint, request, jsonify, g
 from models import db, Material, MaterialUsage, Keuringstatus, Document
-from helpers import login_required, get_file_url_from_path
+from helpers import login_required, get_file_url_from_path, get_document_url
 from sqlalchemy import or_, func
 from sqlalchemy.orm import joinedload
 from datetime import datetime
@@ -146,14 +146,13 @@ def api_search():
                 documentation_url = ""
                 try:
                     if item.documentation_path:
-                        # Probeer eerst via get_file_url_from_path (voor oude bestanden)
-                        documentation_url = get_file_url_from_path(item.documentation_path) or ""
-                        # Als dat niet werkt, probeer met default bucket "Aankoop-Verkoop documenten"
-                        if not documentation_url and not item.documentation_path.startswith("http"):
-                            bucket = "Aankoop-Verkoop documenten"
-                            documentation_url = get_supabase_file_url(bucket, item.documentation_path) or ""
+                        # Gebruik centrale helper functie voor document URLs
+                        # Default bucket voor legacy documentation_path is "Aankoop-Verkoop documenten"
+                        documentation_url = get_document_url("Aankoopfactuur", item.documentation_path) or ""
                 except Exception as doc_url_error:
                     print(f"Warning: Could not generate documentation URL for {item.serial}: {doc_url_error}")
+                    import traceback
+                    traceback.print_exc()
                     documentation_url = ""
                 
                 # Haal veiligheidsfiche op op basis van material_type_id
@@ -171,11 +170,8 @@ def api_search():
                         
                         if safety_doc and safety_doc.file_path:
                             safety_sheet_path = safety_doc.file_path
-                            # Genereer URL voor veiligheidsfiche
-                            # Gebruik direct de bucket naam om circulaire import te voorkomen
-                            from helpers import get_supabase_file_url
-                            bucket = "Veiligheidsfiche"  # Direct bucket naam
-                            safety_sheet_url = get_supabase_file_url(bucket, safety_doc.file_path) or ""
+                            # Genereer URL voor veiligheidsfiche via centrale helper functie
+                            safety_sheet_url = get_document_url("Veiligheidsfiche", safety_doc.file_path) or ""
                 except (ImportError, AttributeError, ProgrammingError) as safety_error:
                     # Document tabel bestaat niet of is niet beschikbaar
                     print(f"Warning: Could not get safety sheet for {item.serial}: {safety_error}")
@@ -189,17 +185,12 @@ def api_search():
                     doc_url = ""
                     try:
                         if doc.file_path:
-                            # Bepaal bucket op basis van document type voor correcte URL generatie
-                            bucket_mapping = {
-                                "Aankoopfactuur": "Aankoop-Verkoop documenten",
-                                "Verkoopfactuur": "Aankoop-Verkoop documenten",
-                                "Keuringstatus": "Keuringsstatus documenten",
-                                "Veiligheidsfiche": "Veiligheidsfiche"
-                            }
-                            bucket = bucket_mapping.get(doc.document_type, "Aankoop-Verkoop documenten")
-                            doc_url = get_supabase_file_url(bucket, doc.file_path) or ""
+                            # Gebruik centrale helper functie voor document URLs
+                            doc_url = get_document_url(doc.document_type, doc.file_path) or ""
                     except Exception as doc_url_error:
                         print(f"Warning: Could not generate document URL: {doc_url_error}")
+                        import traceback
+                        traceback.print_exc()
                         doc_url = ""
                     
                     documents_list.append({

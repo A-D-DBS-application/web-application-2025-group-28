@@ -4,10 +4,10 @@ Materiaal blueprint - handles all material-related routes
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, g, current_app
 from models import db, Material, MaterialUsage, Project, MaterialType, Activity, Keuringstatus, Document
 from helpers import login_required, log_activity_db, save_upload, save_upload_to_supabase
-from services import MaterialService, MaterialUsageService
+from services import MaterialService, MaterialUsageService, ensure_keuring_status_and_historiek_for_new_material
 from constants import DEFAULT_INSPECTION_STATUS, DOCUMENT_TYPES
 from datetime import datetime
-from sqlalchemy import or_, func, case, text
+from sqlalchemy import or_, func, case, text, and_
 from werkzeug.utils import secure_filename
 import os
 
@@ -554,13 +554,14 @@ def materiaal_toevoegen():
     note = (f.get("note") or "").strip()
     keuring_status = (f.get("keuring_status") or DEFAULT_INSPECTION_STATUS).strip()
     laatste_keuring_str = (f.get("laatste_keuring") or "").strip()
+    # datum_geplande_keuring is verwijderd uit UI - negeer als het alsnog wordt meegestuurd (backward compatible)
     datum_geplande_keuring_str = (f.get("datum_geplande_keuring") or "").strip()
     document_type = (f.get("document_type") or "Aankoopfactuur").strip()  # Default naar Aankoopfactuur
     documentation_file = request.files.get("documentation")
 
-    # Validate: if keuring_status is "keuring gepland", datum_geplande_keuring is required
-    if keuring_status == "keuring gepland" and not datum_geplande_keuring_str:
-        flash("Datum geplande keuring is verplicht wanneer 'Keuring gepland' is geselecteerd.", "danger")
+    # Valideer dat keuring_status niet "keuring gepland" is (deze optie bestaat niet meer in create flow)
+    if keuring_status == "keuring gepland":
+        flash("Status 'Keuring gepland' is niet beschikbaar bij het toevoegen van nieuw materiaal.", "danger")
         return redirect(url_for("materiaal.materiaal"))
 
     # Get project if project_id is provided
@@ -584,6 +585,10 @@ def materiaal_toevoegen():
         flash("Serienummer bestaat al in het systeem.", "danger")
         return redirect(url_for("materiaal.materiaal"))
 
+    # Bereken status (gebruiksstatus) op basis van werf_id
+    # Business rule: werf_id aanwezig => "in gebruik", anders => "niet in gebruik"
+    calculated_status = "in gebruik" if project_id else "niet in gebruik"
+    
     item = Material(
         name=name,
         serial=serial,
@@ -592,7 +597,7 @@ def materiaal_toevoegen():
         site=site if site else None,
         project_id=project_id,
         note=note if note else None,
-        status=DEFAULT_INSPECTION_STATUS,  # Keep status for backward compatibility
+        status=calculated_status,  # Gebruiksstatus: "in gebruik" of "niet in gebruik" (niet keuringstatus!)
         nummer_op_materieel=nummer if nummer else None,
         documentation_path=None,  # Wordt later ingesteld na Supabase upload
     )
@@ -609,7 +614,13 @@ def materiaal_toevoegen():
         if material_type:
             item.material_type_id = material_type.id
     
-    # Set inspection_status (keuring_status) and laatste_keuring
+    # Valideer keuring_status (moet in toegelaten set zitten)
+    from constants import VALID_INSPECTION_STATUSES
+    if keuring_status and keuring_status not in VALID_INSPECTION_STATUSES:
+        flash(f"Ongeldige keuringstatus: {keuring_status}", "danger")
+        return redirect(url_for("materiaal.materiaal"))
+    
+    # Set inspection_status (keuring_status) - dit is NIET hetzelfde als status (gebruiksstatus)!
     if hasattr(item, "inspection_status"):
         item.inspection_status = keuring_status
     
@@ -618,7 +629,11 @@ def materiaal_toevoegen():
             item.laatste_keuring = datetime.strptime(laatste_keuring_str, "%Y-%m-%d").date()
         except ValueError:
             pass
-    # Note: No fallback to purchase_date - expiry calculation only uses laatste_keuring
+    
+    # NIEUWE REGEL: Als laatste_keuring niet ingevuld is, gebruik aankoopdatum als default
+    # Dit zorgt ervoor dat laatste_keuring nooit leeg blijft
+    if not item.laatste_keuring and item.purchase_date:
+        item.laatste_keuring = item.purchase_date
 
     db.session.add(item)
     db.session.flush()  # Flush to get the item.id before creating related records
@@ -674,28 +689,78 @@ def materiaal_toevoegen():
     # This MUST override user-selected status
     if item.laatste_keuring and MaterialService.check_inspection_expiry(item):
         item.inspection_status = "keuring verlopen"
-        keuring_status = "keuring verlopen"  # Update for Keuringstatus record creation
+        keuring_status = "keuring verlopen"  # Update for consistency
 
-    # If keuring_status is "keuring gepland" and datum_geplande_keuring is provided, create Keuringstatus record
-    if keuring_status == "keuring gepland" and datum_geplande_keuring_str:
-        try:
-            volgende_controle_date = datetime.strptime(datum_geplande_keuring_str, "%Y-%m-%d").date()
-            user_id = g.user.gebruiker_id if getattr(g, "user", None) and hasattr(g.user, "gebruiker_id") else None
-            
-            keuring_record = Keuringstatus(
-                serienummer=serial,
-                laatste_controle=None,
-                volgende_controle=volgende_controle_date,
-                uitgevoerd_door=None,
-                opmerkingen=None,
-                updated_by=user_id,
+    # Automatisch keuring_status en historiek records aanmaken/updaten
+    # Dit zorgt ervoor dat materialen met status != "Goedgekeurd" zichtbaar zijn in keuringsoverzicht
+    # en dat laatste_keuring altijd wordt vastgelegd in historiek
+    # NOTE: geplande_keuringsdatum is verwijderd - wordt niet meer gebruikt in create flow
+    user_id = g.user.gebruiker_id if getattr(g, "user", None) and hasattr(g.user, "gebruiker_id") else None
+    
+    # Zorg dat het materiaal in de session zit voordat we keuring_status/historiek aanmaken
+    if item not in db.session:
+        db.session.add(item)
+        db.session.flush()  # Flush om item.id te krijgen
+    
+    # NIEUWE LOGICA: Als materiaal aan een werf gekoppeld is, maak ook een MaterialUsage record aan
+    # Dit zorgt ervoor dat het materiaal verschijnt in "Materiaal in gebruik op deze werf"
+    if project_id and item.id:
+        # Check of er al een actieve usage is (voorkom dubbele records)
+        existing_usage = MaterialUsage.query.filter_by(
+            material_id=item.id,
+            project_id=project_id,
+            is_active=True
+        ).first()
+        
+        if not existing_usage:
+            # Maak MaterialUsage record aan
+            usage = MaterialUsage(
+                material_id=item.id,
+                user_id=user_id if user_id else None,
+                site=site if site else None,
+                note=None,
+                start_time=datetime.utcnow(),
+                end_time=None,
+                is_active=True,
+                used_by=assigned_to if assigned_to else (g.user.naam if getattr(g, "user", None) and hasattr(g.user, "naam") else None),
+                project_id=project_id,
             )
-            db.session.add(keuring_record)
-        except ValueError:
-            # Invalid date format, skip creating keuring record
-            pass
+            db.session.add(usage)
+            db.session.flush()  # Flush om usage.id te krijgen
+    
+    try:
+        ensure_keuring_status_and_historiek_for_new_material(
+            material=item,
+            geplande_keuringsdatum=None,  # Geen geplande keuring meer in create flow
+            user_id=user_id
+        )
+    except Exception as e:
+        # Log de error maar ga door met het opslaan van het materiaal
+        # Het materiaal moet altijd worden opgeslagen, ook als keuring_status/historiek setup faalt
+        print(f"Warning: Fout bij aanmaken keuring_status/historiek voor materiaal {item.serial}: {e}")
+        import traceback
+        traceback.print_exc()
+        # Zorg dat het materiaal nog steeds in de session zit
+        # Als de session in een slechte staat is, voeg het materiaal opnieuw toe
+        if item not in db.session:
+            db.session.add(item)
+        # Zorg dat alle gerelateerde objecten (zoals documenten) ook in de session zitten
+        if hasattr(item, 'documents') and item.documents:
+            for doc in item.documents:
+                if doc not in db.session:
+                    db.session.add(doc)
 
-    db.session.commit()
+    # ALTIJD committen - het materiaal moet worden opgeslagen, ongeacht of keuring_status/historiek setup slaagde
+    # Dit is cruciaal: zonder commit verschijnt het materiaal niet in de lijst
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"ERROR: Fout bij committen materiaal {item.serial}: {e}")
+        import traceback
+        traceback.print_exc()
+        flash(f"Fout bij opslaan materiaal: {str(e)}", "danger")
+        return redirect(url_for("materiaal.materiaal"))
 
     log_activity_db("Toegevoegd", item.name or "", item.serial or "")
     flash("Nieuw materiaal is succesvol toegevoegd", "success")
@@ -746,20 +811,43 @@ def materiaal_bewerken():
             item.laatste_keuring = datetime.strptime(laatste_keuring_str, "%Y-%m-%d").date()
         except ValueError:
             pass
-    # Note: No fallback to purchase_date - expiry calculation only uses laatste_keuring
+    
+    # NIEUWE REGEL: Als laatste_keuring niet ingevuld is, gebruik aankoopdatum als default
+    # Dit zorgt ervoor dat laatste_keuring nooit leeg blijft
+    if not item.laatste_keuring and item.purchase_date:
+        item.laatste_keuring = item.purchase_date
 
     item.assigned_to = (f.get("assigned_to") or "").strip()
     item.site = (f.get("site") or "").strip()
     item.note = (f.get("note") or "").strip()
     
-    # Get keuring status from form
+    # Update werf_id if provided
+    project_id_str = (f.get("project_id") or "").strip()
+    new_project_id = int(project_id_str) if project_id_str else None
+    if new_project_id:
+        project = Project.query.filter_by(id=new_project_id, is_deleted=False).first()
+        if project:
+            item.project_id = new_project_id
+            item.site = project.name
+    else:
+        item.project_id = None
+        item.site = None
+    
+    # Get keuring_status from form (NIET "status" - dat is gebruiksstatus!)
     keuring_status = (f.get("status") or DEFAULT_INSPECTION_STATUS).strip()
     
-    # Use service to update material status based on active usages
-    MaterialService.update_material_status(item)
+    # Valideer keuring_status
+    from constants import VALID_INSPECTION_STATUSES
+    if keuring_status and keuring_status not in VALID_INSPECTION_STATUSES:
+        flash(f"Ongeldige keuringstatus: {keuring_status}", "danger")
+        return redirect(url_for("materiaal.materiaal"))
     
     # inspection_status kolom: de keuringstatus
     item.inspection_status = keuring_status
+    
+    # Bereken status (gebruiksstatus) op basis van werf_id en active usages
+    # Dit overschrijft eventuele foutieve status waarden uit het form
+    MaterialService.update_material_status(item)
     
     # Check if inspection is expired based on laatste_keuring + keuring_geldigheid_dagen
     # This MUST override user-selected status
@@ -859,6 +947,29 @@ def materiaal_verwijderen():
             {'is_active': False, 'end_time': datetime.utcnow()},
             synchronize_session=False
         )
+        
+        # Verwijder gekoppelde Keuringstatus record (hard delete)
+        # Dit zorgt ervoor dat het materiaal niet meer verschijnt in keuringentabel
+        if item.keuring_id:
+            keuring_status = Keuringstatus.query.get(item.keuring_id)
+            if keuring_status:
+                # Check of er andere materialen zijn die deze keuring_status gebruiken
+                # Als dit het enige materiaal is, verwijder de keuring_status
+                other_materials = Material.query.filter(
+                    Material.keuring_id == item.keuring_id,
+                    Material.id != item.id,
+                    or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+                ).count()
+                
+                if other_materials == 0:
+                    # Geen andere materialen gebruiken deze keuring_status, verwijder het
+                    db.session.delete(keuring_status)
+                else:
+                    # Andere materialen gebruiken deze keuring_status, alleen de link verwijderen
+                    item.keuring_id = None
+        
+        # KeuringHistoriek records worden automatisch verwijderd via CASCADE delete
+        # (zie models.py: db.ForeignKey("materialen.id", ondelete="CASCADE"))
 
     db.session.commit()
 
