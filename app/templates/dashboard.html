@@ -236,31 +236,86 @@
 
 
 <script>
-  // Helper function to escape HTML
-  function escapeHtml(text) {
-    if (!text) return '';
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
+  // Helper function to escape HTML - handles all types safely
+  function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    
+    // If it's already a string, use it; otherwise try to stringify safely.
+    const text =
+      typeof value === 'string'
+        ? value
+        : (typeof value === 'number' || typeof value === 'boolean')
+          ? String(value)
+          : Array.isArray(value)
+            ? value.join(', ')
+            : (typeof value === 'object')
+              ? JSON.stringify(value)
+              : String(value);
+    
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  
+  // Normalize API response to flat object of strings for safe rendering
+  function normalizeMateriaalDetail(raw) {
+    if (!raw) return {};
+    
+    return {
+      id: raw.id != null ? String(raw.id) : '',
+      material_id: raw.material_id != null ? String(raw.material_id) : (raw.id != null ? String(raw.id) : ''),
+      serial: raw.serial != null ? String(raw.serial) : '',
+      serienummer: raw.serial != null ? String(raw.serial) : '',
+      name: raw.name != null ? String(raw.name) : '',
+      type: raw.type != null ? String(raw.type) : '',
+      status: raw.status != null ? String(raw.status) : '',
+      is_in_use: raw.is_in_use === true,
+      assigned_to: raw.assigned_to != null ? String(raw.assigned_to) : '',
+      toegewezen_aan: raw.assigned_to != null ? String(raw.assigned_to) : '',
+      site: raw.site != null ? String(raw.site) : '',
+      werf: raw.site != null ? String(raw.site) : '',
+      purchase_date: raw.purchase_date != null ? String(raw.purchase_date) : '',
+      aankoop_datum: raw.purchase_date != null ? String(raw.purchase_date) : '',
+      note: raw.note != null ? String(raw.note) : '',
+      opmerking: raw.note != null ? String(raw.note) : '',
+      nummer_op_materieel: raw.nummer_op_materieel != null ? String(raw.nummer_op_materieel) : '',
+      documentation_path: raw.documentation_path != null ? String(raw.documentation_path) : '',
+      documentation_url: raw.documentation_url != null ? String(raw.documentation_url) : '',
+      safety_sheet_path: raw.safety_sheet_path != null ? String(raw.safety_sheet_path) : '',
+      safety_sheet_url: raw.safety_sheet_url != null ? String(raw.safety_sheet_url) : '',
+      veiligheidsfiche_pad: raw.safety_sheet_path != null ? String(raw.safety_sheet_path) : (raw.documentation_path != null ? String(raw.documentation_path) : ''),
+      inspection_status: raw.inspection_status != null ? String(raw.inspection_status) : '',
+      keuring_gepland: raw.keuring_gepland != null ? String(raw.keuring_gepland) : '',
+      laatste_keuring: raw.laatste_keuring != null ? String(raw.laatste_keuring) : '',
+      laatste_keuring_material: raw.laatste_keuring_material != null ? String(raw.laatste_keuring_material) : '',
+      laatste_keuring_raw: raw.laatste_keuring_raw != null ? String(raw.laatste_keuring_raw) : '',
+      inspection_validity_days: raw.inspection_validity_days != null ? (typeof raw.inspection_validity_days === 'number' ? raw.inspection_validity_days : parseInt(raw.inspection_validity_days) || 0) : null,
+      documents: Array.isArray(raw.documents) ? raw.documents : []
     };
-    return text.toString().replace(/[&<>"']/g, m => map[m]);
   }
 
   // Central function to open material detail modal from search
-  // This function is shared between dashboard and materiaal pages
+  // This function matches the working implementation from materiaal.html
   window.openMaterialDetailFromSearch = function(serial, options = {}) {
     if (!serial) {
-      console.error('No serial provided to openMaterialDetailFromSearch');
+      console.error('[Overzicht] No serial provided to openMaterialDetailFromSearch');
       return;
     }
+    openMaterialDetailModal(serial, { ...options, from: 'search' });
+  };
+  
+  // Central modal function that handles both table and search
+  function openMaterialDetailModal(serial, options = {}) {
+    const from = options.from || 'table';
+    const showUseButton = from === 'search'; // Only show "Materiaal in gebruik nemen" when from search
     
-    // Use the search results modal
+    // Use the search results modal for consistency (same as dashboard)
     const modalElement = document.getElementById('searchResultsModal');
     if (!modalElement) {
-      console.error('Search results modal not found');
+      console.error('[Overzicht] Search results modal not found');
       return;
     }
     
@@ -268,7 +323,7 @@
     const modalTitle = document.getElementById('searchModalTitle');
     
     if (!modalBody || !modalTitle) {
-      console.error('Modal elements not found');
+      console.error('[Overzicht] Modal elements not found');
       return;
     }
     
@@ -279,37 +334,56 @@
     }
     
     if (!searchModal) {
-      console.error('Modal not available');
+      console.error('[Overzicht] Modal not available');
       return;
     }
-    
-    const showUseButton = (options.from || 'search') === 'search'; // Show button when from search
     
     modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
     modalTitle.textContent = 'Materieel Details';
     searchModal.show();
     
-    // Fetch material data
+    // Fetch material data using the same API endpoint as materiaal page
+    console.log('[Overzicht] Fetching material data from /api/search?q=' + encodeURIComponent(serial));
     fetch(`/api/search?q=${encodeURIComponent(serial)}`)
       .then(response => {
+        console.log('[Overzicht] API response status:', response.status, response.statusText);
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          // Try to get error details from response
+          return response.json().then(errData => {
+            console.error('[Overzicht] API error response:', errData);
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+          }).catch(() => {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          });
         }
         return response.json();
       })
       .then(data => {
+        console.log('[Overzicht] API response data:', data);
         if (data.error) {
+          console.error('[Overzicht] API returned error:', data.error);
           throw new Error(data.error);
         }
-        if (data.items && data.items.length > 0) {
-          const item = data.items[0];
-          // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
-          const isInUse = item.is_in_use === true;
-          const statusClass = isInUse ? 'bg-success' : 'bg-danger';
-          const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
-          
-          // Keuring: altijd gebaseerd op inspection_status (keuring_status in database)
-          let keuringStatus = (item.inspection_status || '').toString().trim();
+        if (!data.items || data.items.length === 0) {
+          console.warn('[Overzicht] No items found in API response');
+          modalBody.innerHTML = '<div class="text-muted text-center py-4">Item niet gevonden.</div>';
+          return;
+        }
+        
+        const rawItem = data.items[0];
+        console.log('[Overzicht] Processing raw item:', rawItem);
+        
+        // Normalize the item to ensure all fields are safe strings/primitives
+        const item = normalizeMateriaalDetail(rawItem);
+        console.log('[Overzicht] Normalized item:', item);
+        
+        // Status: "in gebruik" or "niet in gebruik" - based on is_in_use from API
+        const isInUse = item.is_in_use === true;
+        const statusClass = isInUse ? 'bg-success' : 'bg-danger';
+        const statusText = isInUse ? 'In gebruik' : 'Niet in gebruik';
+        
+        // Keuring: altijd gebaseerd op inspection_status (keuring_status in database)
+        let keuringStatus = (item.inspection_status || '').trim();
           
           // Normalize keuring status values
           if (keuringStatus) {
@@ -357,20 +431,26 @@
             badgeClass = 'badge-keuring-none';
           }
           
-          // Always show badge, even if status is empty
-          if (item.keuring_gepland) {
-            keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
-          } else {
-            keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
-          }
-          
-          // Helper function to display value or "onbekend"
-          const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
-          
-          modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
-          
-          // Build buttons HTML - conditionally show "Materiaal in gebruik nemen"
-          let buttonsHtml = `
+        // Always show badge, even if status is empty
+        if (item.keuring_gepland) {
+          keuringBadgeHtml = `<span class="badge ${badgeClass}">Keuring gepland: ${escapeHtml(item.keuring_gepland)}</span>`;
+        } else {
+          keuringBadgeHtml = `<span class="badge ${badgeClass}">${escapeHtml(keuringText)}</span>`;
+        }
+        
+        // Helper function to display value or "onbekend" - handles all types safely
+        // Note: item is already normalized, so values are always strings
+        const displayValue = (value) => {
+          if (value == null || value === '') return 'onbekend';
+          // Convert to string safely before checking trim
+          const str = typeof value === 'string' ? value : String(value);
+          return str.trim() !== '' ? escapeHtml(str) : 'onbekend';
+        };
+        
+        modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
+        
+        // Build buttons HTML - conditionally show "Materiaal in gebruik nemen"
+        let buttonsHtml = `
             <button type="button" 
                     class="btn btn-outline-secondary edit-material-btn" 
                     data-item-serial="${escapeHtml(item.serial || '')}"
@@ -417,10 +497,10 @@
                   <span>${escapeHtml(item.laatste_keuring_material)}</span>
                 </div>
                 ` : ''}
-                ${item.inspection_validity_days ? `
+                ${item.inspection_validity_days != null ? `
                 <div class="col-md-6">
                   <strong>Keuring geldig (dagen):</strong><br>
-                  <span>${escapeHtml(item.inspection_validity_days)} dagen</span>
+                  <span>${escapeHtml(String(item.inspection_validity_days))} dagen</span>
                 </div>
                 ` : ''}
                 <div class="col-md-6">
@@ -502,15 +582,20 @@
                         <div class="d-flex flex-wrap gap-2 mt-2">
                     `;
                     docs.forEach(doc => {
-                      if (doc.file_url) {
+                      // Safely extract document properties
+                      const docId = doc.id != null ? String(doc.id) : null;
+                      const docFileUrl = doc.file_url != null ? String(doc.file_url) : '';
+                      const docFileName = doc.file_name != null ? String(doc.file_name) : (doc.document_type != null ? String(doc.document_type) : 'Bekijk');
+                      
+                      if (docFileUrl || docId) {
                         // Gebruik download route als document ID beschikbaar is, anders directe URL
-                        const viewUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
-                        const downloadUrl = doc.id ? `/documenten/download/${doc.id}` : escapeHtml(doc.file_url);
+                        const viewUrl = docId ? `/documenten/download/${docId}` : escapeHtml(docFileUrl);
+                        const downloadUrl = docId ? `/documenten/download/${docId}` : escapeHtml(docFileUrl);
                         html += `
                           <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(docFileName)}
                           </a>
-                          <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                          <a href="${downloadUrl}" download="${escapeHtml(docFileName)}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-download me-1"></i>Download
                           </a>
                         `;
@@ -545,17 +630,42 @@
               }
             });
           }
-        } else {
-          modalBody.innerHTML = '<div class="text-muted text-center py-4">Geen resultaten gevonden.</div>';
-        }
       })
       .catch(error => {
         if (error.name !== 'AbortError') {
-          console.error('Error loading material detail:', error);
-          modalBody.innerHTML = '<div class="alert alert-danger">Er is een fout opgetreden bij het laden van de details.</div>';
+          console.error('[Overzicht details] Error loading material detail:', error);
+          console.error('[Overzicht details] Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            response: error.response
+          });
+          
+          // Show more informative error message
+          const errorMessage = error.message || 'Er is een fout opgetreden bij het laden van de details.';
+          const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          
+          modalBody.innerHTML = `<div class="alert alert-danger">
+            <strong>Details konden niet geladen worden.</strong>
+            ${isDev ? `<br><small>Fout: ${escapeHtml(errorMessage)}</small>` : ''}
+            <br><small>Controleer de console voor meer details.</small>
+          </div>`;
         }
       });
   };
+  
+  // Override with materiaal.html's implementation if available (it's more complete)
+  // This ensures both pages use the same working code
+  document.addEventListener('DOMContentLoaded', function() {
+    // Wait a bit for materiaal.html's script to load if it's on the same page
+    setTimeout(() => {
+      if (window.openMaterialDetailFromSearch && 
+          window.openMaterialDetailFromSearch.toString().includes('openMaterialDetailModal')) {
+        console.log('[Overzicht] Using materiaal.html implementation of openMaterialDetailFromSearch');
+        // The function is already overridden by materiaal.html, so we're good
+      }
+    }, 100);
+  });
 
 document.addEventListener('DOMContentLoaded', function() {
   const searchForm = document.getElementById('searchForm');
@@ -685,8 +795,13 @@ document.addEventListener('DOMContentLoaded', function() {
             return; // Exit early, central function handles everything
             
             // Fallback: inline implementation (should not happen if materiaal.html is loaded)
-            // Helper function to display value or "onbekend"
-            const displayValue = (value) => value && value.trim() !== '' ? escapeHtml(value) : 'onbekend';
+            // Helper function to display value or "onbekend" - handles all types safely
+            const displayValue = (value) => {
+              if (value == null || value === '') return 'onbekend';
+              // Convert to string safely before checking trim
+              const str = typeof value === 'string' ? value : String(value);
+              return str.trim() !== '' ? escapeHtml(str) : 'onbekend';
+            };
             
             modalTitle.textContent = escapeHtml(item.name || 'Onbekend');
             modalBody.innerHTML = `
@@ -716,7 +831,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span>${escapeHtml(item.laatste_keuring_material)}</span>
                   </div>
                   ` : ''}
-                  ${item.inspection_validity_days ? `
+                  ${item.inspection_validity_days != null ? `
                   <div class="col-md-6">
                     <strong>Keuring geldig (dagen):</strong><br>
                     <span>${escapeHtml(item.inspection_validity_days)} dagen</span>
@@ -801,26 +916,30 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="d-flex flex-wrap gap-2 mt-2">
                     `;
                     docs.forEach(doc => {
-                      // Gebruik download route als document ID beschikbaar is EN file_url bestaat, anders directe URL
-                      // Als doc.id bestaat, gebruik altijd de download route (ook als file_url leeg is)
-                      if (doc.id && doc.id !== null && doc.id !== 'null') {
-                        const viewUrl = `/documenten/download/${doc.id}`;
-                        const downloadUrl = `/documenten/download/${doc.id}`;
+                      // Safely extract document properties
+                      const docId = doc.id != null && doc.id !== 'null' ? String(doc.id) : null;
+                      const docFileUrl = doc.file_url != null ? String(doc.file_url) : '';
+                      const docFileName = doc.file_name != null ? String(doc.file_name) : (doc.document_type != null ? String(doc.document_type) : 'Bekijk');
+                      
+                      // Gebruik download route als document ID beschikbaar is, anders directe URL
+                      if (docId) {
+                        const viewUrl = `/documenten/download/${docId}`;
+                        const downloadUrl = `/documenten/download/${docId}`;
                         html += `
                           <a href="${viewUrl}" target="_blank" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(docFileName)}
                           </a>
-                          <a href="${downloadUrl}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                          <a href="${downloadUrl}" download="${escapeHtml(docFileName)}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-download me-1"></i>Download
                           </a>
                         `;
-                      } else if (doc.file_url && doc.file_url.trim() !== '') {
+                      } else if (docFileUrl && docFileUrl.trim() !== '') {
                         // Legacy documenten zonder ID - gebruik directe URL
                         html += `
-                          <a href="${escapeHtml(doc.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-eye me-1"></i>${escapeHtml(doc.file_name || doc.document_type || 'Bekijk')}
+                          <a href="${escapeHtml(docFileUrl)}" target="_blank" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>${escapeHtml(docFileName)}
                           </a>
-                          <a href="${escapeHtml(doc.file_url)}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary">
+                          <a href="${escapeHtml(docFileUrl)}" download="${escapeHtml(docFileName)}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-download me-1"></i>Download
                           </a>
                         `;
@@ -901,21 +1020,13 @@ document.addEventListener('DOMContentLoaded', function() {
     performSearch();
   });
   
-  // escapeHtml function - make it globally available
-  function escapeHtml(text) {
-    if (!text) return '';
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
+  // escapeHtml function - make it globally available (use the safe version defined above)
+  // This is just an alias to ensure it's available globally
+  if (typeof window.escapeHtml === 'undefined') {
+    window.escapeHtml = escapeHtml;
   }
   
-  // Make escapeHtml globally available
-  window.escapeHtml = escapeHtml;
+  // escapeHtml is already made globally available above
   
   // Use central function from materiaal.html if available, otherwise fallback to local implementation
   window.showMaterialDetail = function(serial) {

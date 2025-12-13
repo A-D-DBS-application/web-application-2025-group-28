@@ -96,7 +96,7 @@
                                 class="btn btn-sm btn-outline-dark view-edit-btn"
                                 data-serial="{{ u.serial }}"
                                 data-usage-id="{{ u.id }}">
-                          Bekijk en bewerk
+                          Details
                         </button>
                         <form method="post" action="{{ url_for('materiaal.materiaal_stop_gebruik') }}" class="d-inline" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
                           <input type="hidden" name="usage_id" value="{{ u.id }}">
@@ -151,7 +151,7 @@
                                 class="btn btn-sm btn-outline-dark view-edit-btn"
                                 data-serial="{{ u.serial }}"
                                 data-usage-id="{{ u.id }}">
-                          Bekijk en bewerk
+                          Details
                         </button>
                         {% if current_user and current_user.is_admin %}
                         <form method="post"
@@ -540,6 +540,7 @@
       <div class="modal-body" id="searchModalBody">
         <div class="text-muted">Laden...</div>
       </div>
+      <!-- Footer is rendered inline in modal body for consistency -->
     </div>
   </div>
 </div>
@@ -810,7 +811,8 @@
   // Central modal function that handles both table and search
   function openMaterialDetailModal(serial, options = {}) {
     const from = options.from || 'table';
-    const showUseButton = from === 'search'; // Only show "Materiaal in gebruik nemen" when from search
+    // Only show "Materiaal in gebruik nemen" when from search (not from table or usage)
+    const showUseButton = from === 'search';
     
     // Use the search results modal for consistency (same as dashboard)
     const modalElement = document.getElementById('searchResultsModal');
@@ -1134,7 +1136,9 @@
       });
   }
 
-  // Make showMaterialDetails available globally immediately - simplified version
+  // DEPRECATED: showMaterialDetails - Use openMaterialDetailModal instead
+  // This function is kept for backward compatibility but should not be used for new code
+  // The "Details" buttons now use openMaterialDetailModal for consistency
   window.showMaterialDetails = function(serial, usageId) {
     console.log('[showMaterialDetails] Function called', serial, usageId);
     if (!serial) {
@@ -1530,8 +1534,9 @@
 
 document.addEventListener('DOMContentLoaded', function () {
 
-  // Event listeners for "Bekijk en bewerk" buttons using event delegation
+  // Event listeners for "Details" buttons using event delegation
   // This works even if buttons are dynamically added (e.g., in tabs)
+  // Uses the same modal as "Materiaal in het systeem" for consistency
   document.addEventListener('click', function(e) {
     const btn = e.target.closest('.view-edit-btn');
     if (btn) {
@@ -1539,23 +1544,32 @@ document.addEventListener('DOMContentLoaded', function () {
       e.stopPropagation();
       const serial = btn.getAttribute('data-serial');
       const usageId = btn.getAttribute('data-usage-id');
-      console.log('Button clicked:', serial, usageId, typeof window.showMaterialDetails);
+      console.log('[Materieel in gebruik] Details button clicked:', serial, usageId);
       
       if (!serial) {
-        console.error('No serial found on button');
+        console.error('[Materieel in gebruik] No serial found on button');
         alert('Fout: Serienummer niet gevonden.');
         return;
       }
       
-      if (typeof window.showMaterialDetails === 'function') {
+      // Use the same modal function as "Materiaal in het systeem" table
+      if (typeof window.openMaterialDetailFromTable === 'function') {
         try {
-          window.showMaterialDetails(serial, usageId);
+          window.openMaterialDetailFromTable(serial, { from: 'usage' });
         } catch (error) {
-          console.error('Error calling showMaterialDetails:', error);
+          console.error('[Materieel in gebruik] Error calling openMaterialDetailFromTable:', error);
+          alert('Er is een fout opgetreden bij het openen van de details.');
+        }
+      } else if (typeof window.openMaterialDetailModal === 'function') {
+        // Fallback to direct function call if wrapper not available
+        try {
+          openMaterialDetailModal(serial, { from: 'usage' });
+        } catch (error) {
+          console.error('[Materieel in gebruik] Error calling openMaterialDetailModal:', error);
           alert('Er is een fout opgetreden bij het openen van de details.');
         }
       } else {
-        console.error('showMaterialDetails function not available');
+        console.error('[Materieel in gebruik] Modal function not available');
         alert('Fout: Functie niet beschikbaar. Herlaad de pagina.');
       }
     }

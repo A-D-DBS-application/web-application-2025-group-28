@@ -6,6 +6,7 @@ from models import db, Material, MaterialUsage, Keuringstatus, Document
 from helpers import login_required, get_file_url_from_path
 from sqlalchemy import or_, func
 from sqlalchemy.orm import joinedload
+from datetime import datetime
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
@@ -250,6 +251,8 @@ def api_search():
                 
                 results.append(
                     {
+                    "id": int(item.id) if item.id else None,  # Material ID for reference
+                    "material_id": int(item.id) if item.id else None,  # Alias for compatibility
                     "serial": str(item.serial) if item.serial else "",
                     "name": str(item.name) if item.name else "",
                     "type": str(item.type) if item.type else "",
@@ -294,3 +297,156 @@ def api_search():
             "items": []
         }), 500
 
+
+@api_bp.route("/material/<int:material_id>/update", methods=["POST"])
+@login_required
+def api_material_update(material_id):
+    """API endpoint to update material from modal"""
+    try:
+        from models import Keuringstatus
+        
+        material = Material.query.filter_by(id=material_id).first()
+        if not material:
+            return jsonify({"error": "Materiaal niet gevonden"}), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Geen data ontvangen"}), 400
+        
+        # Update material fields
+        if "serial" in data:
+            new_serial = data["serial"].strip()
+            if new_serial and new_serial != material.serial:
+                # Check if serial already exists
+                existing = Material.query.filter_by(serial=new_serial).first()
+                if existing and existing.id != material_id:
+                    return jsonify({"error": "Serienummer bestaat al"}), 400
+                material.serial = new_serial
+        
+        if "type" in data:
+            material.type = data["type"].strip() if data["type"] else None
+        
+        if "locatie" in data:
+            material.site = data["locatie"].strip() if data["locatie"] else None
+        
+        # Update volgende_keuring if provided
+        if "volgende_keuring" in data and data["volgende_keuring"]:
+            try:
+                volgende_keuring_date = datetime.strptime(data["volgende_keuring"], "%Y-%m-%d").date()
+                
+                # Update keuring_status if it exists
+                if material.keuring_id:
+                    keuring = Keuringstatus.query.filter_by(id=material.keuring_id).first()
+                    if keuring:
+                        keuring.volgende_controle = volgende_keuring_date
+                else:
+                    # Create new keuring_status if it doesn't exist
+                    keuring = Keuringstatus(
+                        serienummer=material.serial,
+                        volgende_controle=volgende_keuring_date
+                    )
+                    db.session.add(keuring)
+                    db.session.flush()
+                    material.keuring_id = keuring.id
+            except ValueError:
+                return jsonify({"error": "Ongeldige datum formaat"}), 400
+        
+        db.session.commit()
+        
+        return jsonify({
+            "success": True,
+            "message": "Materiaal succesvol bijgewerkt"
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in api_material_update: {e}")
+        print(f"Traceback: {error_details}")
+        return jsonify({
+            "error": f"Fout bij bijwerken: {str(e)}"
+        }), 500
+
+
+@api_bp.route("/material/<int:material_id>/delete", methods=["POST"])
+@login_required
+def api_material_delete(material_id):
+    """API endpoint to delete material with cascade delete"""
+    try:
+        from models import MaterialUsage, KeuringHistoriek, Document
+        
+        material = Material.query.filter_by(id=material_id).first()
+        if not material:
+            return jsonify({"error": "Materiaal niet gevonden"}), 404
+        
+        # Store serial for logging
+        serial = material.serial
+        
+        # Try cascade delete: delete material first (if DB supports CASCADE)
+        # If that fails, manually delete dependent records
+        try:
+            # First, stop all active usages
+            MaterialUsage.query.filter_by(material_id=material_id, is_active=True).update(
+                {'is_active': False, 'end_time': datetime.utcnow()},
+                synchronize_session=False
+            )
+            
+            # Soft delete the material (set is_deleted = True)
+            material.is_deleted = True
+            
+            db.session.commit()
+            
+        except Exception as cascade_error:
+            # If cascade delete fails, manually delete dependent records
+            db.session.rollback()
+            print(f"Cascade delete failed, trying manual delete: {cascade_error}")
+            
+            try:
+                # Delete dependent records manually
+                # 1. Stop active usages
+                MaterialUsage.query.filter_by(material_id=material_id, is_active=True).update(
+                    {'is_active': False, 'end_time': datetime.utcnow()},
+                    synchronize_session=False
+                )
+                
+                # 2. Delete keuring historiek (if CASCADE not configured)
+                KeuringHistoriek.query.filter_by(material_id=material_id).delete()
+                
+                # 3. Delete keuring status if it exists
+                if material.keuring_id:
+                    Keuringstatus.query.filter_by(id=material.keuring_id).delete()
+                
+                # 4. Delete documents linked to material
+                Document.query.filter_by(material_id=material_id).delete()
+                
+                # 5. Soft delete the material
+                material.is_deleted = True
+                
+                db.session.commit()
+                
+            except Exception as manual_error:
+                db.session.rollback()
+                print(f"Manual delete also failed: {manual_error}")
+                return jsonify({
+                    "error": f"Fout bij verwijderen: {str(manual_error)}"
+                }), 500
+        
+        # Log activity
+        from helpers import log_activity_db
+        log_activity_db("Verwijderd", material.name or "", serial)
+        
+        return jsonify({
+            "success": True,
+            "message": "Materiaal succesvol verwijderd"
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in api_material_delete: {e}")
+        print(f"Traceback: {error_details}")
+        return jsonify({
+            "error": f"Fout bij verwijderen: {str(e)}"
+        }), 500

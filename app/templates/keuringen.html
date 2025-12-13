@@ -218,15 +218,14 @@
                 </button>
               </td>
               <td>
-                {% if material.site %}
-                  {{ material.site }}
-                {% elif material.project_id and all_projects %}
-                  {% set matching_project = all_projects|selectattr('id', 'equalto', material.project_id)|first %}
-                  {% if matching_project %}
-                    {{ matching_project.name }}
-                  {% else %}
-                    <span class="keuringen-table-empty-cell">-</span>
-                  {% endif %}
+                {# 
+                  BUG FIX: Previously showed material.site or material.project_id (default/initial location).
+                  Now shows active usage location from materiaal_gebruik table.
+                  - If material is "in gebruik" (has active materiaal_gebruik record): show werf name or locatie from active usage
+                  - If material is "niet in gebruik": show "-"
+                #}
+                {% if item.in_gebruik and item.current_location %}
+                  {{ item.current_location }}
                 {% else %}
                   <span class="keuringen-table-empty-cell">-</span>
                 {% endif %}
@@ -318,16 +317,9 @@
                       Bewerken
                     </button>
                   {% else %}
-                    <!-- Already inspected - show "Details" -->
-                    <button type="button" 
-                            class="keuringen-action-btn"
-                            data-material-serial="{{ material.serial }}"
-                            data-material-id="{{ material.id }}"
-                            onclick="showMaterialInspectionHistory(this.getAttribute('data-material-serial'), parseInt(this.getAttribute('data-material-id')))">
-                      Details
-                    </button>
+                    <!-- Already inspected - show certificate link if available -->
                     {% if item.has_certificate %}
-                      <a href="#" class="keuringen-action-btn keuringen-action-btn-link" title="Certificaat">
+                      <a href="{{ item.certificaat_url }}" target="_blank" class="keuringen-action-btn keuringen-action-btn-link" title="Certificaat">
                         Certificaat
                       </a>
                     {% endif %}
@@ -409,7 +401,7 @@
 
       <form method="post" action="{{ url_for('keuringen.keuring_toevoegen') }}" id="nieuweKeuringForm">
         <div class="modal-body">
-          <div id="nieuweKeuringErrors" class="alert alert-danger error-container"></div>
+          <div id="nieuweKeuringErrors" class="alert alert-danger error-container" style="display: none;"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel <span class="text-danger">*</span></label>
@@ -480,7 +472,7 @@
       <form method="post" action="{{ url_for('keuringen.keuring_bewerken') }}" id="bewerkKeuringForm">
         <input type="hidden" name="keuring_id" id="edit-keuring-id">
         <div class="modal-body">
-          <div id="bewerkKeuringErrors" class="alert alert-danger error-container"></div>
+          <div id="bewerkKeuringErrors" class="alert alert-danger error-container" style="display: none;"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel</label>
@@ -543,7 +535,7 @@
       <form method="post" action="{{ url_for('keuringen.keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
         <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
         <div class="modal-body">
-          <div id="keuringResultaatErrors" class="alert alert-danger error-container"></div>
+          <div id="keuringResultaatErrors" class="alert alert-danger error-container" style="display: none;"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Resultaat <span class="text-danger">*</span></label>
@@ -632,7 +624,40 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Sluiten</button>
+        <button type="button" 
+                id="modalBewerkenBtn" 
+                class="btn btn-outline-secondary"
+                onclick="enterEditMode()">
+          Bewerken
+        </button>
+        <button type="button" 
+                id="modalVerwijderenBtn" 
+                class="btn btn-danger"
+                onclick="confirmDeleteMaterial()"
+                disabled>
+          Verwijderen
+        </button>
+        <button type="button" 
+                id="modalSluitenBtn" 
+                class="btn btn-outline-secondary" 
+                data-bs-dismiss="modal">
+          Sluiten
+        </button>
+        <!-- Edit mode buttons (hidden by default) -->
+        <div id="editModeButtons" style="display: none;">
+          <button type="button" 
+                  id="modalAnnulerenBtn" 
+                  class="btn btn-outline-secondary"
+                  onclick="cancelEdit()">
+            Annuleren
+          </button>
+          <button type="button" 
+                  id="modalOpslaanBtn" 
+                  class="btn btn-primary"
+                  onclick="saveMaterialEdit()">
+            Opslaan
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -640,6 +665,11 @@
 
 <style>
 /* Local CSS overrides for Keuringen page only */
+
+/* Hide error containers when empty */
+.error-container:empty {
+  display: none !important;
+}
 
 /* 1. Summary indicator colors */
 /* "Te keuren vandaag" - dark blue (#001F54) */
@@ -723,12 +753,73 @@ function cleanupModals() {
   document.body.style.paddingRight = '';
 }
 
+// Clear error containers when modals open
+function clearErrorContainers() {
+  const errorContainers = document.querySelectorAll('.error-container');
+  errorContainers.forEach(container => {
+    container.innerHTML = '';
+    container.style.display = 'none';
+  });
+}
+
+// Show error in container (only if error message exists and is non-empty)
+function showErrorInContainer(containerId, errorMessage) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  
+  // Only show if error message exists and has content
+  if (errorMessage && typeof errorMessage === 'string' && errorMessage.trim().length > 0) {
+    container.innerHTML = escapeHtml(errorMessage);
+    container.style.display = 'block';
+  } else {
+    container.innerHTML = '';
+    container.style.display = 'none';
+  }
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+  if (!text) return '';
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.toString().replace(/[&<>"']/g, m => map[m]);
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   cleanupModals();
+  
+  // Clear error containers on page load
+  clearErrorContainers();
+  
   const allModals = document.querySelectorAll('.modal');
   allModals.forEach(modal => {
+    // Clear errors when modal opens
+    modal.addEventListener('show.bs.modal', function() {
+      clearErrorContainers();
+    });
+    
+    // Cleanup when modal closes
     modal.addEventListener('hidden.bs.modal', function() {
       cleanupModals();
+      clearErrorContainers();
+    });
+  });
+  
+  // Also handle form submissions to clear errors on retry
+  const forms = document.querySelectorAll('#nieuweKeuringForm, #bewerkKeuringForm, #keuringResultaatForm');
+  forms.forEach(form => {
+    form.addEventListener('submit', function(e) {
+      // Clear errors when form is submitted (user is retrying)
+      const errorContainer = form.querySelector('.error-container');
+      if (errorContainer) {
+        errorContainer.innerHTML = '';
+        errorContainer.style.display = 'none';
+      }
     });
   });
   
@@ -739,11 +830,30 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+// Global state for modal
+let currentMaterialData = null;
+let currentMaterialId = null;
+let currentHistoryData = null;
+let deleteTarget = null; // { kind: 'historiek', id: number, materiaalId: number } | { kind: 'planning', serienummer: string } | null
+let isEditMode = false;
+let isDeleting = false;
+let isLoading = false;
+
 // Show material inspection history
 window.showMaterialInspectionHistory = function(serial, materialId) {
   const modal = new bootstrap.Modal(document.getElementById('materieelInspectieHistoriekModal'));
   const modalBody = document.getElementById('materieelInspectieHistoriekBody');
   const modalTitle = document.getElementById('historiek-material-name');
+  
+  // Reset state
+  isEditMode = false;
+  currentMaterialData = null;
+  currentMaterialId = materialId;
+  currentHistoryData = null;
+  deleteTarget = null;
+  isDeleting = false;
+  isLoading = true;
+  exitEditMode();
   
   modalBody.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Laden...</span></div></div>';
   modal.show();
@@ -758,12 +868,22 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
       }
       
       const material = data.items[0];
+      currentMaterialData = material;
       modalTitle.textContent = `${material.name || 'Onbekend'} - Inspectie Historiek`;
       
       // Fetch inspection history
       fetch(`/api/keuring/historiek/${materialId}`)
         .then(response => response.json())
         .then(historyData => {
+          isLoading = false;
+          currentHistoryData = historyData;
+          
+          // Compute deleteTarget: can delete historiek or planned keuring
+          deleteTarget = computeDeleteTarget(historyData, material, materialId);
+          
+          // Enable/disable delete button based on deleteTarget
+          updateDeleteButtonState();
+          
           // Determine status badge
           let statusBadgeClass = 'bg-secondary';
           let statusText = historyData.inspection_status || 'Onbekend';
@@ -792,71 +912,21 @@ window.showMaterialInspectionHistory = function(serial, materialId) {
             }
           }
           
-          let historyHtml = `
-            <div class="mb-3">
-              <strong>Serienummer:</strong> ${escapeHtml(material.serial || '')}<br>
-              <strong>Type:</strong> ${escapeHtml(material.type || '')}<br>
-              <strong>Locatie:</strong> ${escapeHtml(material.site || '-')}
-            </div>
-            <hr>
-            <h6>Huidige Status</h6>
-            <div class="mb-3">
-              <span class="badge ${statusBadgeClass}">
-                ${escapeHtml(statusText)}
-              </span>
-              ${historyData.volgende_keuring_datum ? `
-                <div class="mt-2">
-                  <strong>Volgende keuring:</strong> ${escapeHtml(historyData.volgende_keuring_datum)}
-                  ${volgendeKeuringHtml}
-              </div>
-                ` : ''}
-              </div>
-            <hr>
-            <h6>Inspectie Historiek</h6>
-          `;
-          
-          if (historyData.historiek && historyData.historiek.length > 0) {
-            historyHtml += '<div class="list-group">';
-            historyData.historiek.forEach(hist => {
-              const resultaatBadge = hist.resultaat === 'goedgekeurd' ? 'bg-success' : 
-                                     hist.resultaat === 'afgekeurd' ? 'bg-danger' : 'bg-warning';
-              historyHtml += `
-                <div class="list-group-item">
-                  <div class="d-flex justify-content-between align-items-start">
-                    <div>
-                      <strong>${escapeHtml(hist.keuring_datum || '')}</strong>
-                      <span class="badge ${resultaatBadge} ms-2">${escapeHtml(hist.resultaat || '')}</span>
-                      <br>
-                      <small class="text-muted">
-                        Uitgevoerd door: ${escapeHtml(hist.uitgevoerd_door || '')}
-                        ${hist.volgende_keuring_datum ? ` | Volgende: ${escapeHtml(hist.volgende_keuring_datum)}` : ''}
-                      </small>
-                      ${hist.opmerkingen ? `<br><small>${escapeHtml(hist.opmerkingen)}</small>` : ''}
-                      ${hist.certificaat_url ? `
-                        <br><a href="${escapeHtml(hist.certificaat_url)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
-                          <i class="bi bi-file-earmark-text me-1"></i>Certificaat
-                        </a>
-                      ` : ''}
-              </div>
-            </div>
-          </div>
-        `;
-            });
-            historyHtml += '</div>';
-      } else {
-            historyHtml += '<p class="text-muted">Nog geen inspectie historiek beschikbaar.</p>';
-          }
-          
-          modalBody.innerHTML = historyHtml;
+          // Render view mode HTML
+          renderViewMode(material, historyData, statusBadgeClass, statusText, volgendeKeuringHtml);
         })
         .catch(error => {
+          isLoading = false;
           console.error('Error loading history:', error);
           modalBody.innerHTML = '<div class="alert alert-danger">Fout bij laden historiek.</div>';
+          updateDeleteButtonState();
         });
     })
     .catch(error => {
+      isLoading = false;
       console.error('Error loading material:', error);
       modalBody.innerHTML = '<div class="alert alert-danger">Fout bij laden materiaal.</div>';
+      updateDeleteButtonState();
     });
 };
 
@@ -898,6 +968,441 @@ window.openResultaatModal = function(keuringId) {
     "'": '&#039;'
   };
   return text.toString().replace(/[&<>"']/g, m => map[m]);
+}
+
+// Render view mode (read-only)
+function renderViewMode(material, historyData, statusBadgeClass, statusText, volgendeKeuringHtml) {
+  const modalBody = document.getElementById('materieelInspectieHistoriekBody');
+  
+  let historyHtml = `
+    <div class="mb-3" id="materialInfoView">
+      <strong>Serienummer:</strong> <span id="view-serial">${escapeHtml(material.serial || '')}</span><br>
+      <strong>Type:</strong> <span id="view-type">${escapeHtml(material.type || '')}</span><br>
+      <strong>Locatie:</strong> <span id="view-locatie">${escapeHtml(material.site || '-')}</span>
+    </div>
+    <hr>
+    <h6>Huidige Status</h6>
+    <div class="mb-3">
+      <span class="badge ${statusBadgeClass}">
+        ${escapeHtml(statusText)}
+      </span>
+      ${historyData.volgende_keuring_datum ? `
+        <div class="mt-2">
+          <strong>Volgende keuring:</strong> <span id="view-volgende-keuring">${escapeHtml(historyData.volgende_keuring_datum)}</span>
+          ${volgendeKeuringHtml}
+        </div>
+      ` : ''}
+    </div>
+    <hr>
+    <h6>Inspectie Historiek</h6>
+  `;
+  
+  if (historyData.historiek && historyData.historiek.length > 0) {
+    historyHtml += '<div class="list-group">';
+    historyData.historiek.forEach(hist => {
+      const resultaatBadge = hist.resultaat === 'goedgekeurd' ? 'bg-success' : 
+                             hist.resultaat === 'afgekeurd' ? 'bg-danger' : 'bg-warning';
+      historyHtml += `
+        <div class="list-group-item">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong>${escapeHtml(hist.keuring_datum || '')}</strong>
+              <span class="badge ${resultaatBadge} ms-2">${escapeHtml(hist.resultaat || '')}</span>
+              <br>
+              <small class="text-muted">
+                Uitgevoerd door: ${escapeHtml(hist.uitgevoerd_door || '')}
+                ${hist.volgende_keuring_datum ? ` | Volgende: ${escapeHtml(hist.volgende_keuring_datum)}` : ''}
+              </small>
+              ${hist.opmerkingen ? `<br><small>${escapeHtml(hist.opmerkingen)}</small>` : ''}
+              ${hist.certificaat_url ? `
+                <br><a href="${escapeHtml(hist.certificaat_url)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+                  <i class="bi bi-file-earmark-text me-1"></i>Certificaat
+                </a>
+              ` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    historyHtml += '</div>';
+  } else {
+    historyHtml += '<p class="text-muted">Nog geen inspectie historiek beschikbaar.</p>';
+  }
+  
+  modalBody.innerHTML = historyHtml;
+}
+
+// Render edit mode (editable form)
+function renderEditMode(material, historyData) {
+  const modalBody = document.getElementById('materieelInspectieHistoriekBody');
+  
+  const editHtml = `
+    <form id="editMaterialForm">
+      <div class="mb-3">
+        <label class="form-label"><strong>Serienummer:</strong></label>
+        <input type="text" 
+               class="form-control" 
+               id="edit-serial" 
+               value="${escapeHtml(material.serial || '')}" 
+               required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label"><strong>Type:</strong></label>
+        <input type="text" 
+               class="form-control" 
+               id="edit-type" 
+               value="${escapeHtml(material.type || '')}">
+      </div>
+      <div class="mb-3">
+        <label class="form-label"><strong>Locatie:</strong></label>
+        <input type="text" 
+               class="form-control" 
+               id="edit-locatie" 
+               value="${escapeHtml(material.site || '')}">
+      </div>
+      ${historyData.volgende_keuring_datum ? `
+        <div class="mb-3">
+          <label class="form-label"><strong>Volgende keuring:</strong></label>
+          <input type="date" 
+                 class="form-control" 
+                 id="edit-volgende-keuring" 
+                 value="${escapeHtml(historyData.volgende_keuring_datum || '')}">
+        </div>
+      ` : ''}
+    </form>
+  `;
+  
+  modalBody.innerHTML = editHtml;
+}
+
+// Enter edit mode
+function enterEditMode() {
+  if (!currentMaterialData || !currentHistoryData) {
+    alert('Geen materiaal data beschikbaar.');
+    return;
+  }
+  
+  isEditMode = true;
+  renderEditMode(currentMaterialData, currentHistoryData);
+  
+  // Show/hide buttons
+  document.getElementById('modalBewerkenBtn').style.display = 'none';
+  document.getElementById('modalVerwijderenBtn').style.display = 'none';
+  document.getElementById('modalSluitenBtn').style.display = 'none';
+  document.getElementById('editModeButtons').style.display = 'block';
+}
+
+// Exit edit mode
+function exitEditMode() {
+  isEditMode = false;
+  
+  // Show/hide buttons
+  document.getElementById('modalBewerkenBtn').style.display = 'inline-block';
+  document.getElementById('modalVerwijderenBtn').style.display = 'inline-block';
+  document.getElementById('modalSluitenBtn').style.display = 'inline-block';
+  document.getElementById('editModeButtons').style.display = 'none';
+}
+
+// Cancel edit
+function cancelEdit() {
+  if (!currentMaterialData || !currentHistoryData) {
+    return;
+  }
+  
+  // Re-render view mode
+  const statusBadgeClass = 'bg-secondary';
+  const statusText = currentHistoryData.inspection_status || 'Onbekend';
+  const volgendeKeuringHtml = '';
+  
+  renderViewMode(currentMaterialData, currentHistoryData, statusBadgeClass, statusText, volgendeKeuringHtml);
+  exitEditMode();
+}
+
+// Save material edit
+function saveMaterialEdit() {
+  if (!currentMaterialId || !currentMaterialData) {
+    alert('Geen materiaal ID beschikbaar.');
+    return;
+  }
+  
+  const serial = document.getElementById('edit-serial').value.trim();
+  const type = document.getElementById('edit-type').value.trim();
+  const locatie = document.getElementById('edit-locatie').value.trim();
+  const volgendeKeuring = document.getElementById('edit-volgende-keuring')?.value || null;
+  
+  if (!serial) {
+    alert('Serienummer is verplicht.');
+    return;
+  }
+  
+  // Disable save button
+  const saveBtn = document.getElementById('modalOpslaanBtn');
+  const originalText = saveBtn.textContent;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Opslaan...';
+  
+  // Prepare update data
+  const updateData = {
+    serial: serial,
+    type: type,
+    locatie: locatie
+  };
+  
+  if (volgendeKeuring) {
+    updateData.volgende_keuring = volgendeKeuring;
+  }
+  
+  // Send update request
+  fetch(`/api/material/${currentMaterialId}/update`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(updateData)
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.error) {
+      alert('Fout bij opslaan: ' + data.error);
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalText;
+      return;
+    }
+    
+    // Update local data
+    currentMaterialData.serial = serial;
+    currentMaterialData.type = type;
+    currentMaterialData.site = locatie;
+    if (currentHistoryData && volgendeKeuring) {
+      currentHistoryData.volgende_keuring_datum = volgendeKeuring;
+    }
+    
+    // Show success message
+    showToast('Materiaal succesvol bijgewerkt.', 'success');
+    
+    // Re-render view mode
+    const statusBadgeClass = 'bg-secondary';
+    const statusText = currentHistoryData.inspection_status || 'Onbekend';
+    const volgendeKeuringHtml = '';
+    
+    renderViewMode(currentMaterialData, currentHistoryData, statusBadgeClass, statusText, volgendeKeuringHtml);
+    exitEditMode();
+    
+    // Refresh the keuringen table
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  })
+  .catch(error => {
+    console.error('Error saving material:', error);
+    alert('Fout bij opslaan: ' + error.message);
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalText;
+  });
+}
+
+// Compute delete target based on available data
+function computeDeleteTarget(historyData, material, materialId) {
+  // Priority 1: If there's a historiek record, we can delete that
+  if (historyData.historiek && historyData.historiek.length > 0) {
+    const latestHistoriek = historyData.historiek[0];
+    return {
+      kind: 'historiek',
+      id: latestHistoriek.id,
+      materiaalId: materialId
+    };
+  }
+  
+  // Priority 2: If there's a planned keuring (volgende_keuring_datum exists)
+  // This means there's a keuring_status with volgende_controle set, even if no historiek exists
+  const serial = material.serial || historyData.serial;
+  if (serial && historyData.volgende_keuring_datum) {
+    // Check if there's a planned keuring (volgende_keuring_datum exists)
+    // This can happen even without historiek (just a planned inspection)
+    return {
+      kind: 'planning',
+      serienummer: serial
+    };
+  }
+  
+  // No deletable target
+  return null;
+}
+
+// Update delete button state
+function updateDeleteButtonState() {
+  const deleteBtn = document.getElementById('modalVerwijderenBtn');
+  if (!deleteBtn) return;
+  
+  const canDelete = !!deleteTarget && !isDeleting && !isLoading;
+  
+  deleteBtn.disabled = !canDelete;
+  
+  if (!canDelete) {
+    if (isLoading) {
+      deleteBtn.title = 'Laden...';
+    } else if (isDeleting) {
+      deleteBtn.title = 'Verwijderen...';
+    } else {
+      deleteBtn.title = 'Geen keuring om te verwijderen';
+    }
+  } else {
+    deleteBtn.title = '';
+  }
+}
+
+// Confirm delete keuring
+function confirmDeleteMaterial() {
+  if (!deleteTarget) {
+    alert('Geen keuring om te verwijderen.');
+    return;
+  }
+  
+  // Dynamic confirmation message based on target type
+  let confirmMessage = '';
+  if (deleteTarget.kind === 'historiek') {
+    confirmMessage = 'Keuring verwijderen?\n\nDit verwijdert enkel deze uitgevoerde keuring. Het materiaal blijft bestaan.';
+  } else if (deleteTarget.kind === 'planning') {
+    confirmMessage = 'Geplande keuring verwijderen?\n\nDit verwijdert enkel de planning. Het materiaal blijft bestaan.';
+  } else {
+    alert('Geen keuring om te verwijderen.');
+    return;
+  }
+  
+  if (confirm(confirmMessage)) {
+    deleteKeuring();
+  }
+}
+
+// Delete keuring
+function deleteKeuring() {
+  if (!deleteTarget) {
+    return;
+  }
+  
+  isDeleting = true;
+  updateDeleteButtonState();
+  
+  // Disable delete button
+  const deleteBtn = document.getElementById('modalVerwijderenBtn');
+  const originalText = deleteBtn.textContent;
+  deleteBtn.textContent = 'Verwijderen...';
+  
+  let apiUrl = '';
+  let requestBody = {};
+  
+  if (deleteTarget.kind === 'historiek') {
+    // Delete historiek record
+    apiUrl = `/api/keuring/${deleteTarget.id}/delete`;
+    requestBody = {
+      material_id: deleteTarget.materiaalId
+    };
+  } else if (deleteTarget.kind === 'planning') {
+    // Delete planned keuring (clear planning)
+    apiUrl = `/api/keuring/planning/delete`;
+    requestBody = {
+      serienummer: deleteTarget.serienummer
+    };
+  } else {
+    alert('Geen geldige keuring om te verwijderen.');
+    isDeleting = false;
+    updateDeleteButtonState();
+    return;
+  }
+  
+  // Send delete request
+  fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(requestBody)
+  })
+  .then(response => response.json())
+  .then(data => {
+    isDeleting = false;
+    
+    if (data.error) {
+      alert('Fout bij verwijderen: ' + data.error);
+      deleteBtn.textContent = originalText;
+      updateDeleteButtonState();
+      return;
+    }
+    
+    // Show success message
+    showToast('Keuring verwijderd.', 'success');
+    
+    // Reload the modal content to show updated history
+    if (currentMaterialData && currentMaterialData.serial && currentMaterialId) {
+      // Re-fetch the history
+      isLoading = true;
+      updateDeleteButtonState();
+      
+      fetch(`/api/keuring/historiek/${currentMaterialId}`)
+        .then(response => response.json())
+        .then(historyData => {
+          isLoading = false;
+          currentHistoryData = historyData;
+          
+          // Recompute deleteTarget
+          deleteTarget = computeDeleteTarget(historyData, currentMaterialData, currentMaterialId);
+          updateDeleteButtonState();
+          
+          // Re-render view mode
+          const statusBadgeClass = 'bg-secondary';
+          const statusText = historyData.inspection_status || 'Onbekend';
+          const volgendeKeuringHtml = '';
+          
+          renderViewMode(currentMaterialData, historyData, statusBadgeClass, statusText, volgendeKeuringHtml);
+          
+          // Close modal if no deletable target remains
+          if (!deleteTarget) {
+            const modal = bootstrap.Modal.getInstance(document.getElementById('materieelInspectieHistoriekModal'));
+            if (modal) {
+              setTimeout(() => modal.hide(), 1500);
+            }
+          }
+        })
+        .catch(error => {
+          isLoading = false;
+          console.error('Error reloading history:', error);
+          updateDeleteButtonState();
+        });
+    }
+    
+    // Refresh the keuringen table
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  })
+  .catch(error => {
+    isDeleting = false;
+    console.error('Error deleting keuring:', error);
+    alert('Fout bij verwijderen: ' + error.message);
+    deleteBtn.textContent = originalText;
+    updateDeleteButtonState();
+  });
+}
+
+// Show toast notification
+function showToast(message, type = 'info') {
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `alert alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+  toast.style.zIndex = '9999';
+  toast.innerHTML = `
+    ${message}
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+  `;
+  
+  document.body.appendChild(toast);
+  
+  // Auto remove after 3 seconds
+  setTimeout(() => {
+    if (toast.parentNode) {
+      toast.remove();
+    }
+  }, 3000);
 }
 </script>
 

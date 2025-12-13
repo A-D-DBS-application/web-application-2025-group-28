@@ -445,10 +445,14 @@ def keuringen_export():
             material_id=material.id
         ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
         
+        # Use current_location from active usage (item['current_location']) if available
+        # Otherwise show "-" (not in use)
+        location_display = item.get('current_location') or '-'
+        
         writer.writerow([
             material.name or 'Onbekend',
             material.serial or '',
-            material.site or (material.project.name if material.project else ''),
+            location_display,
             keuring.laatste_controle.strftime('%Y-%m-%d') if keuring.laatste_controle else 'Nog niet uitgevoerd',
             keuring.volgende_controle.strftime('%Y-%m-%d') if keuring.volgende_controle else '',
             material.inspection_status or 'Gepland',
@@ -553,6 +557,160 @@ def api_keuring_historiek(material_id):
         "dagen_verschil": dagen_verschil,
         "historiek": historiek_list
     })
+
+
+@keuringen_bp.route("/api/keuring/<int:keuring_historiek_id>/delete", methods=["POST"])
+@login_required
+def api_keuring_delete(keuring_historiek_id):
+    """API endpoint to delete a keuring_historiek record and update keuring_status"""
+    try:
+        from datetime import date
+        
+        # Get the keuring_historiek record
+        keuring_historiek = KeuringHistoriek.query.filter_by(id=keuring_historiek_id).first()
+        if not keuring_historiek:
+            return jsonify({"error": "Keuring niet gevonden"}), 404
+        
+        # Get material_id from request body or from the keuring record
+        data = request.get_json() or {}
+        material_id = data.get("material_id") or keuring_historiek.material_id
+        
+        if not material_id:
+            return jsonify({"error": "Materiaal ID niet gevonden"}), 400
+        
+        # Get the material to find serial number
+        material = Material.query.filter_by(id=material_id).first()
+        if not material:
+            return jsonify({"error": "Materiaal niet gevonden"}), 404
+        
+        serial = material.serial
+        if not serial:
+            return jsonify({"error": "Serienummer niet gevonden"}), 400
+        
+        # Delete the keuring_historiek record
+        db.session.delete(keuring_historiek)
+        db.session.flush()
+        
+        # Find the newest remaining keuring_historiek record for this material
+        remaining_keuring = KeuringHistoriek.query.filter_by(
+            material_id=material_id
+        ).order_by(
+            KeuringHistoriek.keuring_datum.desc()
+        ).first()
+        
+        # Get or create keuring_status record
+        keuring_status = None
+        if material.keuring_id:
+            keuring_status = Keuringstatus.query.filter_by(id=material.keuring_id).first()
+        
+        if not keuring_status:
+            # Try to find by serial number
+            keuring_status = Keuringstatus.query.filter_by(serienummer=serial).first()
+        
+        if remaining_keuring:
+            # Update keuring_status with the newest remaining record
+            if not keuring_status:
+                # Create new keuring_status if it doesn't exist
+                keuring_status = Keuringstatus(serienummer=serial)
+                db.session.add(keuring_status)
+                db.session.flush()
+                material.keuring_id = keuring_status.id
+            
+            # Update with data from the newest remaining keuring
+            keuring_status.laatste_controle = remaining_keuring.keuring_datum
+            keuring_status.volgende_controle = remaining_keuring.volgende_keuring_datum
+            
+            # Update material inspection status based on resultaat
+            if remaining_keuring.resultaat:
+                material.inspection_status = remaining_keuring.resultaat
+                material.laatste_keuring = remaining_keuring.keuring_datum
+        else:
+            # No remaining keuring records - clear keuring_status
+            if keuring_status:
+                keuring_status.laatste_controle = None
+                keuring_status.volgende_controle = None
+            
+            # Reset material inspection status
+            material.inspection_status = None
+            material.laatste_keuring = None
+            # Don't delete keuring_status record, just null the fields for stability
+        
+        db.session.commit()
+        
+        # Log activity
+        log_activity_db("Keuring verwijderd", material.name or "", serial)
+        
+        return jsonify({
+            "success": True,
+            "message": "Keuring succesvol verwijderd"
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in api_keuring_delete: {e}")
+        print(f"Traceback: {error_details}")
+        return jsonify({
+            "error": f"Fout bij verwijderen: {str(e)}"
+        }), 500
+
+
+@keuringen_bp.route("/api/keuring/planning/delete", methods=["POST"])
+@login_required
+def api_keuring_planning_delete():
+    """API endpoint to delete a planned keuring (clear planning in keuring_status)"""
+    try:
+        data = request.get_json() or {}
+        serienummer = data.get("serienummer")
+        
+        if not serienummer:
+            return jsonify({"error": "Serienummer is verplicht"}), 400
+        
+        # Find keuring_status by serienummer
+        keuring_status = Keuringstatus.query.filter_by(serienummer=serienummer).first()
+        
+        if not keuring_status:
+            return jsonify({"error": "Geplande keuring niet gevonden"}), 404
+        
+        # Check if there's a volgende_controle (planned keuring)
+        if not keuring_status.volgende_controle:
+            return jsonify({"error": "Geen geplande keuring om te verwijderen"}), 400
+        
+        # Clear the planning (but keep the record for stability)
+        keuring_status.volgende_controle = None
+        
+        # If there's no laatste_controle either, we might want to remove the keuring_id link
+        # But let's keep it simple and just clear volgende_controle
+        
+        # Find the material and update its status
+        material = Material.query.filter_by(serial=serienummer).first()
+        if material:
+            # If there's no historiek, clear the inspection_status
+            historiek_count = KeuringHistoriek.query.filter_by(material_id=material.id).count()
+            if historiek_count == 0:
+                material.inspection_status = None
+            # Don't change laatste_keuring as it might be from a previous keuring
+        
+        db.session.commit()
+        
+        # Log activity
+        log_activity_db("Geplande keuring verwijderd", material.name if material else "", serienummer)
+        
+        return jsonify({
+            "success": True,
+            "message": "Geplande keuring succesvol verwijderd"
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"Error in api_keuring_planning_delete: {e}")
+        print(f"Traceback: {error_details}")
+        return jsonify({
+            "error": f"Fout bij verwijderen: {str(e)}"
+        }), 500
 
 
 

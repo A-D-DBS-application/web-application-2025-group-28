@@ -628,14 +628,17 @@ class KeuringService:
             elif status_filter == "afgekeurd":
                 query = query.filter(Material.inspection_status == "afgekeurd")
         
-        # Werf filter
+        # Werf filter - Note: This filters on material.werf_id/material.site for initial filtering
+        # The actual display location comes from active usage (handled in Python after query)
+        # This filter is a best-effort approximation - exact filtering by active usage location
+        # would require a more complex query with subqueries
         if werf_filter:
-            query = query.filter(
-                or_(
-                    Material.site.ilike(f"%{werf_filter}%"),
-                    Material.werf_id == int(werf_filter) if werf_filter.isdigit() else None
-                )
-            )
+            if werf_filter.isdigit():
+                # Filter by project_id (can match either material.werf_id or active usage project_id)
+                query = query.filter(Material.werf_id == int(werf_filter))
+            else:
+                # Text search on material.site (approximation)
+                query = query.filter(Material.site.ilike(f"%{werf_filter}%"))
         
         # Type filter
         if type_filter:
@@ -703,6 +706,25 @@ class KeuringService:
         from algorithms.inspection_risk import calculate_inspection_risk
         from helpers import get_file_url_from_path
         
+        # Pre-fetch all active usage records for materials to avoid N+1 queries
+        material_ids = [m.id for _, m in all_inspection_items]
+        active_usages = {}
+        if material_ids:
+            now = datetime.utcnow()
+            usage_records = MaterialUsage.query.filter(
+                MaterialUsage.material_id.in_(material_ids),
+                MaterialUsage.is_active.is_(True),
+                or_(
+                    MaterialUsage.end_time.is_(None),
+                    MaterialUsage.end_time > now
+                )
+            ).order_by(MaterialUsage.start_time.desc()).all()
+            
+            # Group by material_id, keeping only the most recent active usage per material
+            for usage in usage_records:
+                if usage.material_id not in active_usages:
+                    active_usages[usage.material_id] = usage
+        
         # Build inspection list with computed status and risk
         inspection_list = []
         for keuring, material in all_inspection_items:
@@ -752,6 +774,27 @@ class KeuringService:
             # Calculate risk using algorithm
             risk_data = calculate_inspection_risk(material, keuring, today)
             
+            # Get active usage location (current location from materiaal_gebruik)
+            active_usage = active_usages.get(material.id)
+            current_location = None
+            current_werf_name = None
+            in_gebruik = False
+            
+            if active_usage:
+                in_gebruik = True
+                # Prefer werf name from project, otherwise use locatie from usage
+                if active_usage.project_id and active_usage.project:
+                    current_werf_name = active_usage.project.name
+                    current_location = current_werf_name
+                elif active_usage.site:
+                    current_location = active_usage.site
+                elif active_usage.project_id:
+                    # Try to get project name if project relationship is not loaded
+                    project = Project.query.filter_by(id=active_usage.project_id, is_deleted=False).first()
+                    if project:
+                        current_werf_name = project.name
+                        current_location = current_werf_name
+            
             inspection_list.append({
                 'keuring': keuring,
                 'material': material,
@@ -763,6 +806,9 @@ class KeuringService:
                 'risk_score': risk_data['risk_score'],
                 'risk_level': risk_data['risk_level'],
                 'risk_explanation': risk_data['risk_explanation'],
+                'in_gebruik': in_gebruik,
+                'current_location': current_location,  # Will be None if not in use
+                'current_werf_name': current_werf_name,  # Will be None if not in use
             })
         
         # Helper function for pagination iteration (only used for risk sorting)

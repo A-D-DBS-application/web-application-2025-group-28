@@ -666,6 +666,11 @@ body {
   .section-header .hero-image {
     display: none;
   }
+
+  /* Dashboard top section: stack on tablet */
+  .dashboard-top-section {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 768px) {
@@ -681,32 +686,49 @@ body {
   .page {
     padding: 16px;
     padding-bottom: 80px; /* ruimte voor mobiele nav-balk */
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-x: hidden; /* Voorkom horizontaal scrollen */
   }
 
-  /* Dashboard KPI's: 2 kolommen op mobiel */
-  .dashboard-left .grid-top {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Dashboard top section: stack op mobiel */
+  .dashboard-top-section {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 
-  /* Andere grids: onder elkaar op mobiel */
+  /* Alle statistiek-kaarten (KPI's) op volledige breedte op mobiel */
   .grid-top,
-  .documenten-grid,
+  .dashboard-left .grid-top,
+  .documenten-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px; /* Iets kleinere gap op mobiel */
+  }
+
+  /* Materiaal grid en andere grids: onder elkaar op mobiel */
   .materiaal-grid,
   .grid-bottom {
     grid-template-columns: 1fr;
+  }
+
+  /* Zorg dat KPI cards geen vaste breedte hebben op mobiel */
+  .kpi {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 }
 
 /* Extra verfijning voor kleine telefoons */
 @media (max-width: 576px) {
-  /* Verberg KPI-boxen op de overzichtspagina op de kleinste schermen */
-  .dashboard-left .kpi {
-    display: none;
-  }
-
-  /* Op de kleinste schermen KPI's weer volledig in de breedte (1 per rij) */
-  .dashboard-left .grid-top {
-    grid-template-columns: 1fr;
+  /* KPI-boxen blijven zichtbaar op mobiele apparaten */
+  /* Alle statistiek-kaarten op volledige breedte (1 per rij) */
+  .grid-top,
+  .dashboard-left .grid-top,
+  .documenten-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px;
   }
 
   .h-title {
@@ -719,10 +741,25 @@ body {
 
   .card {
     padding: 16px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Voorkom horizontaal scrollen */
+  .page {
+    overflow-x: hidden;
+    width: 100%;
+    max-width: 100%;
   }
 
   .kpi {
-    min-height: auto;
+    min-height: 140px; /* Match material page KPI cards on mobile */
+  }
+
+  /* Ensure dashboard KPI cards match material page size on mobile */
+  .dashboard-left .kpi {
+    min-height: 140px; /* Same as material page */
   }
 
   .kpi-value {
