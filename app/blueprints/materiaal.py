@@ -2,10 +2,10 @@
 Materiaal blueprint - handles all material-related routes
 """
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, g, current_app
-from models import db, Material, MaterialUsage, Project, MaterialType, Activity, Keuringstatus
-from helpers import login_required, log_activity_db, save_upload
+from models import db, Material, MaterialUsage, Project, MaterialType, Activity, Keuringstatus, Document
+from helpers import login_required, log_activity_db, save_upload, save_upload_to_supabase
 from services import MaterialService, MaterialUsageService
-from constants import DEFAULT_INSPECTION_STATUS
+from constants import DEFAULT_INSPECTION_STATUS, DOCUMENT_TYPES
 from datetime import datetime
 from sqlalchemy import or_, func, case, text
 from werkzeug.utils import secure_filename
@@ -279,6 +279,42 @@ def materiaal_type_toevoegen():
     )
     
     db.session.add(new_type)
+    db.session.flush()  # Flush om ID te krijgen voor Document record
+    
+    # Maak Document record aan voor veiligheidsfiche in documenten tabel
+    if safety_sheet_path:
+        # Upload naar Supabase Storage bucket "Veiligheidsfiche"
+        safety_sheet_file.seek(0)  # Reset file pointer
+        bucket = "Veiligheidsfiche"
+        file_path = save_upload_to_supabase(
+            safety_sheet_file,
+            bucket_name=bucket,
+            folder="",
+            prefix=f"{name.lower().replace(' ', '_')}_veiligheidsfiche"
+        )
+        
+        if file_path:
+            # Bereken bestandsgrootte
+            safety_sheet_file.seek(0, 2)  # Ga naar einde
+            file_size = safety_sheet_file.tell()
+            safety_sheet_file.seek(0)  # Reset
+            
+            user_name = g.user.naam if g.user else "Onbekend"
+            document = Document(
+                document_type="Veiligheidsfiche",
+                file_path=file_path,
+                file_name=filename,
+                file_size=file_size,
+                material_id=None,
+                material_type_id=new_type.id,
+                material_type=name,
+                uploaded_by=user_name,
+                user_id=g.user.gebruiker_id if g.user else None,
+                note=None,
+                aangemaakt_op=datetime.utcnow()
+            )
+            db.session.add(document)
+    
     db.session.commit()
     
     log_activity_db("materiaal type toegevoegd", name, "")
@@ -365,6 +401,49 @@ def materiaal_type_bewerken():
         
         prefix = secure_filename(name)
         type_item.safety_sheet = save_upload(safety_sheet_file, current_app.config["SAFETY_UPLOAD_FOLDER"], prefix)
+        
+        # Maak/update Document record aan voor veiligheidsfiche in documenten tabel
+        if type_item.safety_sheet:
+            # Verwijder oude Document record als die bestaat
+            old_doc = Document.query.filter_by(
+                material_type_id=type_item.id,
+                document_type="Veiligheidsfiche"
+            ).first()
+            if old_doc:
+                db.session.delete(old_doc)
+            
+            # Upload naar Supabase Storage bucket "Veiligheidsfiche"
+            safety_sheet_file.seek(0)  # Reset file pointer
+            bucket = "Veiligheidsfiche"
+            file_path = save_upload_to_supabase(
+                safety_sheet_file,
+                bucket_name=bucket,
+                folder="",
+                prefix=f"{name.lower().replace(' ', '_')}_veiligheidsfiche"
+            )
+            
+            if file_path:
+                # Bereken bestandsgrootte
+                safety_sheet_file.seek(0, 2)  # Ga naar einde
+                file_size = safety_sheet_file.tell()
+                safety_sheet_file.seek(0)  # Reset
+                
+                filename = secure_filename(safety_sheet_file.filename)
+                user_name = g.user.naam if g.user else "Onbekend"
+                document = Document(
+                    document_type="Veiligheidsfiche",
+                    file_path=file_path,
+                    file_name=filename,
+                    file_size=file_size,
+                    material_id=None,
+                    material_type_id=type_item.id,
+                    material_type=name,
+                    uploaded_by=user_name,
+                    user_id=g.user.gebruiker_id if g.user else None,
+                    note=None,
+                    aangemaakt_op=datetime.utcnow()
+                )
+                db.session.add(document)
     
     type_item.name = name
     type_item.description = description if description else None
@@ -476,6 +555,8 @@ def materiaal_toevoegen():
     keuring_status = (f.get("keuring_status") or DEFAULT_INSPECTION_STATUS).strip()
     laatste_keuring_str = (f.get("laatste_keuring") or "").strip()
     datum_geplande_keuring_str = (f.get("datum_geplande_keuring") or "").strip()
+    document_type = (f.get("document_type") or "Aankoopfactuur").strip()  # Default naar Aankoopfactuur
+    documentation_file = request.files.get("documentation")
 
     # Validate: if keuring_status is "keuring gepland", datum_geplande_keuring is required
     if keuring_status == "keuring gepland" and not datum_geplande_keuring_str:
@@ -503,9 +584,11 @@ def materiaal_toevoegen():
         flash("Serienummer bestaat al in het systeem.", "danger")
         return redirect(url_for("materiaal.materiaal"))
 
-    documentation_path = save_upload(
-        documentation_file, current_app.config["DOC_UPLOAD_FOLDER"], f"{serial}_doc"
-    )
+    documentation_path = None
+    if documentation_file and documentation_file.filename:
+        documentation_path = save_upload(
+            documentation_file, current_app.config["DOC_UPLOAD_FOLDER"], f"{serial}_doc"
+        )
 
     item = Material(
         name=name,
@@ -545,6 +628,48 @@ def materiaal_toevoegen():
 
     db.session.add(item)
     db.session.flush()  # Flush to get the item.id before creating related records
+    
+    # Maak Document record aan voor documentatie in documenten tabel
+    if documentation_path and documentation_file and documentation_file.filename:
+        # Upload naar Supabase Storage bucket op basis van document type
+        bucket_mapping = {
+            "Aankoopfactuur": "Aankoop-Verkoop documenten",
+            "Verkoopfactuur": "Aankoop-Verkoop documenten",
+            "Keuringstatus": "Keuringsstatus documenten",
+            "Veiligheidsfiche": "Veiligheidsfiche"
+        }
+        bucket = bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
+        
+        documentation_file.seek(0)  # Reset file pointer
+        file_path = save_upload_to_supabase(
+            documentation_file,
+            bucket_name=bucket,
+            folder="",
+            prefix=f"{serial}_{document_type.lower().replace(' ', '_')}"
+        )
+        
+        if file_path:
+            # Bereken bestandsgrootte
+            documentation_file.seek(0, 2)  # Ga naar einde
+            file_size = documentation_file.tell()
+            documentation_file.seek(0)  # Reset
+            
+            filename = secure_filename(documentation_file.filename)
+            user_name = g.user.naam if g.user else "Onbekend"
+            document = Document(
+                document_type=document_type,
+                file_path=file_path,
+                file_name=filename,
+                file_size=file_size,
+                material_id=item.id,
+                material_type_id=None,
+                material_type=None,
+                uploaded_by=user_name,
+                user_id=g.user.gebruiker_id if g.user else None,
+                note=None,
+                aangemaakt_op=datetime.utcnow()
+            )
+            db.session.add(document)
     
     # Check if inspection is expired based on laatste_keuring + keuring_geldigheid_dagen
     # This MUST override user-selected status
@@ -645,11 +770,62 @@ def materiaal_bewerken():
     item.nummer_op_materieel = (f.get("nummer_op_materieel") or "").strip()
 
     documentation_file = request.files.get("documentation")
+    document_type = (f.get("document_type") or "Aankoopfactuur").strip()  # Default naar Aankoopfactuur
 
     if documentation_file and documentation_file.filename:
-        item.documentation_path = save_upload(
-            documentation_file, current_app.config["DOC_UPLOAD_FOLDER"], f"{item.serial}_doc"
+        # Upload naar Supabase Storage bucket op basis van document type
+        bucket_mapping = {
+            "Aankoopfactuur": "Aankoop-Verkoop documenten",
+            "Verkoopfactuur": "Aankoop-Verkoop documenten",
+            "Keuringstatus": "Keuringsstatus documenten",
+            "Veiligheidsfiche": "Veiligheidsfiche"
+        }
+        bucket = bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
+        
+        # Upload naar Supabase
+        documentation_file.seek(0)  # Reset file pointer
+        file_path = save_upload_to_supabase(
+            documentation_file,
+            bucket_name=bucket,
+            folder="",
+            prefix=f"{item.serial}_{document_type.lower().replace(' ', '_')}"
         )
+        
+        if file_path:
+            # Update documentation_path voor backward compatibility
+            item.documentation_path = file_path
+            
+            # Bereken bestandsgrootte
+            documentation_file.seek(0, 2)  # Ga naar einde
+            file_size = documentation_file.tell()
+            documentation_file.seek(0)  # Reset
+            
+            filename = secure_filename(documentation_file.filename)
+            user_name = g.user.naam if g.user else "Onbekend"
+            
+            # Verwijder oude Document record als die bestaat
+            old_doc = Document.query.filter_by(
+                material_id=item.id,
+                document_type=document_type
+            ).first()
+            if old_doc:
+                db.session.delete(old_doc)
+            
+            # Maak nieuw Document record aan
+            document = Document(
+                document_type=document_type,
+                file_path=file_path,
+                file_name=filename,
+                file_size=file_size,
+                material_id=item.id,
+                material_type_id=None,
+                material_type=None,
+                uploaded_by=user_name,
+                user_id=g.user.gebruiker_id if g.user else None,
+                note=None,
+                aangemaakt_op=datetime.utcnow()
+            )
+            db.session.add(document)
 
     db.session.commit()
 

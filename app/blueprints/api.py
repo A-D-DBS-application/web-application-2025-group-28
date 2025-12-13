@@ -182,7 +182,15 @@ def api_search():
                     doc_url = ""
                     try:
                         if doc.file_path:
-                            doc_url = get_file_url_from_path(doc.file_path) or ""
+                            # Bepaal bucket op basis van document type voor correcte URL generatie
+                            bucket_mapping = {
+                                "Aankoopfactuur": "Aankoop-Verkoop documenten",
+                                "Verkoopfactuur": "Aankoop-Verkoop documenten",
+                                "Keuringstatus": "Keuringsstatus documenten",
+                                "Veiligheidsfiche": "Veiligheidsfiche"
+                            }
+                            bucket = bucket_mapping.get(doc.document_type, "Aankoop-Verkoop documenten")
+                            doc_url = get_supabase_file_url(bucket, doc.file_path) or ""
                     except Exception as doc_url_error:
                         print(f"Warning: Could not generate document URL: {doc_url_error}")
                         doc_url = ""

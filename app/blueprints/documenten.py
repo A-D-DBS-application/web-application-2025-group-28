@@ -356,6 +356,26 @@ def documenten_upload():
     return redirect(url_for("documenten.documenten"))
 
 
+@documenten_bp.route("/download/<int:document_id>")
+@login_required
+def document_download(document_id):
+    """Download een document - redirect naar Supabase URL."""
+    document = Document.query.get_or_404(document_id)
+    
+    # Bepaal bucket
+    bucket = get_bucket_for_document_type(document.document_type)
+    
+    # Haal publieke URL op
+    file_url = get_supabase_file_url(bucket, document.file_path)
+    
+    if file_url:
+        # Redirect naar de Supabase URL - browser zal het bestand downloaden
+        return redirect(file_url)
+    else:
+        flash("Document niet gevonden of niet beschikbaar.", "error")
+        return redirect(url_for("documenten.documenten"))
+
+
 @documenten_bp.record_once
 def _register_plain_endpoint(state):
     """Expose alias zodat url_for('documenten') blijft werken."""

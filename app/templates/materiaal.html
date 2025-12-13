@@ -456,6 +456,16 @@
             </div>
 
             <div class="col-md-6">
+              <label class="form-label">Document type (optioneel)</label>
+              <select name="document_type" class="form-select">
+                <option value="Aankoopfactuur" selected>Aankoopfactuur</option>
+                <option value="Verkoopfactuur">Verkoopfactuur</option>
+                <option value="Keuringstatus">Keuringstatus</option>
+              </select>
+              <small class="text-muted">Selecteer het type document dat je uploadt</small>
+            </div>
+
+            <div class="col-md-6">
               <label class="form-label">Documentatie (foto of PDF)</label>
               <input 
                 type="file"
@@ -463,6 +473,7 @@
                 class="form-control"
                 accept="image/*,.pdf"
               >
+              <small class="text-muted">Upload een document bij het aanmaken van het materiaal</small>
             </div>
           </div>
         </div>
@@ -649,6 +660,16 @@
             </div>
 
             <div class="col-md-6">
+              <label class="form-label">Document type (optioneel)</label>
+              <select name="document_type" class="form-select">
+                <option value="Aankoopfactuur" selected>Aankoopfactuur</option>
+                <option value="Verkoopfactuur">Verkoopfactuur</option>
+                <option value="Keuringstatus">Keuringstatus</option>
+              </select>
+              <small class="text-muted">Selecteer het type document dat je uploadt</small>
+            </div>
+
+            <div class="col-md-6">
               <label class="form-label">Documentatie (foto of PDF)</label>
               <input
                 type="file"
@@ -656,6 +677,7 @@
                 class="form-control"
                 accept="image/*,.pdf"
               >
+              <small class="text-muted">Upload een document bij het bewerken van het materiaal</small>
             </div>
 
             <div class="col-md-6">
@@ -981,8 +1003,16 @@
                   <ul class="list-unstyled mt-2">
                     ${item.documents.map(doc => `
                       <li class="mb-2">
-                        <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} - 
-                        <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        <strong>${escapeHtml(doc.document_type || 'Document')}:</strong> ${escapeHtml(doc.file_name || 'Onbekend bestand')}
+                        ${doc.file_url ? `
+                          <a href="${escapeHtml(doc.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="bi bi-eye me-1"></i>Bekijken
+                          </a>
+                          <a href="${escapeHtml(doc.file_url)}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary ms-1">
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        ` : ''}
                       </li>
                     `).join('')}
                   </ul>
@@ -1289,8 +1319,16 @@
                   <ul class="list-unstyled mt-2">
                     ${item.documents.map(doc => `
                       <li class="mb-2">
-                        <i class="bi bi-file-earmark-text me-2"></i>${escapeHtml(doc.file_name || 'Onbekend bestand')} - 
-                        <a href="${escapeHtml(doc.file_url || '')}" target="_blank" class="text-decoration-none">Download</a>
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        <strong>${escapeHtml(doc.document_type || 'Document')}:</strong> ${escapeHtml(doc.file_name || 'Onbekend bestand')}
+                        ${doc.file_url ? `
+                          <a href="${escapeHtml(doc.file_url)}" target="_blank" class="btn btn-sm btn-outline-primary ms-2">
+                            <i class="bi bi-eye me-1"></i>Bekijken
+                          </a>
+                          <a href="${escapeHtml(doc.file_url)}" download="${escapeHtml(doc.file_name || 'document')}" class="btn btn-sm btn-outline-secondary ms-1">
+                            <i class="bi bi-download me-1"></i>Download
+                          </a>
+                        ` : ''}
                       </li>
                     `).join('')}
                   </ul>

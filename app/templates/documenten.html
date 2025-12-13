@@ -103,12 +103,16 @@
             <td class="doc-col-sm-hide">{{ doc.size }}</td>
             <td class="doc-col-sm-hide">{{ doc.uploaded_by }}</td>
             <td class="text-end">
-              {% if doc.url %}
-                <a href="{{ doc.url }}" class="btn btn-sm btn-outline-secondary" target="_blank" download>
+              {% if doc.id %}
+                <a href="{{ url_for('documenten.document_download', document_id=doc.id) }}" class="btn btn-sm btn-outline-secondary" target="_blank" download="{{ doc.name }}">
+                  ⬇ Downloaden
+                </a>
+              {% elif doc.url %}
+                <a href="{{ doc.url }}" class="btn btn-sm btn-outline-secondary" target="_blank" download="{{ doc.name }}">
                   ⬇ Downloaden
                 </a>
               {% elif doc.path %}
-                <a href="{{ url_for('static', filename=doc.path) }}" class="btn btn-sm btn-outline-secondary" download>
+                <a href="{{ url_for('static', filename=doc.path) }}" class="btn btn-sm btn-outline-secondary" download="{{ doc.name }}">
                   ⬇ Downloaden
                 </a>
               {% else %}
