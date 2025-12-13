@@ -24,19 +24,20 @@ def init_supabase_client(supabase_client: Client | None):
 
 
 def upload_folder_from_bucket(bucket_name: str) -> str:
-    """Map bucket naam naar lokale upload folder (voor fallback)."""
+    """Map bucket naam naar lokale upload folder (alleen voor niet-documenten fallback)."""
     bucket_to_folder = {
-        "docs": current_app.config["DOC_UPLOAD_FOLDER"],
-        "safety": current_app.config["SAFETY_UPLOAD_FOLDER"],
         "projects": current_app.config["PROJECT_UPLOAD_FOLDER"],
-        "certificates": current_app.config["CERTIFICATE_UPLOAD_FOLDER"],
         "type-images": current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"],
-        # Nieuwe bucket namen voor documenten
-        "Aankoop-Verkoop documenten": current_app.config["DOC_UPLOAD_FOLDER"],
-        "Keuringsstatus documenten": current_app.config["CERTIFICATE_UPLOAD_FOLDER"],
-        "Veiligheidsfiche": current_app.config["SAFETY_UPLOAD_FOLDER"],
+        # Oude bucket namen (niet meer gebruikt voor documenten)
+        "docs": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback
+        "safety": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback
+        "certificates": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback
+        # Nieuwe bucket namen voor documenten - deze gebruiken Supabase, geen lokale fallback
+        "Aankoop-Verkoop documenten": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
+        "Keuringsstatus documenten": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
+        "Veiligheidsfiche": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
     }
-    return bucket_to_folder.get(bucket_name, current_app.config["DOC_UPLOAD_FOLDER"])
+    return bucket_to_folder.get(bucket_name, current_app.config["PROJECT_UPLOAD_FOLDER"])
 
 
 def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
@@ -70,13 +71,18 @@ def save_upload_local(file_storage, upload_folder, prefix: str) -> str | None:
 def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix: str) -> str | None:
     """
     Upload een bestand naar Supabase Storage.
-    Retourneert het pad in de bucket (bijv. 'docs/BOOR123_doc_20250101_120000_foto.pdf').
+    Retourneert het pad in de bucket (bijv. 'BOOR123_doc_20250101_120000_foto.pdf').
+    Voor documenten: GEEN fallback naar lokale storage - alle documenten moeten naar Supabase.
     """
     if not file_storage or not file_storage.filename:
         return None
     
     if not _supabase_client:
-        # Fallback naar lokale storage als Supabase niet beschikbaar is
+        # Voor documenten: geen fallback, gooi error
+        document_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche"]
+        if bucket_name in document_buckets:
+            raise Exception(f"Supabase client niet beschikbaar. Documenten moeten naar Supabase bucket '{bucket_name}' worden geüpload.")
+        # Alleen voor niet-documenten (type-images, projects): fallback naar lokaal
         print("Warning: Supabase not available, falling back to local storage")
         return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
     
@@ -85,7 +91,7 @@ def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix:
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     final_filename = f"{prefix}_{timestamp}_{filename}"
     
-    # Pad in bucket (bijv. "docs/BOOR123_doc_20250101_120000_foto.pdf")
+    # Pad in bucket (bijv. "BOOR123_doc_20250101_120000_foto.pdf")
     file_path = f"{folder}/{final_filename}" if folder else final_filename
     
     # Lees bestand
@@ -104,8 +110,12 @@ def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix:
         return file_path
         
     except Exception as e:
-        print(f"Error uploading to Supabase Storage: {e}")
-        # Fallback naar lokale storage bij error
+        print(f"Error uploading to Supabase Storage bucket '{bucket_name}': {e}")
+        # Voor documenten: geen fallback, gooi error door
+        document_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche"]
+        if bucket_name in document_buckets:
+            raise Exception(f"Kon document niet uploaden naar Supabase bucket '{bucket_name}': {e}")
+        # Alleen voor niet-documenten: fallback naar lokaal
         return save_upload_local(file_storage, upload_folder_from_bucket(bucket_name), prefix)
 
 
@@ -114,22 +124,22 @@ def save_upload(file_storage, upload_folder, prefix: str) -> str | None:
     Upload een bestand (gebruikt Supabase Storage of fallback naar lokaal).
     Bepaalt automatisch de juiste bucket op basis van upload_folder.
     Retourneert pad met bucket prefix (bijv. "type-images/filename.jpg").
+    OPGELET: Deze functie wordt alleen gebruikt voor type-images en projects.
+    Voor documenten moet save_upload_to_supabase direct worden gebruikt met de juiste bucket naam.
     """
     # Bepaal bucket en folder op basis van upload_folder
-    if upload_folder == current_app.config["DOC_UPLOAD_FOLDER"]:
-        bucket = "docs"
-        folder = ""
-    elif upload_folder == current_app.config["SAFETY_UPLOAD_FOLDER"]:
-        bucket = "safety"
-        folder = ""
-    elif upload_folder == current_app.config["CERTIFICATE_UPLOAD_FOLDER"]:
-        bucket = "certificates"
-        folder = ""
-    elif upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
+    # OPGELET: Deze functie wordt alleen gebruikt voor niet-documenten (type-images, projects)
+    # Documenten moeten direct via save_upload_to_supabase met Nederlandse bucket namen
+    if upload_folder == current_app.config["TYPE_IMAGE_UPLOAD_FOLDER"]:
         bucket = "type-images"
-        folder = ""  # Folder is leeg, maar we voegen bucket prefix toe aan het pad
+        folder = ""
+    elif upload_folder == current_app.config["PROJECT_UPLOAD_FOLDER"]:
+        bucket = "projects"
+        folder = ""
     else:
-        bucket = "docs"  # default
+        # Fallback - maar dit zou niet moeten voorkomen voor documenten
+        # Documenten moeten direct via save_upload_to_supabase
+        bucket = "type-images"  # default voor niet-documenten
         folder = ""
     
     result = save_upload_to_supabase(file_storage, bucket, folder, prefix)
