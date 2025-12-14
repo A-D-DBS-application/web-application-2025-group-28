@@ -216,6 +216,18 @@
   border: 1px solid #6c757d;
 }
 
+/* ================== BADGE RESULTAAT STYLES ================== */
+/* Custom badge for keuring resultaat display in JavaScript-generated HTML */
+/* Replaces inline styles: background-color: #000 !important; color: #fff !important; padding: 0.25rem 0.5rem; border-radius: 0.375rem; font-size: 0.75rem; display: inline-block; */
+.badge-resultaat-dark {
+  background-color: #000 !important;
+  color: #fff !important;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  display: inline-block;
+}
+
 /* ================== MATERIAAL SPECIFIC STYLES ================== */
 
 .materiaal-grid {

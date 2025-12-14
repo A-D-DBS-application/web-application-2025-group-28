@@ -35,7 +35,7 @@ def upload_folder_from_bucket(bucket_name: str) -> str:
         "certificates": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback
         # Nieuwe bucket namen voor documenten - deze gebruiken Supabase, geen lokale fallback
         "Aankoop-Verkoop documenten": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
-        "Keuringsstatus documenten": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
+        "Keuringsstatus": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
         "Veiligheidsfiche": current_app.config["PROJECT_UPLOAD_FOLDER"],  # Fallback (zou niet gebruikt moeten worden)
     }
     return bucket_to_folder.get(bucket_name, current_app.config["PROJECT_UPLOAD_FOLDER"])
@@ -80,7 +80,7 @@ def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix:
     
     if not _supabase_client:
         # Voor documenten: geen fallback, gooi error
-        document_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche"]
+        document_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus", "Veiligheidsfiche"]
         if bucket_name in document_buckets:
             raise Exception(f"Supabase client niet beschikbaar. Documenten moeten naar Supabase bucket '{bucket_name}' worden geüpload.")
         # Alleen voor niet-documenten (type-images, projects): fallback naar lokaal
@@ -107,13 +107,26 @@ def save_upload_to_supabase(file_storage, bucket_name: str, folder: str, prefix:
             file_options={"content-type": file_storage.content_type or "application/octet-stream", "upsert": "true"}
         )
         
+        # Verifieer dat upload succesvol was door te proberen de URL op te halen
+        # Dit verifieert dat het bestand daadwerkelijk bestaat
+        try:
+            # Probeer de publieke URL op te halen - dit werkt alleen als het bestand bestaat
+            test_url = _supabase_client.storage.from_(bucket_name).get_public_url(file_path)
+            print(f"✓ Bestand succesvol geüpload en geverifieerd in bucket '{bucket_name}': {file_path}")
+            print(f"  URL: {test_url}")
+        except Exception as verify_error:
+            # Als verificatie faalt, kan het zijn dat het bestand nog niet beschikbaar is
+            # of dat er een probleem is met het pad
+            print(f"⚠ Upload voltooid, maar verificatie faalde voor bucket '{bucket_name}', path '{file_path}': {verify_error}")
+            print(f"  Het bestand kan nog beschikbaar komen, of er is een probleem met het pad.")
+        
         # Retourneer het pad (wordt opgeslagen in database)
         return file_path
         
     except Exception as e:
         print(f"Error uploading to Supabase Storage bucket '{bucket_name}': {e}")
         # Voor documenten: geen fallback, gooi error door
-        document_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche"]
+        document_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus", "Veiligheidsfiche"]
         if bucket_name in document_buckets:
             raise Exception(f"Kon document niet uploaden naar Supabase bucket '{bucket_name}': {e}")
         # Alleen voor niet-documenten: fallback naar lokaal
@@ -207,7 +220,7 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> Optional[str]:
         
         # Verwijder bucket prefix als die per ongeluk in file_path zit (voor backward compatibility)
         # Maar alleen als het exact matcht - niet gedeeltelijk
-        known_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus documenten", "Veiligheidsfiche", "type-images", "projects"]
+        known_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus", "Veiligheidsfiche", "type-images", "projects"]
         for known_bucket in known_buckets:
             if clean_path.startswith(f"{known_bucket}/"):
                 clean_path = clean_path[len(f"{known_bucket}/"):]
@@ -227,10 +240,21 @@ def get_supabase_file_url(bucket_name: str, file_path: str) -> Optional[str]:
         
         # Haal publieke URL op van Supabase
         # Supabase SDK verwacht het pad binnen de bucket (zonder bucket prefix)
-        response = _supabase_client.storage.from_(bucket_name).get_public_url(encoded_path)
-        
-        print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, original_path={file_path}, clean_path={clean_path}, encoded_path={encoded_path}, URL={response}")
-        return response
+        try:
+            response = _supabase_client.storage.from_(bucket_name).get_public_url(encoded_path)
+            print(f"DEBUG: Generated Supabase URL for bucket={bucket_name}, original_path={file_path}, clean_path={clean_path}, encoded_path={encoded_path}, URL={response}")
+            return response
+        except Exception as url_error:
+            # Als get_public_url faalt, probeer dan handmatig URL te construeren
+            print(f"Warning: get_public_url failed, constructing URL manually: {url_error}")
+            from urllib.parse import quote
+            base_url = _supabase_client.supabase_url
+            # URL encode bucket naam (voor buckets met spaties zoals "Aankoop-Verkoop documenten")
+            encoded_bucket = quote(bucket_name, safe='')
+            # Supabase public URL format: {base_url}/storage/v1/object/public/{bucket}/{path}
+            manual_url = f"{base_url}/storage/v1/object/public/{encoded_bucket}/{encoded_path}"
+            print(f"DEBUG: Manual URL constructed: bucket={bucket_name}, encoded_bucket={encoded_bucket}, path={encoded_path}, URL={manual_url}")
+            return manual_url
         
     except Exception as e:
         print(f"Error getting Supabase file URL for bucket={bucket_name}, path={file_path}: {e}")
@@ -262,12 +286,19 @@ def get_document_url(document_type: str, file_path: str) -> Optional[str]:
     bucket_mapping = {
         "Aankoopfactuur": "Aankoop-Verkoop documenten",
         "Verkoopfactuur": "Aankoop-Verkoop documenten",
-        "Keuringstatus": "Keuringsstatus documenten",
+        "Keuringstatus": "Keuringsstatus",
         "Veiligheidsfiche": "Veiligheidsfiche"
     }
     bucket = bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
     
-    return get_supabase_file_url(bucket, file_path)
+    # Genereer URL
+    url = get_supabase_file_url(bucket, file_path)
+    
+    # Debug output voor certificaten
+    if document_type == "Keuringstatus":
+        print(f"DEBUG get_document_url: document_type={document_type}, bucket={bucket}, file_path={file_path}, URL={url}")
+    
+    return url
 
 
 def get_file_url_from_path(file_path: str) -> Optional[str]:
@@ -347,6 +378,60 @@ def load_current_user():
     if not email:
         return
     g.user = Gebruiker.query.filter_by(email=email).first()
+
+
+def delete_file_from_supabase(bucket_name: str, file_path: str) -> bool:
+    """
+    Verwijder een bestand uit Supabase Storage.
+    
+    Args:
+        bucket_name: Naam van de Supabase Storage bucket
+        file_path: Pad binnen de bucket (zonder bucket prefix)
+    
+    Returns:
+        True als verwijdering succesvol is, False anders
+    """
+    if not _supabase_client:
+        print(f"Warning: Supabase client niet beschikbaar, kan bestand niet verwijderen uit bucket '{bucket_name}'")
+        return False
+    
+    if not file_path or not file_path.strip():
+        print(f"Warning: Leeg file_path, kan bestand niet verwijderen uit bucket '{bucket_name}'")
+        return False
+    
+    try:
+        # Verwijder bucket prefix als die per ongeluk in file_path zit
+        clean_path = file_path.strip().strip('/')
+        known_buckets = ["Aankoop-Verkoop documenten", "Keuringsstatus", "Veiligheidsfiche", "type-images", "projects"]
+        for known_bucket in known_buckets:
+            if clean_path.startswith(f"{known_bucket}/"):
+                clean_path = clean_path[len(f"{known_bucket}/"):]
+                break
+        
+        # URL encode speciale karakters in het pad
+        from urllib.parse import quote
+        path_parts = clean_path.split('/')
+        encoded_parts = [quote(part, safe='') for part in path_parts]
+        encoded_path = '/'.join(encoded_parts)
+        
+        # Verwijder bestand uit Supabase Storage
+        response = _supabase_client.storage.from_(bucket_name).remove([encoded_path])
+        
+        # Supabase remove geeft een lijst terug met verwijderde bestanden
+        # Als het bestand succesvol verwijderd is, staat het in de response
+        if response and len(response) > 0:
+            print(f"Successfully deleted file from bucket '{bucket_name}': {encoded_path}")
+            return True
+        else:
+            print(f"Warning: Geen response van Supabase remove voor bucket '{bucket_name}', path '{encoded_path}'")
+            # Probeer toch True te retourneren als er geen error was
+            return True
+            
+    except Exception as e:
+        print(f"Error deleting file from Supabase Storage bucket '{bucket_name}', path '{file_path}': {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def log_activity_db(action: str, name: str, serial: str):

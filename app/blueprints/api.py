@@ -2,7 +2,7 @@
 API blueprint - handles API endpoints
 """
 from flask import Blueprint, request, jsonify, g
-from models import db, Material, MaterialUsage, Keuringstatus, Document
+from models import db, Material, MaterialUsage, Keuringstatus, KeuringHistoriek, Document
 from helpers import login_required, get_file_url_from_path, get_document_url
 from sqlalchemy import or_, func
 from sqlalchemy.orm import joinedload
@@ -84,6 +84,27 @@ def api_search():
             except Exception as doc_query_error:
                 print(f"Warning: Could not query documents: {doc_query_error}")
                 documents_by_material = {}
+        
+        # Query all keuring historiek for these materials in one query
+        keuring_historiek_by_material = {}
+        if material_ids:
+            try:
+                historiek_records = (
+                    KeuringHistoriek.query
+                    .filter(KeuringHistoriek.material_id.in_(material_ids))
+                    .order_by(KeuringHistoriek.keuring_datum.desc())
+                    .all()
+                )
+                
+                # Group historiek by material_id
+                for hist in historiek_records:
+                    if hist and hist.material_id:
+                        if hist.material_id not in keuring_historiek_by_material:
+                            keuring_historiek_by_material[hist.material_id] = []
+                        keuring_historiek_by_material[hist.material_id].append(hist)
+            except Exception as historiek_query_error:
+                print(f"Warning: Could not query keuring historiek: {historiek_query_error}")
+                keuring_historiek_by_material = {}
         
         # Also query keuring by serienummer for materials that don't have keuring_id
         # This handles the fallback case more efficiently
@@ -240,6 +261,25 @@ def api_search():
                     print(f"Warning: Could not get inspection_validity_days for {item.serial}: {type_error}")
                     inspection_validity_days = None
                 
+                # Get keuring historiek for this material
+                keuring_historiek_list = []
+                try:
+                    historiek_records = keuring_historiek_by_material.get(item.id, [])
+                    for hist in historiek_records:
+                        keuring_historiek_list.append({
+                            "id": hist.id if hist.id else None,
+                            "keuring_datum": hist.keuring_datum.strftime("%Y-%m-%d") if hist.keuring_datum else "-",
+                            "resultaat": hist.resultaat or "-",  # This is the keurings_status
+                            "uitgevoerd_door": hist.uitgevoerd_door or "-",
+                            "opmerkingen": hist.opmerkingen or None,
+                            "volgende_keuring_datum": hist.volgende_keuring_datum.strftime("%Y-%m-%d") if hist.volgende_keuring_datum else None,
+                            "certificaat_path": hist.certificaat_path or None,
+                            "certificaat_url": get_document_url("Keuringstatus", hist.certificaat_path) if hist.certificaat_path else None,
+                        })
+                except Exception as historiek_error:
+                    print(f"Warning: Could not format keuring historiek for {item.serial}: {historiek_error}")
+                    keuring_historiek_list = []
+                
                 results.append(
                     {
                     "id": int(item.id) if item.id else None,  # Material ID for reference
@@ -265,6 +305,7 @@ def api_search():
                     "laatste_keuring_raw": laatste_keuring_raw_str,  # Raw laatste_keuring value (no fallback) for editing
                     "inspection_validity_days": int(inspection_validity_days) if inspection_validity_days else None,
                     "documents": documents_list,
+                    "keuringen": keuring_historiek_list,  # List of keuring historiek records
                     }
                 )
             except Exception as e:

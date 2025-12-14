@@ -20,152 +20,87 @@
   <!-- Your main stylesheet -->
   <link
     rel="stylesheet"
-    href="{{ url_for('static', filename='css/style.css') }}?v=34"
+    href="{{ url_for('static', filename='css/style.css') }}?v=35"
   >
 </head>
 <body>
-  <!-- Mobiele onderbalk navigatie (alleen zichtbaar op kleine schermen) -->
-  <nav class="mobile-nav d-md-none">
-    <a href="{{ url_for('dashboard.dashboard') }}" class="mobile-nav-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}">
-      <span class="mobile-nav-icon"><i class="bi bi-list"></i></span>
-      <span class="mobile-nav-label">Dashboard</span>
-    </a>
-    <a href="{{ url_for('materiaal.materiaal') }}" class="mobile-nav-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}">
-      <span class="mobile-nav-icon">{% include 'partials/material_icon.html' with context %}</span>
-      <span class="mobile-nav-label">Materiaal</span>
-    </a>
-    <a href="{{ url_for('werven.werven') }}" class="mobile-nav-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}">
-      <span class="mobile-nav-icon"><i class="bi bi-geo-alt"></i></span>
-      <span class="mobile-nav-label">Werven</span>
-    </a>
-    <a href="{{ url_for('keuringen.keuringen') }}" class="mobile-nav-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}">
-      <span class="mobile-nav-icon"><i class="bi bi-check-circle"></i></span>
-      <span class="mobile-nav-label">Keuringen</span>
-    </a>
-    <a href="{{ url_for('documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten' %}active{% endif %}">
-      <span class="mobile-nav-icon">{% include 'partials/documenten_icon.html' with context %}</span>
-      <span class="mobile-nav-label">Docs</span>
-    </a>
-  </nav>
-
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="sidebar-top">
-      <!-- Brand / Logo -->
-      <div class="brand">
-        <img
-          src="{{ url_for('static', filename='img/logo.png.png') }}"
-          alt="VT-Invest Group"
-          class="brand-logo"
-        >
-      </div>
-
-      <!-- Navigation -->
-      <nav class="menu">
-        <a
-          class="menu-item {% if request.endpoint=='dashboard.dashboard' %}active{% endif %}"
-          href="{{ url_for('dashboard.dashboard') }}"
-        >
-          <span class="menu-item-icon"><i class="bi bi-list"></i></span>
-          Overzicht
-        </a>
-
-        <a
-          class="menu-item {% if request.endpoint=='materiaal.materiaal' %}active{% endif %}"
-          href="{{ url_for('materiaal.materiaal') }}"
-        >
-          <span class="menu-item-icon">{% include 'partials/material_icon.html' with context %}</span>
-          Materiaal
-        </a>
-
-        <a
-          class="menu-item {% if request.endpoint in ['werven.werven', 'werven.werf_detail'] %}active{% endif %}"
-          href="{{ url_for('werven.werven') }}"
-        >
-          <span class="menu-item-icon"><i class="bi bi-geo-alt"></i></span>
-          Werven
-        </a>
-
-        <a
-          class="menu-item {% if request.endpoint=='keuringen.keuringen' %}active{% endif %}"
-          href="{{ url_for('keuringen.keuringen') }}"
-        >
-          <span class="menu-item-icon"><i class="bi bi-check-circle"></i></span>
-          Keuringen
-        </a>
-
-        <a
-          class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
-          href="{{ url_for('documenten') }}"
-        >
-          <span class="menu-item-icon">{% include 'partials/documenten_icon.html' with context %}</span>
-          Documenten
-        </a>
-      </nav>
-    </div>
-
-    <!-- User info bottom -->
-    <div class="sidebar-bottom">
-      <div class="user-card">
-        <div class="avatar">
-          {% if current_user and current_user.Naam %}
-            {% set naam_delen = current_user.Naam.split() %}
-            {% if naam_delen|length >= 2 %}
-              {{ (naam_delen[0][0] + naam_delen[-1][0]) | upper }}
-            {% else %}
-            {{ current_user.Naam[:2] | upper }}
-            {% endif %}
-          {% else %}
-            VT
-          {% endif %}
-        </div>
-        <div>
-          <div class="user-name">
-            {{ current_user.Naam if current_user and current_user.Naam else 'Naam Gebruiker' }}
-          </div>
-          <div class="user-role">
-            {{ current_user.Functie if current_user and current_user.Functie else 'Functie' }}
-          </div>
-          <div class="mt-2">
-            {% if current_user %}
-              <a
-                href="{{ url_for('auth.logout') }}"
-                class="small text-decoration-none"
-              >
-                Uitloggen
-              </a>
-            {% else %}
-              <a
-                href="{{ url_for('login') }}"
-                class="small text-decoration-none me-2"
-              >
-                Inloggen
-              </a>
-              <a
-                href="{{ url_for('signup') }}"
-                class="small text-decoration-none"
-              >
-                Registreren
-              </a>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-    </div>
-  </aside>
+  {% include 'partials/navbar.html' %}
 
   <!-- Main content -->
   <main class="main">
     <!-- Top bar -->
     <header class="topbar">
       <div class="app-title">Fleet 360</div>
-      <!-- Mobiel logo rechtsboven (zichtbaar op kleine schermen) -->
-      <img
-        src="{{ url_for('static', filename='img/logo.png.png') }}"
-        alt="VT-Invest Group"
-        class="topbar-logo-mobile d-md-none"
-      >
+      <div class="topbar-right d-md-none">
+        <!-- Mobiel logo rechtsboven (zichtbaar op kleine schermen) -->
+        <img
+          src="{{ url_for('static', filename='img/logo.png.png') }}"
+          alt="VT-Invest Group"
+          class="topbar-logo-mobile"
+        >
+        <!-- Mobiele account/login knop -->
+        {% if current_user %}
+          <button
+            type="button"
+            class="btn btn-link topbar-account-btn"
+            data-bs-toggle="modal"
+            data-bs-target="#logoutConfirmModal"
+            aria-label="Uitloggen"
+          >
+            <i class="bi bi-box-arrow-right"></i>
+          </button>
+        {% else %}
+          <a
+            href="{{ url_for('auth.login') }}"
+            class="btn btn-link topbar-account-btn"
+            aria-label="Inloggen"
+          >
+            <i class="bi bi-box-arrow-in-right"></i>
+          </a>
+        {% endif %}
+      </div>
     </header>
+
+    <!-- Logout bevestigingsmodal (alleen mobiel) -->
+    <div
+      class="modal fade d-md-none"
+      id="logoutConfirmModal"
+      tabindex="-1"
+      aria-labelledby="logoutConfirmModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="logoutConfirmModalLabel">Uitloggen</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Sluiten"
+            ></button>
+          </div>
+          <div class="modal-body">
+            Weet je zeker dat je wilt uitloggen?
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Annuleren
+            </button>
+            <a
+              href="{{ url_for('auth.logout') }}"
+              class="btn btn-primary"
+            >
+              Uitloggen
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Flash messages -->
     <div class="container mt-3">

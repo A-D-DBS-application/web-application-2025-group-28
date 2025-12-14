@@ -20,9 +20,7 @@ def find_material_by_serial(serial: str):
     return MaterialService.find_by_serial(serial)
 
 
-def update_verlopen_keuringen():
-    """Wrapper for MaterialService.update_expired_inspections()"""
-    return MaterialService.update_expired_inspections()
+# NOTE: update_verlopen_keuringen() moved to MaterialService.update_expired_inspections()
 
 
 @keuringen_bp.route("/keuringen")
@@ -32,7 +30,7 @@ def keuringen():
     today = datetime.utcnow().date()
     
     # AUTOMATISCH ALGORITME: Update verlopen keuringen
-    updated_count = update_verlopen_keuringen()
+    updated_count = MaterialService.update_expired_inspections()
     if updated_count > 0:
         db.session.commit()
     
@@ -48,6 +46,16 @@ def keuringen():
     date_from = (request.args.get("date_from") or "").strip()
     date_to = (request.args.get("date_to") or "").strip()
     priority_filter = (request.args.get("priority") or "").strip()
+    
+    # Apply priority filter date overrides for UI display
+    # When priority filter is active, set date filters in UI to show what's being filtered
+    if priority_filter == "vandaag":
+        date_from = today.strftime("%Y-%m-%d")
+        date_to = today.strftime("%Y-%m-%d")
+    elif priority_filter == "binnen_30":
+        from dateutil.relativedelta import relativedelta
+        date_from = (today + relativedelta(days=1)).strftime("%Y-%m-%d")  # Morgen
+        date_to = (today + relativedelta(days=30)).strftime("%Y-%m-%d")  # Vandaag + 30 dagen
     
     page = request.args.get("page", 1, type=int)
     sort_by = request.args.get("sort", "")  # Default: empty (will sort by risk)
@@ -244,8 +252,8 @@ def keuring_resultaat():
     
     certificaat_path = None
     if certificaat_file and certificaat_file.filename:
-        # Upload naar Supabase Storage bucket "Keuringsstatus documenten"
-        bucket = "Keuringsstatus documenten"
+        # Upload naar Supabase Storage bucket "Keuringsstatus"
+        bucket = "Keuringsstatus"
         prefix = f"{keuring.serienummer or material.serial}_keuringstatus_{datetime.utcnow().strftime('%Y%m%d')}"
         
         certificaat_file.seek(0)  # Reset file pointer
@@ -479,7 +487,7 @@ def keuringen_export():
 @login_required
 def api_keuring_details(historiek_id):
     """API endpoint om keuring details op te halen"""
-    from helpers import get_file_url_from_path
+    from helpers import get_document_url
     
     historiek = KeuringHistoriek.query.filter_by(id=historiek_id).first()
     
@@ -513,7 +521,7 @@ def api_keuring_details(historiek_id):
         "opmerkingen": historiek.opmerkingen or "-",
         "volgende_keuring_datum": historiek.volgende_keuring_datum.strftime("%Y-%m-%d") if historiek.volgende_keuring_datum else "-",
         "certificaat_path": historiek.certificaat_path or None,
-        "certificaat_url": get_file_url_from_path(historiek.certificaat_path) if historiek.certificaat_path else None,
+        "certificaat_url": get_document_url("Keuringstatus", historiek.certificaat_path) if historiek.certificaat_path else None,
         "created_at": historiek.created_at.strftime("%Y-%m-%d %H:%M") if historiek.created_at else "-",
     })
 
@@ -522,7 +530,7 @@ def api_keuring_details(historiek_id):
 @login_required
 def api_keuring_historiek(material_id):
     """API endpoint om alle keuring historiek voor een materiaal op te halen"""
-    from helpers import get_file_url_from_path
+    from helpers import get_document_url
     from datetime import date
     
     today = date.today()
@@ -559,7 +567,7 @@ def api_keuring_historiek(material_id):
             "opmerkingen": hist.opmerkingen or None,
             "volgende_keuring_datum": hist.volgende_keuring_datum.strftime("%Y-%m-%d") if hist.volgende_keuring_datum else None,
             "certificaat_path": hist.certificaat_path or None,
-            "certificaat_url": get_file_url_from_path(hist.certificaat_path) if hist.certificaat_path else None,
+            "certificaat_url": get_document_url("Keuringstatus", hist.certificaat_path) if hist.certificaat_path else None,
         })
     
     return jsonify({

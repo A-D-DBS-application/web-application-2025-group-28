@@ -79,7 +79,7 @@
 
             <div class="d-flex justify-content-center mt-2">
               {% set type_image_url = get_file_url(type_item.type_image) if type_item.type_image else '' %}
-              {% set safety_sheet_url = get_file_url(type_item.safety_sheet) if type_item.safety_sheet else '' %}
+              {% set safety_sheet_url = get_document_url('Veiligheidsfiche', type_item.safety_sheet) if type_item.safety_sheet else '' %}
               <button type="button"
                       class="btn btn-sm btn-outline-dark"
                       data-type-id="{{ type_item.id }}"
@@ -478,13 +478,22 @@ function showTypeDetails(id, name, description, validityDays, imageUrl, safetyUr
     `;
   }
   
-  if (safetyUrl) {
+  if (safetyUrl && safetyUrl.trim() !== '') {
     html += `
       <div class="mb-3">
         <strong>Veiligheidsfiche:</strong><br>
-        <a href="${escapeHtml(safetyUrl)}" target="_blank" class="btn btn-sm btn-outline-primary mt-1">
+        <a href="${escapeHtml(safetyUrl)}" target="_blank" rel="noopener noreferrer" 
+           class="btn btn-sm btn-outline-primary mt-1"
+           onclick="return handleSafetySheetClick(event, '${escapeHtml(safetyUrl)}')">
           <i class="bi bi-file-earmark-text me-1"></i>Bekijk veiligheidsfiche
         </a>
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="mb-3">
+        <strong>Veiligheidsfiche:</strong><br>
+        <span class="text-muted small">Geen veiligheidsfiche beschikbaar</span>
       </div>
     `;
   }
@@ -562,6 +571,20 @@ function escapeHtml(text) {
     "'": '&#039;'
   };
   return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+// Handle safety sheet click with error handling
+function handleSafetySheetClick(event, url) {
+  // Check if URL is valid
+  if (!url || url.trim() === '' || url === 'None' || url === 'null') {
+    event.preventDefault();
+    alert('Geen veiligheidsfiche beschikbaar.');
+    return false;
+  }
+  
+  // Open in new tab - if it fails, user will see the error page
+  // But at least we have a valid URL now
+  return true;
 }
 </script>
 

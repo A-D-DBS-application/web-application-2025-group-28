@@ -275,11 +275,50 @@ body {
   letter-spacing: -0.3px;
 }
 
+/* Topbar rechts (mobiel) */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
 /* Logo rechtsboven op mobiel */
 .topbar-logo-mobile {
   height: 32px;
   width: auto;
-  margin-left: auto;
+}
+
+/* Mobiele account/login knop */
+.topbar-account-btn {
+  padding: 8px;
+  color: var(--text);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  min-width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.topbar-account-btn:hover {
+  background: #f3f4f6;
+  color: var(--text);
+}
+
+.topbar-account-btn:focus {
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+  outline: none;
+}
+
+.topbar-account-btn i {
+  font-size: 20px;
 }
 
 .page {
@@ -681,6 +720,10 @@ body {
   .main {
     margin-left: 0;
     width: 100%;
+  }
+
+  .topbar {
+    padding: 0 16px;
   }
 
   .page {
@@ -1401,4 +1444,10 @@ body {
     width: 100%;
     text-align: center;
   }
+}
+
+/* Utility class for scrollable containers */
+.scrollable-container {
+  max-height: 280px;
+  overflow-y: auto;
 }

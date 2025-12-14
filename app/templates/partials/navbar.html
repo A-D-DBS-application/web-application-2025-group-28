@@ -16,7 +16,7 @@
     <span class="mobile-nav-icon"><i class="bi bi-check-circle"></i></span>
     <span class="mobile-nav-label">Keuringen</span>
   </a>
-  <a href="{{ url_for('documenten.documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}">
+  <a href="{{ url_for('documenten') }}" class="mobile-nav-item {% if request.endpoint=='documenten' %}active{% endif %}">
     <span class="mobile-nav-icon">{% include 'partials/documenten_icon.html' with context %}</span>
     <span class="mobile-nav-label">Docs</span>
   </a>
@@ -69,8 +69,8 @@
       </a>
 
       <a
-        class="menu-item {% if request.endpoint=='documenten.documenten' %}active{% endif %}"
-        href="{{ url_for('documenten.documenten') }}"
+        class="menu-item {% if request.endpoint=='documenten' %}active{% endif %}"
+        href="{{ url_for('documenten') }}"
       >
         <span class="menu-item-icon">{% include 'partials/documenten_icon.html' with context %}</span>
         Documenten

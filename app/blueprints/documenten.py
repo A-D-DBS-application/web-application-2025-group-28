@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy import or_, func
 
-from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, get_document_url, log_activity_db
+from helpers import login_required, save_upload_to_supabase, get_file_url_from_path, get_supabase_file_url, get_document_url, log_activity_db, delete_file_from_supabase
 from constants import DOCUMENT_TYPES
 from models import db, Document, Material, MaterialType, KeuringHistoriek
 from datetime import timedelta
@@ -20,7 +20,7 @@ def get_bucket_for_document_type(document_type: str) -> str:
     bucket_mapping = {
         "Aankoopfactuur": "Aankoop-Verkoop documenten",
         "Verkoopfactuur": "Aankoop-Verkoop documenten",
-        "Keuringstatus": "Keuringsstatus documenten",
+        "Keuringstatus": "Keuringsstatus",
         "Veiligheidsfiche": "Veiligheidsfiche"
     }
     return bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
@@ -261,9 +261,10 @@ def documenten_upload():
         # Bepaal bucket op basis van document type
         bucket = get_bucket_for_document_type(document_type)
         
-        # Genereer prefix voor bestandsnaam
-        if material_id:
-            # Material is al gevalideerd hierboven, maar haal opnieuw op voor prefix
+        # Haal material object op voor prefix en document record (als niet veiligheidsfiche)
+        material = None
+        if not is_veiligheidsfiche and material_id:
+            # Material is al gevalideerd hierboven, maar we hebben het object nodig voor ID en serial
             material = Material.query.filter(
                 Material.id == int(material_id),
                 or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
@@ -271,6 +272,9 @@ def documenten_upload():
             if not material:
                 flash("Geselecteerd materieel bestaat niet of is verwijderd.", "error")
                 return redirect(url_for("documenten.documenten"))
+        
+        # Genereer prefix voor bestandsnaam
+        if material:
             prefix = f"{material.serial}_{document_type.lower().replace(' ', '_')}"
         else:
             prefix = f"{material_type_name.lower().replace(' ', '_')}_{document_type.lower().replace(' ', '_')}"
@@ -292,14 +296,14 @@ def documenten_upload():
         file_size = document_file.tell()
         document_file.seek(0)  # Reset
         
-        # Maak document record aan
+        # Maak document record aan - gebruik material.id (zoals in materiaal.py) voor consistentie
         user_name = g.user.naam if g.user else "Onbekend"
         document = Document(
             document_type=document_type,
             file_path=file_path,
             file_name=secure_filename(document_file.filename),
             file_size=file_size,
-            material_id=int(material_id) if material_id else None,
+            material_id=material.id if material else None,  # Gebruik material.id in plaats van int(material_id) voor consistentie
             material_type_id=material_type_id,
             material_type=material_type_name if is_veiligheidsfiche else None,
             uploaded_by=user_name,
@@ -311,12 +315,7 @@ def documenten_upload():
         db.session.add(document)
         
         # Als het een keuringstatus is, update de keuringsstatus
-        if document_type == "Keuringstatus" and material_id:
-            material = Material.query.filter(
-                Material.id == int(material_id),
-                or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
-            ).first()
-            if material:
+        if document_type == "Keuringstatus" and material:
                 # Update inspection status naar "goedgekeurd"
                 material.inspection_status = "goedgekeurd"
                 material.laatste_keuring = datetime.utcnow().date()
@@ -388,6 +387,67 @@ def document_download(document_id):
         current_app.logger.error(f"Error in document_download: {e}", exc_info=True)
         flash(f"Fout bij downloaden: {str(e)}", "error")
         return redirect(url_for("documenten.documenten"))
+
+
+@documenten_bp.route("/delete/<int:document_id>", methods=["POST"])
+@login_required
+def document_delete(document_id):
+    """Verwijder een document uit database en Supabase Storage."""
+    try:
+        document = Document.query.get_or_404(document_id)
+        
+        if not document:
+            flash("Document niet gevonden.", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+        # Bewaar document informatie voor logging en error handling
+        document_name = document.file_name
+        document_type = document.document_type
+        file_path = document.file_path
+        bucket = get_bucket_for_document_type(document_type)
+        
+        # Eerst verwijderen uit Supabase Storage
+        storage_deleted = False
+        if file_path:
+            try:
+                storage_deleted = delete_file_from_supabase(bucket, file_path)
+                if not storage_deleted:
+                    current_app.logger.warning(f"Failed to delete file from storage: bucket={bucket}, path={file_path}")
+                    # Ga door met database delete ook al faalt storage delete (om orphan records te voorkomen)
+            except Exception as e:
+                current_app.logger.error(f"Error deleting file from storage: {e}", exc_info=True)
+                # Ga door met database delete ook al faalt storage delete
+        
+        # Verwijder document uit database
+        try:
+            db.session.delete(document)
+            db.session.commit()
+            
+            # Log activiteit
+            log_activity_db(
+                action="Document verwijderd",
+                name=document_name or "",
+                serial=""
+            )
+            
+            # Toon success message
+            if storage_deleted:
+                flash(f"Document '{document_name}' succesvol verwijderd.", "success")
+            else:
+                flash(f"Document '{document_name}' verwijderd uit database, maar verwijdering uit storage is mogelijk mislukt.", "warn")
+            
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Error deleting document from database: {e}", exc_info=True)
+            flash(f"Fout bij verwijderen document uit database: {str(e)}", "error")
+            return redirect(url_for("documenten.documenten"))
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error in document_delete: {e}", exc_info=True)
+        flash(f"Fout bij verwijderen: {str(e)}", "error")
+    
+    return redirect(url_for("documenten.documenten"))
 
 
 @documenten_bp.record_once

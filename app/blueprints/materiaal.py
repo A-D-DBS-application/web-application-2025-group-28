@@ -13,39 +13,15 @@ import os
 
 materiaal_bp = Blueprint('materiaal', __name__, url_prefix='/materiaal')
 
-# Import helper functions from app.py (will be moved later)
-# For now, we'll import them or define them here
-def update_verlopen_keuringen():
-    """Update expired inspections automatically"""
-    from models import Keuringstatus
-    today = datetime.utcnow().date()
-    
-    keuringen_met_verlopen_datum = Keuringstatus.query.filter(
-        Keuringstatus.volgende_controle.isnot(None),
-        Keuringstatus.volgende_controle < today,
-        Keuringstatus.laatste_controle.is_(None)
-    ).all()
-    
-    updated_count = 0
-    for keuring in keuringen_met_verlopen_datum:
-        if not keuring.serienummer:
-            continue
-        material = Material.query.filter_by(serial=keuring.serienummer).first()
-        if material:
-            material.inspection_status = "keuring verlopen"
-            updated_count += 1
-    
-    if updated_count > 0:
-        db.session.commit()
-    
-    return updated_count
+# NOTE: update_verlopen_keuringen() moved to MaterialService.update_expired_inspections()
 
 
 @materiaal_bp.route("", methods=["GET"])
 @login_required
 def materiaal():
     """Materiaal overzicht"""
-    update_verlopen_keuringen()
+    MaterialService.update_expired_inspections()
+    db.session.commit()
     
     q = (request.args.get("q") or "").strip().lower()
     type_filter = (request.args.get("type") or "").strip().lower()
@@ -70,9 +46,8 @@ def materiaal():
         elif status == "niet in gebruik":
             query = query.filter(Material.status != "in gebruik")
 
-    total_items = Material.query.filter(
-        or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
-    ).count()
+    # Use service layer for consistent counting (excludes deleted items)
+    total_items = MaterialService.get_total_count()
     in_use = (
         db.session.query(func.count(MaterialUsage.id))
         .join(Material, MaterialUsage.material_id == Material.id)
@@ -645,7 +620,7 @@ def materiaal_toevoegen():
         bucket_mapping = {
             "Aankoopfactuur": "Aankoop-Verkoop documenten",
             "Verkoopfactuur": "Aankoop-Verkoop documenten",
-            "Keuringstatus": "Keuringsstatus documenten",
+            "Keuringstatus": "Keuringsstatus",
             "Veiligheidsfiche": "Veiligheidsfiche"
         }
         bucket = bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
@@ -864,7 +839,7 @@ def materiaal_bewerken():
         bucket_mapping = {
             "Aankoopfactuur": "Aankoop-Verkoop documenten",
             "Verkoopfactuur": "Aankoop-Verkoop documenten",
-            "Keuringstatus": "Keuringsstatus documenten",
+            "Keuringstatus": "Keuringsstatus",
             "Veiligheidsfiche": "Veiligheidsfiche"
         }
         bucket = bucket_mapping.get(document_type, "Aankoop-Verkoop documenten")
@@ -1050,7 +1025,7 @@ def materiaal_gebruiken():
 
     item = MaterialService.find_by_name_or_number(name, nummer)
     if not item:
-        flash("Materiaal niet gevonden in het datasysteem.", "danger")
+        flash("Materiaal al in gebruik.", "danger")
         return redirect(url_for("materiaal.materiaal"))
 
     if not assigned_to and getattr(g, "user", None):
@@ -1072,7 +1047,10 @@ def materiaal_gebruiken():
             site=site_value
         )
     except ValueError as e:
-        flash(str(e), "danger")
+        # Toon de error message - "Materiaal al in gebruik" of andere ValueError
+        error_message = str(e)
+        current_app.logger.info(f"ValueError in materiaal_gebruiken: {error_message}")
+        flash(error_message, "danger")
         return redirect(url_for("materiaal.materiaal"))
 
     log_activity_db("In gebruik", item.name or "", item.serial or "")

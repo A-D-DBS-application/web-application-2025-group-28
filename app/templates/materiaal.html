@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from 'partials/stat_card.html' import stat_card %}
+{% from 'partials/tables/usage_table_row.html' import usage_table_row %}
 {% block content %}
 
 <div class="section-header">
@@ -79,34 +80,7 @@
               </thead>
               <tbody>
                 {% for u in my_usages %}
-                  <tr>
-                    <td>{{ u.serial }}</td>
-                    <td>{{ u.name }}</td>
-                    <td>{{ u.site or '-' }}</td>
-                    <td>
-                      {% if u.start_time %}
-                        {{ u.start_time.strftime("%Y-%m-%d %H:%M") }}
-                      {% else %}
-                        -
-                      {% endif %}
-                    </td>
-                    <td class="text-end">
-                      <div class="d-flex gap-2 justify-content-end">
-                        <button type="button"
-                                class="btn btn-sm btn-outline-dark view-edit-btn"
-                                data-serial="{{ u.serial }}"
-                                data-usage-id="{{ u.id }}">
-                          Details
-                        </button>
-                        <form method="post" action="{{ url_for('materiaal.materiaal_stop_gebruik') }}" class="d-inline" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
-                          <input type="hidden" name="usage_id" value="{{ u.id }}">
-                          <button type="submit" class="btn btn-sm btn-outline-secondary">
-                            Niet meer gebruiken
-                          </button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
+                  {{ usage_table_row(u, show_werf=true, show_used_by=false, action_mode="my_usage") }}
                 {% endfor %}
               </tbody>
             </table>
@@ -133,40 +107,7 @@
               </thead>
               <tbody>
                 {% for u in other_usages %}
-                  <tr>
-                    <td>{{ u.serial }}</td>
-                    <td>{{ u.name }}</td>
-                    <td>{{ u.site or '-' }}</td>
-                    <td>{{ u.used_by or '-' }}</td>
-                    <td>
-                      {% if u.start_time %}
-                        {{ u.start_time.strftime("%Y-%m-%d %H:%M") }}
-                      {% else %}
-                        -
-                      {% endif %}
-                    </td>
-                    <td class="text-end">
-                      <div class="d-flex gap-2 justify-content-end">
-                        <button type="button"
-                                class="btn btn-sm btn-outline-dark view-edit-btn"
-                                data-serial="{{ u.serial }}"
-                                data-usage-id="{{ u.id }}">
-                          Details
-                        </button>
-                        {% if current_user and current_user.is_admin %}
-                        <form method="post"
-                              action="{{ url_for('materiaal.materiaal_stop_gebruik') }}"
-                              class="d-inline"
-                              onsubmit="return confirm('Materiaal van {{ u.used_by }} niet meer in gebruik zetten?');">
-                          <input type="hidden" name="usage_id" value="{{ u.id }}">
-                          <button class="btn btn-sm btn-outline-danger">
-                            Stop gebruik
-                          </button>
-                        </form>
-                        {% endif %}
-                      </div>
-                    </td>
-                  </tr>
+                  {{ usage_table_row(u, show_werf=true, show_used_by=true, action_mode="other_usage") }}
                 {% endfor %}
               </tbody>
             </table>
@@ -201,40 +142,7 @@
       </thead>
       <tbody>
         {% for u in usages_without_project %}
-          <tr>
-            <td>{{ u.serial }}</td>
-            <td>{{ u.name }}</td>
-            <td>{{ u.used_by or '-' }}</td>
-            <td>
-              {% if u.start_time %}
-                {{ u.start_time.strftime("%Y-%m-%d %H:%M") }}
-              {% else %}
-                -
-              {% endif %}
-            </td>
-            <td class="text-end">
-              <div class="d-flex gap-2 justify-content-end">
-                <button type="button"
-                        class="btn btn-sm btn-outline-primary"
-                        data-bs-toggle="modal"
-                        data-bs-target="#assignToProjectModal"
-                        data-usage-id="{{ u.id }}"
-                        data-mat-name="{{ u.name }}"
-                        data-mat-serial="{{ u.serial }}">
-                  Koppel aan werf
-                </button>
-                <form method="post"
-                      action="{{ url_for('materiaal.materiaal_stop_gebruik') }}"
-                      class="d-inline"
-                      onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
-                  <input type="hidden" name="usage_id" value="{{ u.id }}">
-                  <button class="btn btn-sm btn-outline-secondary">
-                    Stop gebruik
-                  </button>
-                </form>
-              </div>
-            </td>
-          </tr>
+          {{ usage_table_row(u, show_werf=false, show_used_by=true, action_mode="no_project") }}
         {% endfor %}
       </tbody>
     </table>
@@ -652,7 +560,7 @@
               <small class="text-muted">Selecteer het type document dat je uploadt</small>
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-12">
               <label class="form-label">Documentatie (foto of PDF)</label>
               <input
                 type="file"
@@ -661,16 +569,6 @@
                 accept="image/*,.pdf"
               >
               <small class="text-muted">Upload een document bij het bewerken van het materiaal</small>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label">Veiligheidsfiche (handleiding)</label>
-              <input
-                type="file"
-                name="safety_sheet"
-                class="form-control"
-                accept="image/*,.pdf"
-              >
             </div>
           </div>
         </div>
@@ -941,19 +839,6 @@
                   <strong>Status:</strong><br>
                   <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
                 </div>
-                <div class="col-md-6">
-                  <strong>Keuring:</strong><br>
-                  ${keuringBadgeHtml}
-                  ${item.laatste_keuring ? `
-                    <br><small class="text-muted">Laatste keuring: ${escapeHtml(item.laatste_keuring)}</small>
-                  ` : ''}
-                </div>
-                ${item.laatste_keuring_material ? `
-                <div class="col-md-6">
-                  <strong>Laatste keuring:</strong><br>
-                  <span>${escapeHtml(item.laatste_keuring_material)}</span>
-                </div>
-                ` : ''}
                 ${item.inspection_validity_days ? `
                 <div class="col-md-6">
                   <strong>Keuring geldig (dagen):</strong><br>
@@ -982,6 +867,49 @@
                 ${displayValue(item.note)}
               </div>
               ${(() => {
+                // Keuringen sectie
+                if (item.keuringen && item.keuringen.length > 0) {
+                  let keuringenHtml = `
+                    <div class="mb-3 mt-4">
+                      <strong>Keuringen:</strong>
+                      <div class="table-responsive mt-2">
+                        <table class="table table-sm align-middle mb-0">
+                          <thead>
+                            <tr>
+                              <th>Datum</th>
+                              <th>Status</th>
+                              <th>Uitgevoerd door</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                  `;
+                  item.keuringen.forEach(keuring => {
+                    const keuringDatum = escapeHtml(keuring.keuring_datum || '-');
+                    const resultaat = (keuring.resultaat || '').toString().trim();
+                    const uitgevoerdDoor = escapeHtml(keuring.uitgevoerd_door || '-');
+                    // Display resultaat in black badge
+                    const statusBadge = resultaat ? 
+                      `<span class="badge bg-dark text-white badge-resultaat-dark">${escapeHtml(resultaat)}</span>` :
+                      `<span class="badge bg-dark text-white badge-resultaat-dark">Onbekend</span>`;
+                    keuringenHtml += `
+                      <tr>
+                        <td>${keuringDatum}</td>
+                        <td>${statusBadge}</td>
+                        <td>${uitgevoerdDoor}</td>
+                      </tr>
+                    `;
+                  });
+                  keuringenHtml += `
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  `;
+                  return keuringenHtml;
+                }
+                return '';
+              })()}
+              ${(() => {
                 // Groepeer documenten per bucket/type
                 const docsByBucket = {};
                 if (item.documents && item.documents.length > 0) {
@@ -990,7 +918,7 @@
                     if (doc.document_type === 'Aankoopfactuur' || doc.document_type === 'Verkoopfactuur') {
                       bucketName = 'Aankoop-Verkoop documenten';
                     } else if (doc.document_type === 'Keuringstatus') {
-                      bucketName = 'Keuringsstatus documenten';
+                      bucketName = 'Keuringsstatus';
                     } else if (doc.document_type === 'Veiligheidsfiche') {
                       bucketName = 'Veiligheidsfiche';
                     } else {
@@ -1312,16 +1240,6 @@
                     <strong>Type:</strong><br>
                     <span>${displayValue(item.type)}</span>
                   </div>
-                  <div class="mb-3">
-                    <strong>Keuring:</strong><br>
-                    ${keuringBadgeHtml}
-                  </div>
-                  ${item.laatste_keuring_material ? `
-                  <div class="mb-3">
-                    <strong>Laatste keuring:</strong><br>
-                    <span>${escapeHtml(item.laatste_keuring_material)}</span>
-                  </div>
-                  ` : ''}
                   ${item.inspection_validity_days ? `
                   <div class="mb-3">
                     <strong>Keuring geldig (dagen):</strong><br>
@@ -1349,7 +1267,7 @@
                         if (doc.document_type === 'Aankoopfactuur' || doc.document_type === 'Verkoopfactuur') {
                           bucketName = 'Aankoop-Verkoop documenten';
                         } else if (doc.document_type === 'Keuringstatus') {
-                          bucketName = 'Keuringsstatus documenten';
+                          bucketName = 'Keuringsstatus';
                         } else if (doc.document_type === 'Veiligheidsfiche') {
                           bucketName = 'Veiligheidsfiche';
                         } else {
@@ -1442,6 +1360,49 @@
                       }
                     });
                     return html;
+                  })()}
+                  ${(() => {
+                    // Keuringen sectie
+                    if (item.keuringen && item.keuringen.length > 0) {
+                      let keuringenHtml = `
+                        <div class="mb-3 mt-4">
+                          <strong>Keuringen:</strong>
+                          <div class="table-responsive mt-2">
+                            <table class="table table-sm align-middle mb-0">
+                              <thead>
+                                <tr>
+                                  <th>Datum</th>
+                                  <th>Status</th>
+                                  <th>Uitgevoerd door</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                      `;
+                      item.keuringen.forEach(keuring => {
+                        const keuringDatum = escapeHtml(keuring.keuring_datum || '-');
+                        const resultaat = (keuring.resultaat || '').toString().trim();
+                        const uitgevoerdDoor = escapeHtml(keuring.uitgevoerd_door || '-');
+                        // Display resultaat in black badge
+                        const statusBadge = resultaat ? 
+                          `<span class="badge bg-dark text-white badge-resultaat-dark">${escapeHtml(resultaat)}</span>` :
+                          `<span class="badge bg-dark text-white badge-resultaat-dark">Onbekend</span>`;
+                        keuringenHtml += `
+                          <tr>
+                            <td>${keuringDatum}</td>
+                            <td>${statusBadge}</td>
+                            <td>${uitgevoerdDoor}</td>
+                          </tr>
+                        `;
+                      });
+                      keuringenHtml += `
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      `;
+                      return keuringenHtml;
+                    }
+                    return '';
                   })()}
                 </div>
                 

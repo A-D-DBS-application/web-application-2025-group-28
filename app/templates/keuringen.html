@@ -51,7 +51,6 @@
 <div class="keuringen-overview-section">
   <div class="keuringen-overview-header">
     <h2 class="keuringen-overview-title">Keuringsoverzicht</h2>
-    <p class="keuringen-overview-subtitle">{{ total_items }} keuring(en) gevonden</p>
   </div>
 
   <form method="get" action="{{ url_for('keuringen.keuringen') }}" id="filterForm" class="keuringen-filter-form">
@@ -394,7 +393,7 @@
 
       <form method="post" action="{{ url_for('keuringen.keuring_toevoegen') }}" id="nieuweKeuringForm">
         <div class="modal-body">
-          <div id="nieuweKeuringErrors" class="alert alert-danger error-container" style="display: none;"></div>
+          <div id="nieuweKeuringErrors" class="alert alert-danger error-container d-none"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel <span class="text-danger">*</span></label>
@@ -465,7 +464,7 @@
       <form method="post" action="{{ url_for('keuringen.keuring_bewerken') }}" id="bewerkKeuringForm">
         <input type="hidden" name="keuring_id" id="edit-keuring-id">
         <div class="modal-body">
-          <div id="bewerkKeuringErrors" class="alert alert-danger error-container" style="display: none;"></div>
+          <div id="bewerkKeuringErrors" class="alert alert-danger error-container d-none"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Materieel</label>
@@ -528,7 +527,7 @@
       <form method="post" action="{{ url_for('keuringen.keuring_resultaat') }}" enctype="multipart/form-data" id="keuringResultaatForm">
         <input type="hidden" name="keuring_id" id="resultaat-keuring-id">
         <div class="modal-body">
-          <div id="keuringResultaatErrors" class="alert alert-danger error-container" style="display: none;"></div>
+          <div id="keuringResultaatErrors" class="alert alert-danger error-container d-none"></div>
           <div class="row g-3">
             <div class="col-md-12">
               <label class="form-label">Resultaat <span class="text-danger">*</span></label>
@@ -637,7 +636,7 @@
           Sluiten
         </button>
         <!-- Edit mode buttons (hidden by default) -->
-        <div id="editModeButtons" style="display: none;">
+        <div id="editModeButtons" class="d-none">
           <button type="button" 
                   id="modalAnnulerenBtn" 
                   class="btn btn-outline-secondary"
@@ -742,6 +741,8 @@ function cleanupModals() {
   const backdrops = document.querySelectorAll('.modal-backdrop');
   backdrops.forEach(backdrop => backdrop.remove());
   document.body.classList.remove('modal-open');
+  // NOTE: Intentionally using inline styles for dynamic modal body scroll prevention
+  // This is a common Bootstrap pattern and must be set dynamically via JavaScript
   document.body.style.overflow = '';
   document.body.style.paddingRight = '';
 }
@@ -751,7 +752,7 @@ function clearErrorContainers() {
   const errorContainers = document.querySelectorAll('.error-container');
   errorContainers.forEach(container => {
     container.innerHTML = '';
-    container.style.display = 'none';
+    container.classList.add('d-none');
   });
 }
 
@@ -763,10 +764,10 @@ function showErrorInContainer(containerId, errorMessage) {
   // Only show if error message exists and has content
   if (errorMessage && typeof errorMessage === 'string' && errorMessage.trim().length > 0) {
     container.innerHTML = escapeHtml(errorMessage);
-    container.style.display = 'block';
+    container.classList.remove('d-none');
   } else {
     container.innerHTML = '';
-    container.style.display = 'none';
+    container.classList.add('d-none');
   }
 }
 
@@ -811,7 +812,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const errorContainer = form.querySelector('.error-container');
       if (errorContainer) {
         errorContainer.innerHTML = '';
-        errorContainer.style.display = 'none';
+        errorContainer.classList.add('d-none');
       }
     });
   });
@@ -1093,10 +1094,10 @@ function enterEditMode() {
   renderEditMode(currentMaterialData, currentHistoryData);
   
   // Show/hide buttons
-  document.getElementById('modalBewerkenBtn').style.display = 'none';
-  document.getElementById('modalVerwijderenBtn').style.display = 'none';
-  document.getElementById('modalSluitenBtn').style.display = 'none';
-  document.getElementById('editModeButtons').style.display = 'block';
+  document.getElementById('modalBewerkenBtn').classList.add('d-none');
+  document.getElementById('modalVerwijderenBtn').classList.add('d-none');
+  document.getElementById('modalSluitenBtn').classList.add('d-none');
+  document.getElementById('editModeButtons').classList.remove('d-none');
 }
 
 // Exit edit mode
@@ -1104,10 +1105,10 @@ function exitEditMode() {
   isEditMode = false;
   
   // Show/hide buttons
-  document.getElementById('modalBewerkenBtn').style.display = 'inline-block';
-  document.getElementById('modalVerwijderenBtn').style.display = 'inline-block';
-  document.getElementById('modalSluitenBtn').style.display = 'inline-block';
-  document.getElementById('editModeButtons').style.display = 'none';
+  document.getElementById('modalBewerkenBtn').classList.remove('d-none');
+  document.getElementById('modalVerwijderenBtn').classList.remove('d-none');
+  document.getElementById('modalSluitenBtn').classList.remove('d-none');
+  document.getElementById('editModeButtons').classList.add('d-none');
 }
 
 // Cancel edit
@@ -1396,6 +1397,8 @@ function showToast(message, type = 'info') {
   // Create toast element
   const toast = document.createElement('div');
   toast.className = `alert alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+  // NOTE: Intentionally using inline style for dynamic z-index on toast notifications
+  // Must be set dynamically to ensure toast appears above all other elements
   toast.style.zIndex = '9999';
   toast.innerHTML = `
     ${message}

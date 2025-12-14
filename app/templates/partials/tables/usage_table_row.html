@@ -1,0 +1,88 @@
+{# 
+  Usage table row partial
+  Renders a single row for material usage tables
+  
+  Parameters:
+  - usage: The usage object (u)
+  - show_werf: Boolean, show "Werf" column (default: true)
+  - show_used_by: Boolean, show "Gebruikt door" column (default: false)
+  - action_mode: String, determines action buttons:
+    - "my_usage": Details + "Niet meer gebruiken" (for my_usages)
+    - "other_usage": Details + "Stop gebruik" (admin only, for other_usages)
+    - "no_project": "Koppel aan werf" + "Stop gebruik" (for usages_without_project)
+#}
+{% macro usage_table_row(usage, show_werf=true, show_used_by=false, action_mode="my_usage") %}
+  <tr>
+    <td>{{ usage.serial }}</td>
+    <td>{{ usage.name }}</td>
+    {% if show_werf %}
+    <td>{{ usage.site or '-' }}</td>
+    {% endif %}
+    {% if show_used_by %}
+    <td>{{ usage.used_by or '-' }}</td>
+    {% endif %}
+    <td>
+      {% if usage.start_time %}
+        {{ usage.start_time.strftime("%Y-%m-%d %H:%M") }}
+      {% else %}
+        -
+      {% endif %}
+    </td>
+    <td class="text-end">
+      <div class="d-flex gap-2 justify-content-end">
+        {% if action_mode == "my_usage" %}
+          <button type="button"
+                  class="btn btn-sm btn-outline-dark view-edit-btn"
+                  data-serial="{{ usage.serial }}"
+                  data-usage-id="{{ usage.id }}">
+            Details
+          </button>
+          <form method="post" action="{{ url_for('materiaal.materiaal_stop_gebruik') }}" class="d-inline" onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+            <input type="hidden" name="usage_id" value="{{ usage.id }}">
+            <button type="submit" class="btn btn-sm btn-outline-secondary">
+              Niet meer gebruiken
+            </button>
+          </form>
+        {% elif action_mode == "other_usage" %}
+          <button type="button"
+                  class="btn btn-sm btn-outline-dark view-edit-btn"
+                  data-serial="{{ usage.serial }}"
+                  data-usage-id="{{ usage.id }}">
+            Details
+          </button>
+          {% if current_user and current_user.is_admin %}
+          <form method="post"
+                action="{{ url_for('materiaal.materiaal_stop_gebruik') }}"
+                class="d-inline"
+                onsubmit="return confirm('Materiaal van {{ usage.used_by }} niet meer in gebruik zetten?');">
+            <input type="hidden" name="usage_id" value="{{ usage.id }}">
+            <button class="btn btn-sm btn-outline-danger">
+              Stop gebruik
+            </button>
+          </form>
+          {% endif %}
+        {% elif action_mode == "no_project" %}
+          <button type="button"
+                  class="btn btn-sm btn-outline-primary"
+                  data-bs-toggle="modal"
+                  data-bs-target="#assignToProjectModal"
+                  data-usage-id="{{ usage.id }}"
+                  data-mat-name="{{ usage.name }}"
+                  data-mat-serial="{{ usage.serial }}">
+            Koppel aan werf
+          </button>
+          <form method="post"
+                action="{{ url_for('materiaal.materiaal_stop_gebruik') }}"
+                class="d-inline"
+                onsubmit="return confirm('Materiaal niet meer in gebruik zetten?');">
+            <input type="hidden" name="usage_id" value="{{ usage.id }}">
+            <button class="btn btn-sm btn-outline-secondary">
+              Stop gebruik
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </td>
+  </tr>
+{% endmacro %}
+

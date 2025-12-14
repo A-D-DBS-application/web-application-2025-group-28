@@ -5,7 +5,7 @@ import os
 
 from config import Config
 from models import db, Gebruiker
-from helpers import get_file_url_from_path
+from helpers import get_file_url_from_path, get_document_url
 
 # Supabase Storage
 try:
@@ -98,6 +98,7 @@ def inject_user():
     return {
         "current_user": g.user,
         "get_file_url": get_file_url_from_path,  # Helper functie voor file URLs
+        "get_document_url": get_document_url,  # Helper functie voor document URLs (met expliciete bucket)
         "inspection_statuses": INSPECTION_STATUSES,  # Make constants available in templates
         "usage_statuses": USAGE_STATUSES,
         "keuring_resultaten": KEURING_RESULTATEN,

@@ -49,8 +49,10 @@ class MaterialService:
     
     @staticmethod
     def get_total_count() -> int:
-        """Get total count of materials"""
-        return Material.query.count()
+        """Get total count of active (non-deleted) materials"""
+        return Material.query.filter(
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))
+        ).count()
     
     @staticmethod
     def get_in_use_count() -> int:
@@ -63,9 +65,10 @@ class MaterialService:
     
     @staticmethod
     def get_to_inspect_count() -> int:
-        """Get count of materials requiring inspection"""
-        return Material.query.filter_by(
-            inspection_status="keuring verlopen"
+        """Get count of materials requiring inspection (status: 'keuring verlopen' OR 'keuring gepland')"""
+        return Material.query.filter(
+            Material.inspection_status.in_(["keuring verlopen", "keuring gepland"]),
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))  # Exclude deleted items
         ).count()
     
     @staticmethod
@@ -303,7 +306,10 @@ class MaterialUsageService:
         # Check if already in use
         existing = MaterialUsageService.get_active_usage(material.id)
         if existing:
-            raise ValueError("Material is already in use")
+            # Deze error message wordt getoond wanneer materiaal al in gebruik is
+            error_msg = "Materiaal al in gebruik"
+            print(f"DEBUG: Material {material.id} ({material.serial or material.name}) is already in use, raising: {error_msg}")
+            raise ValueError(error_msg)
         
         # Create usage record
         usage = MaterialUsage(
@@ -499,11 +505,23 @@ class ActivityService:
     
     @staticmethod
     def get_unique_users() -> list[str]:
-        """Get unique user names using ORM"""
-        unique_users = db.session.query(Activity.user_name).filter(  # user_name is alias voor gebruiker_naam
-            Activity.user_name.isnot(None),
-            Activity.user_name != ""
-        ).distinct().order_by(Activity.user_name).all()
+        """
+        Get unique user names from activities, but only for users that currently exist in the system.
+        Uses JOIN with Gebruiker table to ensure only active users are returned.
+        """
+        # Get unique user names from Activity that also exist in Gebruiker table
+        # Join on user_name matching Gebruiker.naam
+        unique_users = (
+            db.session.query(Activity.user_name)
+            .join(Gebruiker, Activity.user_name == Gebruiker.naam)
+            .filter(
+                Activity.user_name.isnot(None),
+                Activity.user_name != ""
+            )
+            .distinct()
+            .order_by(Activity.user_name)
+            .all()
+        )
         return [u[0] for u in unique_users if u[0]]
 
 
@@ -579,30 +597,59 @@ class KeuringService:
     
     @staticmethod
     def get_priority_counts(today: datetime.date) -> dict:
-        """Get priority counts for keuringen cards"""
-        te_laat_count = db.session.query(Keuringstatus, Material).join(
-            Material, Material.keuring_id == Keuringstatus.id
-        ).filter(
-            Keuringstatus.volgende_controle.isnot(None),
-            Keuringstatus.volgende_controle < today,
-            Keuringstatus.laatste_controle.is_(None)
-        ).count()
+        """
+        Get priority counts for keuringen cards.
+        Uses the same data source and logic as get_filtered_keuringen() table.
         
-        vandaag_count = db.session.query(Keuringstatus, Material).join(
-            Material, Material.keuring_id == Keuringstatus.id
-        ).filter(
-            Keuringstatus.volgende_controle == today,
-            Keuringstatus.laatste_controle.is_(None)
-        ).count()
+        Definitions:
+        - te_laat: Items where Material.inspection_status == "keuring verlopen" (exact match)
+        - vandaag: Items where Keuringstatus.volgende_controle == today (has planned inspection today)
+        - binnen_30_dagen: Items where volgende_controle > today AND <= today+30 days
+        """
+        # Use the same base filter as get_filtered_keuringen()
+        # Een materiaal verschijnt in keuringentabel als:
+        # - laatste_keuring is ingevuld OF
+        # - keuringsstatus is "Onder voorbehoud" of "Afgekeurd"
+        base_filter = and_(
+            or_(
+                Material.laatste_keuring.isnot(None),
+                Material.inspection_status.in_(["onder voorbehoud", "afgekeurd", "Onder voorbehoud", "Afgekeurd"])
+            ),
+            or_(Material.is_deleted.is_(False), Material.is_deleted.is_(None))  # Exclude soft-deleted materials
+        )
         
-        binnen_30_dagen_count = db.session.query(Keuringstatus, Material).join(
-            Material, Material.keuring_id == Keuringstatus.id
-        ).filter(
-            Keuringstatus.volgende_controle.isnot(None),
-            Keuringstatus.volgende_controle > today,
-            Keuringstatus.volgende_controle <= (today + relativedelta(days=30)),
-            Keuringstatus.laatste_controle.is_(None)
-        ).count()
+        # 1. Te laat: Count items where inspection_status exactly equals "keuring verlopen"
+        te_laat_count = (
+            db.session.query(Material)
+            .filter(base_filter)
+            .filter(Material.inspection_status == "keuring verlopen")
+            .count()
+        )
+        
+        # 2. Te keuren vandaag: Items with volgende_controle == today
+        # Must have a volgende_controle date (no NULL dates count)
+        vandaag_count = (
+            db.session.query(Material)
+            .outerjoin(Keuringstatus, Material.keuring_id == Keuringstatus.id)
+            .filter(base_filter)
+            .filter(Keuringstatus.volgende_controle.isnot(None))
+            .filter(Keuringstatus.volgende_controle == today)
+            .distinct()
+            .count()
+        )
+        
+        # 3. Binnen 30 dagen: Items with volgende_controle between tomorrow and today+30 days (inclusive)
+        # date > today AND date <= today + 30 days
+        binnen_30_dagen_count = (
+            db.session.query(Material)
+            .outerjoin(Keuringstatus, Material.keuring_id == Keuringstatus.id)
+            .filter(base_filter)
+            .filter(Keuringstatus.volgende_controle.isnot(None))
+            .filter(Keuringstatus.volgende_controle > today)
+            .filter(Keuringstatus.volgende_controle <= (today + relativedelta(days=30)))
+            .distinct()
+            .count()
+        )
         
         return {
             "te_laat": te_laat_count,
@@ -659,18 +706,26 @@ class KeuringService:
             base_filter
         ).distinct()
         
-        # Apply priority filter - NIEUWE LOGICA: Priority filters zijn niet meer relevant
-        # omdat volgende_controle altijd None is. Deze filters worden genegeerd.
-        # (Behouden voor backward compatibility maar hebben geen effect)
+        # Apply priority filter - QUICK FILTER LOGIC: Priority filters hebben voorrang op status_filter
+        # Als een priority filter actief is, overschrijft deze de status_filter
+        priority_status_override = None
+        priority_date_from = None
+        priority_date_to = None
+        
         if priority_filter == "te_laat":
-            # Geen items meer met "te laat" omdat volgende_controle altijd None is
-            query = query.filter(False)  # Return empty result
+            # Te laat: Filter op inspection_status = "keuring verlopen"
+            # Dit overschrijft status_filter, zelfs als die op "Alle statussen" staat
+            priority_status_override = "keuring verlopen"
         elif priority_filter == "vandaag":
-            # Geen items meer met "vandaag" omdat volgende_controle altijd None is
-            query = query.filter(False)  # Return empty result
+            # Te keuren vandaag: Filter op volgende_keuring_datum === vandaag
+            # Stel date filters in op vandaag → vandaag
+            priority_date_from = today
+            priority_date_to = today
         elif priority_filter == "binnen_30":
-            # Geen items meer met "binnen_30" omdat volgende_controle altijd None is
-            query = query.filter(False)  # Return empty result
+            # Binnen 30 dagen: Filter op volgende_keuring_datum > vandaag AND <= vandaag + 30 dagen
+            # Stel date filters in
+            priority_date_from = today + relativedelta(days=1)  # Morgen
+            priority_date_to = today + relativedelta(days=30)  # Vandaag + 30 dagen
         
         # Text search
         if search_q:
@@ -682,8 +737,11 @@ class KeuringService:
                 )
             )
         
-        # Status filter
-        if status_filter:
+        # Status filter - wordt overschreven door priority filter als die actief is
+        if priority_status_override:
+            # Priority filter heeft voorrang: gebruik de override status
+            query = query.filter(Material.inspection_status == priority_status_override)
+        elif status_filter:
             if status_filter == "te_laat":
                 query = query.filter(
                     Keuringstatus.volgende_controle.isnot(None),
@@ -721,19 +779,29 @@ class KeuringService:
         if performer_filter:
             query = query.filter(Keuringstatus.uitgevoerd_door.ilike(f"%{performer_filter}%"))
         
-        # Date range filter
-        if date_from:
-            try:
-                date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").date()
-                query = query.filter(Keuringstatus.volgende_controle >= date_from_obj)
-            except ValueError:
-                pass
-        if date_to:
-            try:
-                date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").date()
-                query = query.filter(Keuringstatus.volgende_controle <= date_to_obj)
-            except ValueError:
-                pass
+        # Date range filter - priority filter heeft voorrang
+        if priority_date_from is not None:
+            # Priority filter heeft voorrang: gebruik priority date filters
+            query = query.filter(Keuringstatus.volgende_controle.isnot(None))
+            query = query.filter(Keuringstatus.volgende_controle >= priority_date_from)
+            if priority_date_to is not None:
+                query = query.filter(Keuringstatus.volgende_controle <= priority_date_to)
+        else:
+            # Gebruik normale date filters alleen als geen priority filter actief is
+            if date_from:
+                try:
+                    date_from_obj = datetime.strptime(date_from, "%Y-%m-%d").date()
+                    query = query.filter(Keuringstatus.volgende_controle.isnot(None))
+                    query = query.filter(Keuringstatus.volgende_controle >= date_from_obj)
+                except ValueError:
+                    pass
+            if date_to:
+                try:
+                    date_to_obj = datetime.strptime(date_to, "%Y-%m-%d").date()
+                    query = query.filter(Keuringstatus.volgende_controle.isnot(None))
+                    query = query.filter(Keuringstatus.volgende_controle <= date_to_obj)
+                except ValueError:
+                    pass
         
         # Check if we need to sort by risk (requires Python-side sorting)
         needs_risk_sorting = (sort_by == "risk" or not sort_by)
@@ -837,7 +905,8 @@ class KeuringService:
             ).order_by(KeuringHistoriek.keuring_datum.desc()).first()
             if latest_history and latest_history.certificaat_path:
                 has_certificate = True
-                certificaat_url = get_file_url_from_path(latest_history.certificaat_path)
+                from helpers import get_document_url
+                certificaat_url = get_document_url("Keuringstatus", latest_history.certificaat_path)
             
             # Calculate risk using algorithm
             risk_data = calculate_inspection_risk(material, keuring, today)
