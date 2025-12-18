@@ -17,7 +17,6 @@ Er is een testaccount voorzien om eenvoudig in te loggen:
 ### 1. Repository clonen
 ```bash
 git clone https://github.com/A-D-DBS-application/web-application-2025-group-28
-cd web-application-2025-group-28
 ```
 
 ### 2. Virtuele omgeving aanmaken
