@@ -18,6 +18,7 @@ Er is een testaccount voorzien om eenvoudig in te loggen:
 ```bash
 git clone <jullie-repo-url>
 cd web-application-2025-group-28
+```
 
 ### 2. Virtuele omgeving aanmaken
 
@@ -25,15 +26,18 @@ cd web-application-2025-group-28
 ```bash
 python -m venv venv
 venv\Scripts\activate
+```
 
 **macOS / Linux**
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+```
 
 ### 3. Dependencies installeren
 ```bash
 pip install -r requirements.txt
+```
 
 ### 4. Applicatie starten
 
@@ -41,11 +45,13 @@ pip install -r requirements.txt
 ```bash
 set FLASK_APP=app.py
 flask run
+```
 
 **macOS / Linux**
 ```bash
 export FLASK_APP=app.py
 flask run
+```
 
 De applicatie draait lokaal op:
 
